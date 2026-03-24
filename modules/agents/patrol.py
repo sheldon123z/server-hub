@@ -239,7 +239,7 @@ async def seed_default_patrols():
 _running_patrols: set[str] = set()
 
 
-async def execute_patrol(task: dict):
+async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
     """执行单个巡检任务（通过 agent graph）"""
     start_time = time.time()
     task_id = task["id"] if isinstance(task, dict) else task[0]
@@ -288,6 +288,7 @@ async def execute_patrol(task: dict):
             report_json_str = None
 
         duration = time.time() - start_time
+        report_json_str = json.dumps({"status": status, "report": report[:5000]}, ensure_ascii=False)
 
         # 保存结果
         db = await get_db()
@@ -296,9 +297,9 @@ async def execute_patrol(task: dict):
             (datetime.now().isoformat(), status, report[:5000], task_id),
         )
         await db.execute(
-            "INSERT INTO agent_patrol_history (task_id, status, report, report_json, duration_seconds) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (task_id, status, report[:5000], report_json_str, duration),
+            "INSERT INTO agent_patrol_history (task_id, status, report, report_json, duration_seconds, triggered_by) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (task_id, status, report[:5000], report_json_str, duration, triggered_by),
         )
         await db.commit()
 
@@ -349,8 +350,9 @@ async def execute_patrol(task: dict):
             (datetime.now().isoformat(), "error", task_id),
         )
         await db.execute(
-            "INSERT INTO agent_patrol_history (task_id, status, report, duration_seconds) VALUES (?, ?, ?, ?)",
-            (task_id, "error", str(e)[:2000], duration),
+            "INSERT INTO agent_patrol_history (task_id, status, report, report_json, duration_seconds, triggered_by) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (task_id, "error", str(e)[:2000], None, duration, triggered_by),
         )
         await db.commit()
         return "error", str(e)

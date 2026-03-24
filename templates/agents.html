@@ -14,7 +14,7 @@
 .agent-tab:hover { color: var(--text); }
 .agent-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 /* 三栏统一布局: 侧边栏 | 聊天 | 右栏 */
-.agent-main { display: grid; grid-template-columns: 180px 1fr 1fr; gap: 8px; flex: 1; overflow: hidden; min-height: 0; }
+.agent-main { display: grid; grid-template-columns: 180px 1fr{% if user.role == 'admin' %} 1fr{% endif %}; gap: 8px; flex: 1; overflow: hidden; min-height: 0; }
 .right-panel { display: none; overflow: hidden; min-height: 0; }
 .right-panel.active { display: flex; flex-direction: column; }
 .chat-sidebar { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
@@ -237,8 +237,10 @@
   <!-- 标签页 -->
   <div class="agent-tabs">
     <div class="agent-tab" :class="tab==='chat'?'active':''" @click="switchTab('chat')">AI 对话</div>
+    {% if user.role == 'admin' %}
     <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="switchTab('patrol')">巡检</div>
     <div class="agent-tab" :class="tab==='admin'?'active':''" @click="switchTab('admin')">管理</div>
+    {% endif %}
   </div>
 
   <!-- 三栏: 侧边栏 | 聊天(始终) | 右栏(按标签切换) -->
@@ -259,13 +261,18 @@
     <div class="chat-main">
       <div class="chat-header">
         <span style="font-weight:600;font-size:14px" x-text="currentTitle||'新对话'"></span>
+        {% if user.role != 'admin' %}
+        <span class="badge badge-warning" style="font-size:10px;margin-left:8px">只读模式</span>
+        {% endif %}
         <div style="display:flex;gap:8px;align-items:center">
+          {% if user.role == 'admin' %}
           <button class="btn btn-xs" :style="showTerminal?'background:var(--accent-dim);color:var(--accent);border-color:var(--accent)':''"
                   @click="showTerminal=!showTerminal; if(showTerminal) initTerminal()">&#9638; 终端</button>
           <div class="safety-toggle">
             <button :class="safetyMode==='supervised'?'active':''" @click="setSafetyMode('supervised')">监督</button>
             <button :class="safetyMode==='autonomous'?'active':''" @click="setSafetyMode('autonomous')">自主</button>
           </div>
+          {% endif %}
         </div>
       </div>
       <div class="chat-messages" id="chat-messages">
@@ -320,6 +327,7 @@
 
     <!-- 右栏: 按标签切换 -->
 
+    {% if user.role == 'admin' %}
     <!-- 终端 (showTerminal 按钮控制，覆盖其他右栏) -->
     <div class="right-panel" :class="showTerminal?'active':''">
       <div class="terminal-container" id="xterm-container" style="flex:1"></div>
@@ -772,6 +780,7 @@
     </div>
 
   </div><!-- /admin right-panel -->
+    {% endif %}{# /admin-only panels #}
 
   </div><!-- /agent-main -->
 

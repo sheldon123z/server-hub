@@ -11,7 +11,7 @@ from sse_starlette.sse import EventSourceResponse
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.types import Command
 
-from auth.dependencies import require_role
+from auth.dependencies import get_current_user, require_role
 from database import get_db
 from modules.agents.schemas import ChatRequest, ApprovalAction, PatrolUpdate
 
@@ -23,9 +23,12 @@ router = APIRouter(prefix="/api/agents", tags=["AI Agent"])
 # ─── 对话 ───
 
 @router.post("/chat")
-async def chat(request: Request, body: ChatRequest, user=Depends(require_role("admin"))):
+async def chat(request: Request, body: ChatRequest, user=Depends(get_current_user)):
     """发送消息并通过 SSE 流式返回 Deep Agent 响应"""
     conversation_id = body.conversation_id or str(uuid.uuid4())
+    user_role = user["role"]
+    # 非管理员强制 supervised 模式
+    safety_mode = body.safety_mode if user_role == "admin" else "supervised"
     db = await get_db()
 
     # 创建或更新对话记录
@@ -36,14 +39,14 @@ async def chat(request: Request, body: ChatRequest, user=Depends(require_role("a
         title = body.message[:30] + ("..." if len(body.message) > 30 else "")
         await db.execute(
             "INSERT INTO agent_conversations (id, title, username, safety_mode) VALUES (?, ?, ?, ?)",
-            (conversation_id, title, user["username"], body.safety_mode),
+            (conversation_id, title, user["username"], safety_mode),
         )
         await db.commit()
 
     async def event_generator():
         try:
             from modules.agents.deep_agent import build_agent
-            agent = await build_agent(safety_mode=body.safety_mode)
+            agent = await build_agent(safety_mode=safety_mode, user_role=user_role)
             config = {"configurable": {"thread_id": conversation_id}}
 
             input_state = {
@@ -263,12 +266,19 @@ async def resolve_approval(approval_id: str, body: ApprovalAction, user=Depends(
 # ─── 对话历史 ───
 
 @router.get("/conversations")
-async def list_conversations(user=Depends(require_role("admin"))):
+async def list_conversations(user=Depends(get_current_user)):
     db = await get_db()
-    cursor = await db.execute(
-        "SELECT id, title, username, safety_mode, created_at, updated_at, message_count "
-        "FROM agent_conversations WHERE is_archived = 0 ORDER BY updated_at DESC LIMIT 50"
-    )
+    if user["role"] == "admin":
+        cursor = await db.execute(
+            "SELECT id, title, username, safety_mode, created_at, updated_at, message_count "
+            "FROM agent_conversations WHERE is_archived = 0 ORDER BY updated_at DESC LIMIT 50"
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT id, title, username, safety_mode, created_at, updated_at, message_count "
+            "FROM agent_conversations WHERE is_archived = 0 AND username = ? ORDER BY updated_at DESC LIMIT 50",
+            (user["username"],),
+        )
     rows = await cursor.fetchall()
     return [
         {"id": r[0], "title": r[1], "username": r[2], "safety_mode": r[3],
@@ -278,7 +288,16 @@ async def list_conversations(user=Depends(require_role("admin"))):
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation(conversation_id: str, user=Depends(require_role("admin"))):
+async def get_conversation(conversation_id: str, user=Depends(get_current_user)):
+    # 非管理员验证对话归属
+    if user["role"] != "admin":
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
+        )
+        row = await cursor.fetchone()
+        if not row or row[0] != user["username"]:
+            raise HTTPException(403, "无权查看此对话")
     try:
         from modules.agents.deep_agent import build_agent
         agent = await build_agent()
@@ -305,8 +324,16 @@ async def get_conversation(conversation_id: str, user=Depends(require_role("admi
 
 
 @router.delete("/conversations/{conversation_id}")
-async def archive_conversation(conversation_id: str, user=Depends(require_role("admin"))):
+async def archive_conversation(conversation_id: str, user=Depends(get_current_user)):
     db = await get_db()
+    # 非管理员验证对话归属
+    if user["role"] != "admin":
+        cursor = await db.execute(
+            "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
+        )
+        row = await cursor.fetchone()
+        if not row or row[0] != user["username"]:
+            raise HTTPException(403, "无权操作此对话")
     await db.execute("UPDATE agent_conversations SET is_archived = 1 WHERE id = ?", (conversation_id,))
     await db.commit()
     return {"ok": True}
@@ -364,7 +391,7 @@ async def trigger_patrol(patrol_id: str, user=Depends(require_role("admin"))):
 
     task_dict = {"id": row[0], "display_name": row[1], "description": row[2], "prompt": row[5]}
     from modules.agents.patrol import execute_patrol
-    asyncio.create_task(execute_patrol(task_dict))
+    asyncio.create_task(execute_patrol(task_dict, triggered_by=user["username"]))
     return {"ok": True, "message": f"巡检 {row[1]} 已触发"}
 
 
@@ -995,7 +1022,26 @@ async def update_memory(request: Request, user=Depends(require_role("admin"))):
 
 @router.websocket("/ws/terminal")
 async def terminal_ws(websocket: WebSocket):
-    """WebSocket 驱动的 PTY 终端"""
+    """WebSocket 驱动的 PTY 终端（仅管理员）"""
+    # 手动验证 JWT（WebSocket 不支持 Depends）
+    token = websocket.cookies.get("access_token")
+    if not token:
+        await websocket.close(code=4001, reason="未认证")
+        return
+    try:
+        from auth.jwt_handler import verify_token
+        from auth.user_store import get_user_by_name
+        payload = verify_token(token)
+        if not payload or payload.get("type") != "access":
+            await websocket.close(code=4001, reason="认证失败")
+            return
+        user = await get_user_by_name(payload["sub"])
+        if not user or user.get("disabled") or user["role"] != "admin":
+            await websocket.close(code=4003, reason="权限不足")
+            return
+    except Exception:
+        await websocket.close(code=4001, reason="认证失败")
+        return
     await websocket.accept()
 
     from modules.agents.terminal import WebTerminal

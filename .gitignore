@@ -34,5 +34,8 @@ Thumbs.db
 # Deprecated files
 modules/agents/graph.py
 
+# Worktrees
+.worktrees/
+
 # Node (if any)
 node_modules/

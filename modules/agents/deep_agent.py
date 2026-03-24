@@ -110,24 +110,31 @@ async def _get_store() -> AsyncSqliteStore:
     return _store
 
 
-async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
+async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", user_role: str = "admin"):
     """构建 Deep Agent 实例
 
     Args:
         safety_mode: "supervised"(危险操作需审批) 或 "autonomous"(全自动)
         purpose: "chat"(对话) 或 "patrol"(巡检, 用便宜模型)
+        user_role: "admin"(完全控制) 或 "user"(只读)
     """
-    cache_key = f"{safety_mode}:{purpose}"
+    cache_key = f"{safety_mode}:{purpose}:{user_role}"
     if cache_key in _agent_cache:
         return _agent_cache[cache_key]
 
     model = get_chat_model(purpose)
-    tools = get_server_tools()
-    interrupt_config = build_interrupt_config(safety_mode)
+    tools = get_server_tools(user_role)
+    interrupt_config = build_interrupt_config(safety_mode, user_role)
     backend = _create_backend()
-    subagents = load_subagents()
     extra_middleware = _build_extra_middleware(purpose)
-    store = await _get_store()
+
+    # 普通用户：不提供子智能体和结构化存储
+    if user_role != "admin":
+        subagents = []
+        store = None
+    else:
+        subagents = load_subagents()
+        store = await _get_store()
 
     # Checkpoint — 短期记忆（per-conversation state 持久化）
     checkpoint_path = settings.agent_checkpoint_db
@@ -140,7 +147,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
     memory_file = str(BASE_DIR / "AGENTS.md")
     memory_paths = [memory_file] if Path(memory_file).exists() else []
 
-    system_prompt = get_system_prompt(safety_mode)
+    system_prompt = get_system_prompt(safety_mode, user_role)
 
     agent = create_deep_agent(
         model=model,
@@ -158,8 +165,8 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
     mw_names = [type(m).__name__ for m in extra_middleware]
     _agent_cache[cache_key] = agent
     logger.info(
-        f"Deep Agent 已创建: mode={safety_mode}, purpose={purpose}, "
-        f"middleware={mw_names}, memory={'AGENTS.md' if memory_paths else 'None'}, store=AsyncSqliteStore"
+        f"Deep Agent 已创建: mode={safety_mode}, purpose={purpose}, role={user_role}, "
+        f"middleware={mw_names}, memory={'AGENTS.md' if memory_paths else 'None'}, store={'AsyncSqliteStore' if store else 'None'}"
     )
     return agent
 

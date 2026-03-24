@@ -55,12 +55,21 @@ TOOL_RISK_MAP = {
 }
 
 
-def build_interrupt_config(safety_mode: str) -> dict:
-    """根据安全模式生成 Deep Agents 的 interrupt_on 配置
+def build_interrupt_config(safety_mode: str, user_role: str = "admin") -> dict:
+    """根据安全模式和用户角色生成 Deep Agents 的 interrupt_on 配置
 
     Args:
         safety_mode: "supervised"(危险操作需审批) 或 "autonomous"(全自动)
+        user_role: "admin" 或 "user"
     """
+    # 普通用户：拦截所有非 SAFE 工具
+    if user_role != "admin":
+        return {
+            name: True
+            for name, risk in TOOL_RISK_MAP.items()
+            if risk != RiskLevel.SAFE
+        }
+
     if safety_mode == "autonomous":
         return {}
 

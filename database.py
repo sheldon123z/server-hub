@@ -258,7 +258,7 @@ async def init_tables(db: aiosqlite.Connection):
             except Exception:
                 pass
 
-    # 兼容旧版：为 agent_patrol_history 表添加 report_json 列（如果不存在）
+    # 兼容旧版：为 agent_patrol_history 表添加 report_json 和 triggered_by 列
     try:
         await db.execute("SELECT report_json FROM agent_patrol_history LIMIT 0")
     except Exception:
@@ -266,5 +266,8 @@ async def init_tables(db: aiosqlite.Connection):
             await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN report_json TEXT")
         except Exception:
             pass
-
+    try:
+        await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN triggered_by TEXT DEFAULT 'scheduler'")
+    except Exception:
+        pass
     await db.commit()
