@@ -48,11 +48,39 @@
 .conv-title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conv-time { color: var(--text3); font-size: 10px; }
 
-.patrol-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
-.patrol-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-.patrol-ok { background: var(--green); }
-.patrol-warning { background: var(--yellow); }
-.patrol-critical { background: var(--red); }
+/* 巡检面板 — 左侧列表 + 右侧详情 */
+.patrol-panel { display: grid; grid-template-columns: 200px 1fr; height: 100%; overflow: hidden; }
+.patrol-list { border-right: 1px solid var(--border); overflow-y: auto; padding: 6px; }
+.patrol-list-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; margin-bottom: 2px; }
+.patrol-list-item:hover { background: rgba(56,189,248,0.04); }
+.patrol-list-item.active { background: var(--accent-dim); }
+.patrol-list-item .p-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.patrol-list-item .p-info { flex: 1; min-width: 0; }
+.patrol-list-item .p-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.patrol-list-item .p-meta { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.patrol-list-item.active .p-name { color: var(--accent); }
+.patrol-detail { display: flex; flex-direction: column; overflow: hidden; }
+.patrol-detail-header { padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.patrol-detail-header .p-title-row { display: flex; align-items: center; justify-content: space-between; }
+.patrol-detail-header .p-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.patrol-detail-header .p-desc { font-size: 12px; color: var(--text2); margin-top: 6px; }
+.patrol-status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+.patrol-status-badge.s-ok { background: rgba(34,197,94,0.12); color: var(--green); }
+.patrol-status-badge.s-warning { background: rgba(251,191,36,0.12); color: var(--yellow); }
+.patrol-status-badge.s-critical { background: rgba(239,68,68,0.12); color: var(--red); }
+.patrol-status-badge.s-none { background: rgba(148,163,184,0.12); color: var(--text3); }
+.patrol-status-badge .s-dot { width: 6px; height: 6px; border-radius: 50%; }
+.s-ok .s-dot { background: var(--green); }
+.s-warning .s-dot { background: var(--yellow); }
+.s-critical .s-dot { background: var(--red); }
+.s-none .s-dot { background: var(--text3); }
+.patrol-report { flex: 1; overflow-y: auto; padding: 18px; font-size: 13px; line-height: 1.7; }
+.patrol-report h2, .patrol-report h3, .patrol-report h4 { margin-top: 12px; margin-bottom: 6px; }
+.patrol-report pre { background: rgba(0,0,0,0.25); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+.patrol-report ul, .patrol-report ol { padding-left: 18px; margin: 4px 0; }
+.patrol-report li { margin: 2px 0; }
+.patrol-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text3); }
+.patrol-empty svg { opacity: 0.3; }
 
 .typing-indicator { align-self: flex-start; color: var(--text3); font-size: 12px; padding: 4px 8px; }
 .typing-indicator::after { content: '...'; animation: dots 1.5s infinite; }
@@ -218,59 +246,67 @@
       <div class="terminal-container" id="xterm-container" style="flex:1"></div>
     </div>
 
-    <!-- 巡检 -->
+    <!-- 巡检: 左列表 + 右详情 -->
     <div class="right-panel" :class="tab==='patrol'?'active':''" style="padding:0;overflow:hidden">
-      <div style="display:flex;flex-direction:column;height:100%">
-        <!-- 巡检任务 Tab 栏 -->
-        <div style="display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto">
-          <template x-for="(p,i) in patrols" :key="'ptab-'+p.id">
-            <div style="padding:8px 14px;cursor:pointer;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent;transition:all 0.15s"
-                 :style="activePatrol===p.id ? 'color:var(--accent);border-bottom-color:var(--accent)' : 'color:var(--text2)'"
-                 @click="activePatrol=p.id">
-              <span class="patrol-status-dot" :class="'patrol-'+(p.last_status||'ok')"></span>
-              <span x-text="p.display_name"></span>
+      <div class="patrol-panel">
+
+        <!-- 左: 任务列表 -->
+        <div class="patrol-list">
+          <template x-for="p in patrols" :key="'pli-'+p.id">
+            <div class="patrol-list-item" :class="activePatrol===p.id?'active':''" @click="activePatrol=p.id">
+              <div class="p-dot" :class="'patrol-'+(p.last_status||'ok')" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
+              <div class="p-info">
+                <div class="p-name" x-text="p.display_name"></div>
+                <div class="p-meta" x-text="p.enabled ? p.interval_minutes+'min' : '已禁用'"></div>
+              </div>
             </div>
           </template>
         </div>
 
-        <!-- 选中任务的详情 -->
-        <template x-for="p in patrols" :key="'pdetail-'+p.id">
-          <div x-show="activePatrol===p.id" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
+        <!-- 右: 选中任务详情 -->
+        <template x-for="p in patrols" :key="'pd-'+p.id">
+          <div class="patrol-detail" x-show="activePatrol===p.id">
 
-            <!-- 状态栏 -->
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span class="patrol-status-dot" style="width:10px;height:10px" :class="'patrol-'+(p.last_status||'ok')"></span>
-                <strong style="font-size:15px" x-text="p.display_name"></strong>
-                <span class="badge" :class="p.last_status==='ok'?'badge-ok':p.last_status==='warning'?'badge-warn':'badge-crit'" x-text="p.last_status||'未运行'"></span>
+            <!-- 头部: 状态 + 操作 -->
+            <div class="patrol-detail-header">
+              <div class="p-title-row">
+                <div class="p-title">
+                  <span x-text="p.display_name"></span>
+                  <span class="patrol-status-badge"
+                        :class="'s-'+(p.last_status||'none')">
+                    <span class="s-dot"></span>
+                    <span x-text="p.last_status==='ok'?'正常':p.last_status==='warning'?'告警':p.last_status==='critical'?'严重':'未运行'"></span>
+                  </span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
+                  <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+                </div>
               </div>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span class="text-xs text-muted" x-text="'间隔 '+p.interval_minutes+' 分钟'"></span>
-                <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
-                <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+              <div class="p-desc">
+                <span x-text="p.description"></span>
+                <span style="margin-left:12px;color:var(--text3)" x-text="'间隔 '+p.interval_minutes+' 分钟'"></span>
+                <span style="margin-left:12px;color:var(--text3)" x-show="p.last_run" x-text="'上次: '+p.last_run"></span>
               </div>
             </div>
 
-            <!-- 描述 -->
-            <div class="text-xs text-muted" x-text="p.description"></div>
+            <!-- 报告区域 -->
+            <div class="patrol-report" x-show="p.last_report" x-html="renderMd(p.last_report||'')"></div>
 
-            <!-- 上次运行 -->
-            <div class="text-xs" x-show="p.last_run" style="color:var(--text3)">
-              上次运行: <span class="font-mono" x-text="p.last_run"></span>
-            </div>
-
-            <!-- 报告 (Markdown 渲染) -->
-            <div x-show="p.last_report" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;overflow-y:auto;font-size:13px;line-height:1.7"
-                 x-html="renderMd(p.last_report||'')">
-            </div>
-
-            <!-- 无报告占位 -->
-            <div x-show="!p.last_report" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px">
-              尚无巡检报告，点击「立即运行」执行巡检
+            <!-- 空状态 -->
+            <div class="patrol-empty" x-show="!p.last_report">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                <path d="M9 14l2 2 4-4"/>
+              </svg>
+              <span style="font-size:13px">尚无巡检报告</span>
+              <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">运行巡检</button>
             </div>
 
           </div>
         </template>
+
       </div>
     </div>
 
