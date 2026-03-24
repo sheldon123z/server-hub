@@ -285,11 +285,20 @@
                 </div>
               </div>
               <div class="p-desc" x-text="p.description"></div>
-              <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--text3)">
-                <span x-text="'间隔 '+p.interval_minutes+' 分钟'"></span>
+              <div style="display:flex;align-items:center;gap:14px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
+                <!-- 间隔编辑 -->
+                <label style="display:flex;align-items:center;gap:4px">
+                  间隔
+                  <input type="number" min="1" max="10080" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
+                         :value="p.interval_minutes"
+                         @change="updatePatrolInterval(p.id, $event.target.value)">
+                  分钟
+                </label>
                 <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
-                <span x-show="p.enabled" x-text="nextRunText(p)"></span>
+                <span x-show="p.enabled" style="color:var(--accent)" x-text="nextRunText(p)"></span>
                 <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
+                <!-- 对应 Cron 脚本标注 -->
+                <span x-show="patrolCronMap[p.id]" style="color:var(--text3);font-style:italic" x-text="'Cron: '+( patrolCronMap[p.id]||'')"></span>
               </div>
             </div>
 
@@ -454,6 +463,16 @@ function agentApp() {
       await this.loadConversations();
       await this.loadPatrols();
       setInterval(() => this.loadPatrols(), 30000);
+    },
+
+    // AI巡检 vs Cron脚本 对照（功能相似但实现不同：AI用LLM分析，Cron是Bash脚本）
+    patrolCronMap: {
+      'memory_check': 'memory-emergency.sh',
+      'docker_health': 'docker-watchdog.sh',
+      'gpu_monitor': 'gpu-monitor.sh',
+      'service_status': '(无对应Cron)',
+      'disk_usage': 'server-health-check.sh',
+      'daily_report': 'send-telegram-report.sh --morning-report',
     },
 
     // ─── 巡检定时 ───
@@ -658,6 +677,15 @@ function agentApp() {
     },
     async togglePatrol(id, enabled) {
       try { await fetch(`/api/agents/patrols/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})}); this.loadPatrols(); } catch(e) {}
+    },
+    async updatePatrolInterval(id, minutes) {
+      const val = parseInt(minutes);
+      if (!val || val < 1) { showToast('间隔至少 1 分钟','err'); return; }
+      try {
+        await fetch(`/api/agents/patrols/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({interval_minutes:val})});
+        showToast('间隔已更新为 '+val+' 分钟','ok');
+        this.loadPatrols();
+      } catch(e) { showToast('更新失败','err'); }
     },
 
     // ─── 管理面板 ───
