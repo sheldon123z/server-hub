@@ -12,8 +12,8 @@
 .agent-tab:hover { color: var(--text); }
 .agent-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .agent-panel { flex: 1; overflow: hidden; display: none; min-height: 0; }
-.agent-panel.active { display: flex; }
-.agent-panel.active.chat-layout { display: grid; }
+.agent-panel.active { display: flex; flex-direction: column; width: 100%; }
+.agent-panel.active.chat-layout { display: grid; flex-direction: unset; }
 
 /* 对话布局 */
 .chat-layout { display: grid; grid-template-columns: 200px 1fr; gap: 10px; height: 100%; overflow: hidden; }
@@ -214,12 +214,12 @@
   </div>
 
   <!-- ═══ 终端 ═══ -->
-  <div class="agent-panel" :class="tab==='terminal'?'active':''" style="flex-direction:column">
+  <div class="agent-panel" :class="tab==='terminal'?'active':''">
     <div class="terminal-container" id="xterm-container"></div>
   </div>
 
   <!-- ═══ 巡检 ═══ -->
-  <div class="agent-panel" :class="tab==='patrol'?'active':''" style="flex-direction:column;overflow-y:auto;padding-right:4px">
+  <div class="agent-panel" :class="tab==='patrol'?'active':''" style="overflow-y:auto">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
       <template x-for="p in patrols" :key="p.id">
         <div class="patrol-card">
@@ -246,7 +246,7 @@
   </div>
 
   <!-- ═══ 管理 ═══ -->
-  <div class="agent-panel" :class="tab==='admin'?'active':''" style="flex-direction:column;overflow-y:auto;padding-right:4px;gap:0">
+  <div class="agent-panel" :class="tab==='admin'?'active':''" style="overflow-y:auto">
 
     <!-- 系统提示词 -->
     <div class="admin-section">
