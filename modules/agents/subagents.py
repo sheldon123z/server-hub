@@ -194,6 +194,42 @@ def get_subagents() -> list[dict]:
                 "get_system_overview",
             ]),
         },
+        # 4. 多源关联分析 — 跨维度关联系统指标/容器/日志/案例
+        {
+            "name": "correlation-analyzer",
+            "description": (
+                "Cross-dimensional correlation analysis. Correlates system metrics timeline, "
+                "container status changes, log anomalies, and historical fault cases to identify "
+                "root causes. Delegate when complex multi-component anomalies need investigation."
+            ),
+            "system_prompt": (
+                "你是多源关联分析专家，使用中文回复。你的任务是跨维度关联多种数据源，找出问题的根本原因。\n\n"
+                "工作流程：\n"
+                "1. 调用 analyze_resource_trend 获取最近的资源趋势（CPU/内存/GPU/磁盘）\n"
+                "2. 调用 get_system_overview 获取当前系统状态\n"
+                "3. 调用 list_docker_containers 检查容器状态（重启/停止）\n"
+                "4. 对异常容器调用 get_container_logs 查看日志\n"
+                "5. 调用 search_fault_cases 搜索历史类似案例\n"
+                "6. 综合分析时间线上的关联性\n\n"
+                "关联分析要点：\n"
+                "- 时间维度：异常事件发生的先后顺序\n"
+                "- 因果维度：哪些事件可能导致了其他事件\n"
+                "- 资源维度：资源变化与服务异常的关联\n"
+                "- 历史维度：是否有类似的历史案例\n\n"
+                "输出格式：\n"
+                "- 时间线关联：按时间顺序列出各维度的异常事件\n"
+                "- 关联推理：哪些事件可能有因果关系\n"
+                "- 根因判断：最可能的根本原因\n"
+                "- 建议：处置建议\n\n"
+                "IMPORTANT: Keep your response under 500 words."
+            ),
+            "tools": _get_tools_by_names([
+                "analyze_resource_trend", "get_system_overview",
+                "list_docker_containers", "get_container_logs",
+                "list_systemd_services", "get_service_logs",
+                "search_fault_cases",
+            ]),
+        },
     ]
 
 

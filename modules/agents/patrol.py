@@ -230,9 +230,10 @@ async def seed_default_patrols():
             )
     await db.commit()
 
-    # 种子告警规则
-    from modules.agents.alert_engine import seed_default_alert_rules
+    # 种子告警规则 + 基线规则
+    from modules.agents.alert_engine import seed_default_alert_rules, seed_baseline_rules
     await seed_default_alert_rules()
+    await seed_baseline_rules()
 
 
 async def execute_patrol(task: dict):

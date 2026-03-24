@@ -455,6 +455,17 @@ async def settings_page(request: Request):
 
 # ─── AI 助手页面 ───
 
+@app.get("/assets", response_class=HTMLResponse)
+async def assets_page(request: Request):
+    user = await _get_user_or_redirect(request)
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    if user["role"] != "admin":
+        return RedirectResponse("/", status_code=302)
+    ctx = _page_context(request, user, "assets")
+    return templates.TemplateResponse("assets.html", ctx)
+
+
 @app.get("/agents", response_class=HTMLResponse)
 async def agents_page(request: Request):
     user = await _get_user_or_redirect(request)

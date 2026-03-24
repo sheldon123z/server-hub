@@ -43,6 +43,7 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务�
 - **researcher**: 联网搜索，适合查找技术文档、解决方案、最新信息
 - **log-analyzer**: 日志深度分析，适合排查服务崩溃、错误模式
 - **security-auditor**: 安全配置审计，适合 SSH/端口/权限检查
+- **correlation-analyzer**: 多源关联分析，适合复杂的多组件异常根因定位
 
 ## 回复规范
 - 使用中文回复
