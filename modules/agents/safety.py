@@ -49,6 +49,25 @@ TOOL_RISK_MAP = {
     "grep": RiskLevel.SAFE,
     "write_todos": RiskLevel.SAFE,
     "task": RiskLevel.SAFE,
+    # 服务增强工具
+    "service_enable_disable_tool": RiskLevel.MODERATE,
+    "get_service_dependencies_tool": RiskLevel.SAFE,
+    # Docker 增强工具
+    "list_docker_networks": RiskLevel.SAFE,
+    "docker_container_exec": RiskLevel.MODERATE,
+    "docker_prune": RiskLevel.DANGER,
+    # 用户审计与管理工具
+    "get_user_login_history_tool": RiskLevel.SAFE,
+    "get_active_sessions_tool": RiskLevel.SAFE,
+    "manage_linux_user": RiskLevel.DANGER,
+    "kill_single_process_tool": RiskLevel.MODERATE,
+    # 定时任务工具
+    "list_cron_jobs": RiskLevel.SAFE,
+    "validate_cron_expr": RiskLevel.SAFE,
+    "create_cron_job": RiskLevel.MODERATE,
+    "modify_cron_schedule": RiskLevel.MODERATE,
+    "toggle_cron_job_tool": RiskLevel.MODERATE,
+    "delete_cron_job_tool": RiskLevel.DANGER,
     # SubAgent 工具
     "web_search": RiskLevel.SAFE,
     "think": RiskLevel.SAFE,
@@ -78,6 +97,16 @@ def build_interrupt_config(safety_mode: str, user_role: str = "admin") -> dict:
         "kill_user_processes": True,
         "auto_fix_compliance": True,
         "execute_ops_script": True,
+        "delete_cron_job_tool": True,
+        "manage_linux_user": True,
+        # 单进程终止 — 审批
+        "kill_single_process_tool": {"allowed_decisions": ["approve", "reject"]},
+        "docker_prune": True,
+        "service_enable_disable_tool": {"allowed_decisions": ["approve", "reject"]},
+        # Docker exec — 审批
+        "docker_container_exec": {"allowed_decisions": ["approve", "reject"]},
+        # 定时任务创建 — 审批
+        "create_cron_job": {"allowed_decisions": ["approve", "reject"]},
         # Docker/服务管理 — stop/down 操作需审批
         "docker_container_action": {"allowed_decisions": ["approve", "reject"]},
         "docker_compose_action": {"allowed_decisions": ["approve", "reject"]},
@@ -124,6 +153,7 @@ SHELL_BLACKLIST = [
     r"\.telegram_config\b",
     r"\bconfig\.yaml\b",
     r"\blobe\.env\b",
+    r"\bcrontab\s+-r\b",
 ]
 
 _SHELL_PATTERNS = [re.compile(p, re.IGNORECASE) for p in SHELL_BLACKLIST]

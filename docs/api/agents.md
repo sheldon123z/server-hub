@@ -1131,7 +1131,7 @@ data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000"}
 
 ### GET /api/agents/admin/memory
 
-获取 `AGENTS.md` 长期记忆文件内容。
+获取 `data/agent-memory.md` 运行时长期记忆文件内容。
 
 **权限**: admin
 
@@ -1140,7 +1140,7 @@ data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000"}
 ```json
 {
   "content": "# 服务器信息\n\n主机名: system-NF5468M6\n...",
-  "path": "/home/zhengxiaodong/scripts/server-hub/AGENTS.md"
+  "path": "/home/zhengxiaodong/scripts/server-hub/data/agent-memory.md"
 }
 ```
 
@@ -1148,7 +1148,7 @@ data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000"}
 
 ### PUT /api/agents/admin/memory
 
-保存修改后的 `AGENTS.md` 长期记忆内容。
+保存修改后的 `data/agent-memory.md` 长期记忆内容。
 
 **权限**: admin
 

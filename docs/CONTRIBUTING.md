@@ -451,7 +451,7 @@ refactor: 将 LLM 初始化逻辑移至独立函数
 - 新增/删除关键配置项
 - 开发约定或原则发生变化
 
-注意：`AGENTS.md` 是 AI 运维助手的长期记忆（由框架 MemoryMiddleware 加载），不要混淆两者。
+注意：运行时长期记忆位于 `data/agent-memory.md`（由框架 MemoryMiddleware 加载），不要和仓库根目录 `AGENTS.md` 混淆。
 
 ---
 

@@ -18,7 +18,7 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 
 应用启动时由 `database.py:init_tables()` 自动创建所有表（`CREATE TABLE IF NOT EXISTS`）。
 
-共 15 个表（含 1 个 FTS5 虚拟表）。
+共 16 个表（含 1 个 FTS5 虚拟表）。
 
 ---
 

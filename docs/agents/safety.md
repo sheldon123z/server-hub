@@ -44,6 +44,8 @@ interrupt_on 配置匹配
 | `auto_fix_compliance` | 修改系统配置文件 |
 | `execute_ops_script` | 执行任意运维脚本 |
 | `delete_cron_job_tool` | 删除定时任务，不可恢复 |
+| `manage_linux_user` | 创建/删除/修改系统用户，影响系统级别 |
+| `docker_prune` | 清理 Docker 资源，不可恢复 |
 
 ### 基于决定审批（`allowed_decisions: [approve, reject]`）
 
@@ -53,6 +55,9 @@ interrupt_on 配置匹配
 | `docker_container_action` | 始终审批 |
 | `docker_compose_action` | 始终审批 |
 | `service_control` | 始终审批 |
+| `docker_container_exec` | 始终审批（在容器内执行命令）|
+| `kill_single_process_tool` | 始终审批（终止单个进程）|
+| `service_enable_disable_tool` | 始终审批（启用/禁用服务自启动）|
 
 ### 基于模式匹配审批
 
@@ -76,7 +81,7 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 
 ---
 
-## Shell 黑名单（27 条规则）
+## Shell 黑名单（24 条规则）
 
 即使在 `autonomous` 模式下，以下命令也会被 `SafeLocalShellBackend` 拦截。
 
@@ -117,11 +122,11 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 
 | 风险级别 | 工具数量 | 前端显示颜色 |
 |---------|---------|------------|
-| safe | 20 | 无标签 |
-| moderate | 9 | 黄色标签 |
-| danger | 4 | 红色标签 |
+| safe | 29 | 无标签 |
+| moderate | 12 | 黄色标签 |
+| danger | 7 | 红色标签 |
 
-### safe 工具列表
+### safe 工具列表（29 个）
 
 | 工具 | 类型 |
 |------|------|
@@ -140,6 +145,12 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 | save_fault_case | 自定义 |
 | get_asset_inventory | 自定义 |
 | get_asset_topology | 自定义 |
+| get_service_dependencies_tool | 服务增强 |
+| list_docker_networks | Docker 增强 |
+| get_user_login_history_tool | 用户审计 |
+| get_active_sessions_tool | 用户审计 |
+| list_cron_jobs | 定时任务 |
+| validate_cron_expr | 定时任务 |
 | read_file | 框架内置 |
 | ls | 框架内置 |
 | glob | 框架内置 |
@@ -148,10 +159,8 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 | task | 框架内置 |
 | web_search | SubAgent 专属 |
 | think | SubAgent 专属 |
-| list_cron_jobs | 定时任务 |
-| validate_cron_expr | 定时任务 |
 
-### moderate 工具列表
+### moderate 工具列表（12 个）
 
 | 工具 | 类型 |
 |------|------|
@@ -159,18 +168,23 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 | docker_container_action | 自定义 |
 | docker_compose_action | 自定义 |
 | service_control | 自定义 |
-| write_file | 框架内置 |
-| edit_file | 框架内置 |
+| service_enable_disable_tool | 服务增强 |
+| docker_container_exec | Docker 增强 |
+| kill_single_process_tool | 用户管理 |
 | create_cron_job | 定时任务 |
 | modify_cron_schedule | 定时任务 |
 | toggle_cron_job_tool | 定时任务 |
+| write_file | 框架内置 |
+| edit_file | 框架内置 |
 
-### danger 工具列表
+### danger 工具列表（7 个）
 
 | 工具 | 类型 |
 |------|------|
 | auto_fix_compliance | 自定义 |
 | execute_ops_script | 自定义 |
 | kill_user_processes | 自定义 |
-| execute | 框架内置 |
+| docker_prune | Docker 增强 |
+| manage_linux_user | 用户管理 |
 | delete_cron_job_tool | 定时任务 |
+| execute | 框架内置 |

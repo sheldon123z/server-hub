@@ -73,6 +73,82 @@ base.html
     └── login.html         （登录页，不继承 base）
 ```
 
+### 页面功能详述
+
+#### cron.html — 定时任务
+
+Alpine.js 组件 `cronManager()`，三标签页设计：
+
+| 标签 | 内容 | 权限 |
+|------|------|------|
+| 用户任务 | zhengxiaodong 的 crontab 列表 | user（只读）/ admin（编辑）|
+| Root 任务 | root 的 crontab 列表 | admin |
+| 执行历史 | 最近 24 小时 cron 执行记录（从 journal 获取），支持命令关键词过滤 | admin |
+
+**功能**：
+- **启禁 Toggle**：管理员可通过滑块开关启用/禁用单个 cron 任务（注释/取消注释方式）
+- **行内修改表达式**：点击 Cron 表达式列可编辑，修改后出现"保存"按钮；旁边有"快选"下拉（10 种常用预设：每5分钟、每小时、每天等）
+- **创建模态框**：选择目标用户（zhengxiaodong/root）、Cron 表达式（支持实时验证 + 中文描述 + 下次执行时间预览）、执行命令、备注；预设下拉快速填入
+- **删除**：逐条删除，带 `confirm` 确认
+- **备份**：按用户备份 crontab 到文件
+
+#### users.html — 用户管理
+
+Alpine.js 组件 `userManager()`，三标签页设计：
+
+| 标签 | 内容 | 权限 |
+|------|------|------|
+| 用户资源 | 活跃用户的内存/进程/GPU 使用量 + 配额对比 + Top 进程 | user（只读）/ admin（可终止进程）|
+| 配额管理 | user-quotas.conf 的可视化编辑（标识/内存上限/进程上限/备注）| user（只读）/ admin（编辑）|
+| 用户管理 | 所有 Linux 用户列表（UID/组/Shell/Home/最后登录）| admin |
+
+**功能**：
+- **状态徽章**：根据内存配额使用率显示"正常/警告/超限/空闲/无配额"
+- **单进程 Kill**：Top 进程列每行有"x"按钮，可终止指定 PID 的进程
+- **终止全部**：一键终止用户的所有进程（HTMX POST + confirm）
+- **登录历史弹窗**：模态框展示指定用户最近 30 条 `last` 命令输出
+- **创建用户模态框**：用户名、密码、附加组（逗号分隔）、Shell（bash/zsh/nologin）
+- **配额编辑**：行内 input 修改 + "保存全部"按钮批量提交；底部可添加新配额行；支持删除（default 除外）
+- **修改/删除用户**：非管理员用户可修改属性或删除（不删除 home 目录）
+
+#### docker.html — Docker 管理
+
+Alpine.js 组件 `dockerManager()`，五标签页设计：
+
+| 标签 | 内容 | 数据来源 |
+|------|------|---------|
+| 容器 | 容器列表（名称/镜像/状态/端口）+ 操作按钮 | 服务端 Jinja2 渲染 |
+| Compose 堆栈 | 堆栈列表（名称/路径/容器数/运行中）+ 重启/更新按钮 | 服务端 Jinja2 渲染 |
+| 镜像 | 镜像列表（仓库/标签/大小/创建时间）| 服务端 Jinja2 渲染 |
+| 网络 | Docker 网络列表（名称/ID/驱动/范围）| Alpine.js fetch 动态加载 |
+| 卷 | Docker 卷列表（名称/驱动/挂载点）| Alpine.js fetch 动态加载 |
+
+**功能**：
+- **容器操作**（admin）：启动、停止、重启（HTMX POST + confirm）
+- **日志弹窗**：模态框展示容器最近 200 行日志
+- **Exec 弹窗**：模态框输入命令，在容器内执行并显示输出
+- **清理全部**：顶部"清理全部"按钮，调用 `prune/all` 端点清理未使用的容器/镜像/网络/卷
+- **堆栈管理**（admin）：重启堆栈、拉取更新
+
+#### services.html — 服务管理
+
+Alpine.js 组件 `serviceManager()`，单表格展示所有受管 systemd 服务：
+
+| 列 | 内容 |
+|----|------|
+| 服务名 | 可点击，弹出依赖关系弹窗 |
+| 状态 | 运行中（绿色徽章）/ 已停止（灰色徽章）|
+| 自启动 | admin 为 Toggle 滑块开关（enable/disable），user 为文本标签 |
+| 操作 | admin 可见：日志、重载、重启、停止/启动 |
+
+**功能**：
+- **Enable/Disable Toggle**：管理员通过滑块开关控制服务的 systemd 自启动状态
+- **Reload 按钮**：重新加载服务配置（`systemctl reload`），运行中的服务可用
+- **依赖关系弹窗**：点击服务名弹出模态框，展示 `systemctl list-dependencies` 的输出
+- **日志 ERROR/WARN 高亮**：日志弹窗中，包含 `error`/`fatal`/`fail` 的行标红（`.log-line-error`），包含 `warn` 的行标黄（`.log-line-warn`）
+
+---
+
 ### base.html 提供的结构
 
 ```html

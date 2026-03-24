@@ -998,22 +998,22 @@ async def save_subagents(request: Request, user=Depends(require_role("admin"))):
 
 @router.get("/admin/memory")
 async def get_memory(user=Depends(require_role("admin"))):
-    """获取 AGENTS.md 记忆文件内容"""
-    from config import BASE_DIR
-    memory_path = BASE_DIR / "AGENTS.md"
+    """获取运行时长期记忆文件内容"""
+    from modules.agents.deep_agent import get_memory_path
+    memory_path = get_memory_path()
     content = memory_path.read_text(encoding="utf-8") if memory_path.exists() else ""
     return {"content": content, "path": str(memory_path)}
 
 
 @router.put("/admin/memory")
 async def update_memory(request: Request, user=Depends(require_role("admin"))):
-    """保存 AGENTS.md 记忆文件"""
-    from config import BASE_DIR
+    """保存运行时长期记忆文件"""
+    from modules.agents.deep_agent import get_memory_path, reset_agent_cache
     body = await request.json()
     content = body.get("content", "")
-    memory_path = BASE_DIR / "AGENTS.md"
+    memory_path = get_memory_path()
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
     memory_path.write_text(content, encoding="utf-8")
-    from modules.agents.deep_agent import reset_agent_cache
     reset_agent_cache()
     return {"ok": True, "message": "记忆已保存"}
 

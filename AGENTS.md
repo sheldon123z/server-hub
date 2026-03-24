@@ -1,39 +1,49 @@
-# ServerHub Agent 记忆
+# ServerHub Repository Guide
 
-此文件是 ServerHub AI 运维助手的长期记忆。Agent 会在对话中通过 edit_file 自动更新此文件。
+此文件服务于仓库协作中的编码助手。ServerHub 运行时主 Agent 的长期记忆位于 `data/agent-memory.md`，不要再把根目录 `AGENTS.md` 当作应用内存文件使用。
 
-## 服务器概况
+## 项目概述
 
-- 主机名: system-NF5468M6
-- 系统: Ubuntu 23.04 (Lunar Lobster), Kernel 6.8.0-60-generic
-- CPU: Intel Xeon Platinum 8380 @ 2.30GHz, 160 逻辑核心
-- 内存: 503GB
-- GPU: NVIDIA A800 80GB PCIe
-- 存储: / (3.5TB sdb2), /mnt/sda (16.4TB), /mnt/data1-3
+- ServerHub 是基于 FastAPI 的 Linux 服务器 Web 管理系统，面向实验室/团队运维场景
+- 技术栈: FastAPI + Jinja2 + HTMX + Alpine.js + SQLite(aiosqlite) + Deep Agents + xterm.js
+- Python 环境必须使用 `serverhub` conda 环境，版本为 Python 3.11
+- 启动时 `workers` 必须为 `1`，避免 SQLite 多进程写入问题和 agent checkpoint 不一致
 
-## 用户信息
+## 关键架构
 
-- zhengxiaodong: 管理员，实验室负责人
-- wangtao: 学生用户，属于 students 组
+- `modules/__init__.py` 会自动发现 `modules/*/`，每个模块导出 `router` 和 `MODULE_INFO`
+- 页面路由主要定义在 `main.py`，模块目录主要承载 API router
+- 模板继承链为 `base.html -> page templates`
+- AI Agent 主实现位于 `modules/agents/`
+- 运行时长期记忆文件位于 `data/agent-memory.md`
+- 自定义系统提示词位于 `data/custom_prompt.txt`
+- 自定义 SubAgent 配置位于 `data/custom_subagents.json`
 
-## 关键服务
+## Agent 相关约定
 
-nginx, docker, clash (代理), ollama (本地 LLM), jupyterlab, haproxy, fail2ban, mysql, xrdp, smbd
+- 主 Agent 由 `modules/agents/deep_agent.py` 构建
+- 管理 API 位于 `modules/agents/routes.py`
+- 系统提示词逻辑位于 `modules/agents/prompts.py`
+- SubAgent 定义位于 `modules/agents/subagents.py`
+- 安全与审批规则位于 `modules/agents/safety.py`
+- Shell backend 位于 `modules/agents/sandbox.py`
+- 巡检逻辑位于 `modules/agents/patrol.py`
 
-## Docker 堆栈
+## 开发约束
 
-- Dify AI 平台: ~/projects/dify/docker (端口 8080/8443)
-- LobeChat: /mnt/sda/container_mount/lobe-chat-db (端口 3210)
-- Grid AutoPilot: ~/exps/grid-autopilot (多服务: postgres/timescale/redis/neo4j/milvus/kafka)
+- 框架优先: 先复用 Deep Agents/LangGraph 现有机制，不要重复造轮子
+- 需要定制框架行为时，优先继承扩展，而不是绕开框架
+- 配置优先写入 `data/` 下的自定义文件，不直接改源码默认值
+- API 路由前缀遵循 `/api/<module>`
+- 敏感文件默认禁读: `.env`, `~/.api_keys`, `~/.telegram_config`, `~/config.yaml`
 
-## 已知问题
+## 运行与验证
 
-- Dify docker-worker-1 频繁重启（待排查）
+- 开发启动: `python main.py`
+- 或使用: `uvicorn main:app --host 0.0.0.0 --port 9900 --reload --workers 1`
+- 如修改 agent 配置，通常需要调用 `reset_agent_cache()` 或经过管理接口刷新缓存
 
-## 运维经验
+## 说明
 
-（agent 在使用过程中自动学习和更新）
-
-## 用户偏好
-
-（agent 自动记录用户的偏好和习惯）
+- 根目录 `AGENTS.md` 仅用于仓库协作说明
+- 应用内长期记忆请维护在 `data/agent-memory.md`

@@ -63,7 +63,7 @@ ServerHub 专为以下场景设计：
 |------|------|
 | **Deep Agents** | 核心框架，提供 LangGraph 编排、Middleware、SubAgent |
 | **AsyncSqliteSaver** | LangGraph checkpoint 持久化（短期记忆） |
-| **MemoryMiddleware** | AGENTS.md 长期记忆加载 |
+| **MemoryMiddleware** | data/agent-memory.md 长期记忆加载 |
 | **AsyncSqliteStore** | 结构化键值存储（长期记忆） |
 | **SafeLocalShellBackend** | 安全沙箱 Shell 执行后端 |
 
@@ -152,7 +152,7 @@ ServerHub 专为以下场景设计：
 | 框架自动 | PatchToolCalls | 工具调用修复 |
 | 框架自动 | AnthropicPromptCaching | Anthropic 模型缓存 |
 | 框架自动 | HumanInTheLoop | 人工审批中断 |
-| 框架自动 | Memory | AGENTS.md 记忆加载 |
+| 框架自动 | Memory | data/agent-memory.md 记忆加载 |
 | 手动注入 | ModelRetry | 模型调用失败重试（3次） |
 | 手动注入 | ToolRetry | 工具调用失败重试（2次） |
 | 手动注入 | ModelCallLimit | 调用次数限制（chat:50/patrol:100） |

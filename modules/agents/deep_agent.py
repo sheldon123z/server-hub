@@ -7,7 +7,7 @@ Middleware 栈 (12 个):
 
 记忆系统:
   短期: AsyncSqliteSaver checkpoint（per-conversation state 持久化）
-  长期: AGENTS.md（MemoryMiddleware 注入系统提示词，agent 通过 edit_file 更新）
+  长期: data/agent-memory.md（MemoryMiddleware 注入系统提示词，agent 通过 edit_file 更新）
   存储: AsyncSqliteStore（namespace+key-value 结构化数据）
 """
 
@@ -28,7 +28,7 @@ from langchain.agents.middleware.context_editing import ClearToolUsesEdit
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.sqlite import AsyncSqliteStore
 
-from config import settings, BASE_DIR
+from config import settings
 from modules.agents.llm import get_chat_model
 from modules.agents.tools import get_server_tools
 from modules.agents.safety import build_interrupt_config
@@ -41,6 +41,11 @@ logger = logging.getLogger(__name__)
 # 单例
 _agent_cache: dict = {}
 _store: AsyncSqliteStore | None = None
+
+
+def get_memory_path() -> Path:
+    """运行时长期记忆文件路径。与仓库根 AGENTS.md 分离。"""
+    return Path(settings.db_path).parent / "agent-memory.md"
 
 
 def _create_backend() -> SafeLocalShellBackend:
@@ -143,9 +148,10 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
         await aiosqlite.connect(checkpoint_path)
     )
 
-    # Memory — 长期记忆（AGENTS.md 文件，agent 通过 edit_file 更新）
-    memory_file = str(BASE_DIR / "AGENTS.md")
-    memory_paths = [memory_file] if Path(memory_file).exists() else []
+    # Memory — 长期记忆（data/agent-memory.md 文件，agent 通过 edit_file 更新）
+    memory_path = get_memory_path()
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
+    memory_paths = [str(memory_path)] if memory_path.exists() else []
 
     system_prompt = get_system_prompt(safety_mode, user_role)
 

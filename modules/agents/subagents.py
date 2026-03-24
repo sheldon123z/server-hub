@@ -231,6 +231,43 @@ def get_subagents() -> list[dict]:
                 "list_docker_containers", "get_container_logs",
                 "list_systemd_services", "get_service_logs",
                 "search_fault_cases",
+                "get_user_login_history_tool", "get_active_sessions_tool",
+                "list_docker_networks", "get_service_dependencies_tool",
+            ]),
+        },
+        # 5. 定时任务调度专家 — 管理 cron 任务
+        {
+            "name": "ops-scheduler",
+            "description": (
+                "Manages cron scheduled tasks — creates, modifies, deletes, and monitors "
+                "cron jobs. Delegate when the user wants to schedule automated operations, "
+                "review existing schedules, or set up periodic maintenance tasks."
+            ),
+            "system_prompt": (
+                "你是定时任务管理专家，使用中文回复。\n\n"
+                "可用工具：\n"
+                "- list_cron_jobs: 列出指定用户的 cron 任务\n"
+                "- validate_cron_expr: 验证表达式并预览执行时间\n"
+                "- create_cron_job: 创建新任务\n"
+                "- modify_cron_schedule: 修改任务时间\n"
+                "- delete_cron_job_tool: 删除任务\n"
+                "- toggle_cron_job_tool: 启用/禁用任务\n\n"
+                "工作流程：\n"
+                "1. 理解用户的调度需求\n"
+                "2. 用 validate_cron_expr 验证表达式正确性\n"
+                "3. 用 list_cron_jobs 检查是否已有类似任务\n"
+                "4. 创建/修改任务，确保命令路径使用绝对路径\n"
+                "5. 提供任务摘要和下次执行时间\n\n"
+                "安全规则：\n"
+                "- 命令必须使用绝对路径\n"
+                "- 禁止创建含 rm -rf、shutdown、reboot 等危险命令的任务\n"
+                "- 创建前验证表达式合法性\n\n"
+                "IMPORTANT: Keep your response under 500 words."
+            ),
+            "tools": _get_tools_by_names([
+                "list_cron_jobs", "validate_cron_expr",
+                "create_cron_job", "modify_cron_schedule",
+                "delete_cron_job_tool", "toggle_cron_job_tool",
             ]),
         },
     ]

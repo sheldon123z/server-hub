@@ -67,7 +67,7 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 | 9 | ContextEditing | 手动注入 | 超 60K token 清理旧工具输出 |
 | 10 | AnthropicPromptCaching | 框架自动 | Anthropic 提示词缓存 |
 | 11 | HumanInTheLoop | 框架自动 | 人工审批中断 |
-| 12 | Memory | 框架自动 | AGENTS.md 长期记忆注入 |
+| 12 | Memory | 框架自动 | data/agent-memory.md 长期记忆注入 |
 | 13 | ModelFallback | 手动注入（可选）| 模型降级切换（chat 模式）|
 
 ---
@@ -145,7 +145,7 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 ### 记忆系统（deep_agent.py）
 
 - 短期：AsyncSqliteSaver checkpoint（per-conversation state 持久化）
-- 长期：`AGENTS.md`（MemoryMiddleware 注入系统提示词，agent 通过 edit_file 更新）
+- 长期：`data/agent-memory.md`（MemoryMiddleware 注入系统提示词，agent 通过 edit_file 更新）
 - 结构化：AsyncSqliteStore（namespace + key-value → `data/agent-store.db`）
 
 详细说明见 [memory.md](./memory.md)。
@@ -168,6 +168,6 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 | `modules/agents/sandbox.py` | SafeLocalShellBackend |
 | `modules/agents/routes.py` | SSE / 审批 / 巡检 / 管理 API |
 | `data/compliance_baselines.json` | 15 条 CIS 合规基线定义 |
-| `AGENTS.md` | AI 助手长期记忆文件 |
+| `data/agent-memory.md` | AI 助手长期记忆文件 |
 | `data/custom_prompt.txt` | 自定义系统提示词（可选）|
 | `data/custom_subagents.json` | 自定义 SubAgent 配置（可选）|

@@ -742,6 +742,339 @@ async def get_asset_topology() -> str:
     return f"## 资产拓扑图\n\n```mermaid\n{mermaid}\n```\n\n## 风险分析\n{risk_text}\n\n共 {len(assets)} 项资产"
 
 
+# ─── moderate: 服务自启动管理 ───
+
+@tool
+async def service_enable_disable_tool(name: str, action: str) -> str:
+    """启用或禁用 systemd 服务的自启动。
+
+    Args:
+        name: 服务名称（如 nginx, docker）
+        action: "enable"(开机自启) 或 "disable"(禁止自启)
+    """
+    from modules.services.services import service_enable_disable
+    try:
+        await service_enable_disable(name, action)
+        action_cn = "启用" if action == "enable" else "禁用"
+        return f"已{action_cn}服务 {name} 的自启动"
+    except (ValueError, RuntimeError) as e:
+        return f"操作失败: {e}"
+
+
+# ─── safe: 服务依赖查询 ───
+
+@tool
+async def get_service_dependencies_tool(name: str) -> str:
+    """获取 systemd 服务的依赖关系树。
+
+    Args:
+        name: 服务名称
+    """
+    from modules.services.services import service_dependencies
+    try:
+        result = await service_dependencies(name)
+        deps = result["dependencies"]
+        if not deps:
+            return f"服务 {name} 没有依赖项"
+        lines = [f"## {name} 的依赖关系 ({len(deps)} 项)\n"]
+        for d in deps[:30]:
+            lines.append(f"- {d}")
+        return "\n".join(lines)
+    except (ValueError, RuntimeError) as e:
+        return f"查询失败: {e}"
+
+
+# ─── safe: Docker 增强 ───
+
+@tool
+async def list_docker_networks() -> str:
+    """列出 Docker 网络，包含名称、驱动和范围。"""
+    from modules.docker.services import list_networks
+    networks = await list_networks()
+    if not networks:
+        return "没有 Docker 网络"
+    lines = [f"## Docker 网络 ({len(networks)} 个)\n"]
+    for n in networks:
+        lines.append(f"- **{n['name']}** — 驱动: {n['driver']}, 范围: {n['scope']}")
+    return "\n".join(lines)
+
+
+# ─── moderate: Docker 容器 exec ───
+
+@tool
+async def docker_container_exec(container_name: str, command: str) -> str:
+    """在运行中的 Docker 容器内执行命令。
+
+    Args:
+        container_name: 容器名称
+        command: 要执行的 shell 命令
+    """
+    from modules.docker.services import container_exec
+    try:
+        output = await container_exec(container_name, command)
+        return f"容器 {container_name} 执行结果:\n```\n{output[:5000]}\n```"
+    except (ValueError, RuntimeError) as e:
+        return f"执行失败: {e}"
+
+
+# ─── danger: Docker 资源清理 ───
+
+@tool
+async def docker_prune(resource_type: str = "all") -> str:
+    """清理未使用的 Docker 资源。此操作不可逆。
+
+    Args:
+        resource_type: 清理类型 — "container"(停止的容器) / "image"(悬空镜像) / "volume"(未用卷) / "all"(全部)
+    """
+    from modules.docker.services import prune_resources
+    try:
+        result = await prune_resources(resource_type)
+        return f"清理完成 ({resource_type}):\n{result[:2000]}"
+    except (ValueError, RuntimeError) as e:
+        return f"清理失败: {e}"
+
+
+# ─── safe: 用户登录审计 ───
+
+@tool
+def get_user_login_history_tool(username: str = "", count: int = 10) -> str:
+    """查询 Linux 用户登录历史。可以查看谁在什么时候从哪个 IP 登录了服务器。
+
+    Args:
+        username: Linux 用户名，留空查所有用户
+        count: 最多返回条数（默认 10）
+    """
+    from modules.users.services import get_user_login_history
+    entries = get_user_login_history(username, min(count, 50))
+    if not entries:
+        target = username or "所有用户"
+        return f"{target} 没有登录记录"
+
+    lines = [f"## 登录历史 ({len(entries)} 条)\n"]
+    for e in entries:
+        lines.append(f"- {e['raw']}")
+    return "\n".join(lines)
+
+
+@tool
+def get_active_sessions_tool() -> str:
+    """获取当前服务器上的活跃登录会话。"""
+    from modules.users.services import get_active_sessions
+    sessions = get_active_sessions()
+    if not sessions:
+        return "当前没有活跃的登录会话"
+
+    lines = [f"## 活跃会话 ({len(sessions)} 个)\n"]
+    for s in sessions:
+        source = f" (来自 {s['source']})" if s["source"] else ""
+        lines.append(f"- **{s['username']}** @ {s['tty']} — {s['login_time']}{source}")
+    return "\n".join(lines)
+
+
+# ─── danger: 用户管理 ───
+
+@tool
+def manage_linux_user(action: str, username: str, groups: str = "", shell: str = "/bin/bash") -> str:
+    """管理 Linux 用户：创建、删除或修改。此操作影响系统级别用户，需谨慎。
+
+    Args:
+        action: 操作类型，可选 "create"(创建) / "delete"(删除) / "modify"(修改组或shell)
+        username: 目标用户名
+        groups: 逗号分隔的附加组（用于 create/modify，如 "students,docker"）
+        shell: 登录 shell（用于 create/modify，默认 /bin/bash）
+    """
+    from modules.users.services import create_linux_user, delete_linux_user, modify_linux_user
+
+    if action == "create":
+        result = create_linux_user(username, groups, shell)
+    elif action == "delete":
+        result = delete_linux_user(username, remove_home=False)
+    elif action == "modify":
+        result = modify_linux_user(username, groups=groups or None, shell=shell if shell != "/bin/bash" else None)
+    else:
+        return f"不支持的操作: {action}，可选: create/delete/modify"
+
+    if result["ok"]:
+        action_names = {"create": "创建", "delete": "删除", "modify": "修改"}
+        return f"已成功{action_names.get(action, action)}用户 {username}"
+    return f"操作失败: {result['error']}"
+
+
+# ─── moderate: 单进程终止 ───
+
+@tool
+def kill_single_process_tool(pid: int, username: str) -> str:
+    """终止指定用户的单个进程。
+
+    Args:
+        pid: 进程 ID
+        username: 进程所属用户（用于安全校验）
+    """
+    from modules.users.services import kill_single_process
+    result = kill_single_process(pid, username)
+    if result["ok"]:
+        return f"已终止进程 {pid} (用户: {username})"
+    return f"终止失败: {result['error']}"
+
+
+# ─── safe: 定时任务查询 ───
+
+@tool
+async def list_cron_jobs(cron_user: str = "zhengxiaodong") -> str:
+    """列出指定用户的 cron 定时任务，包含执行时间、命令、启用状态。
+
+    Args:
+        cron_user: Linux 用户名（默认 zhengxiaodong），使用 "root" 查看 root 的任务。
+    """
+    from modules.cron.services import get_user_crontab, get_root_crontab
+    if cron_user == "root":
+        jobs = await get_root_crontab()
+    else:
+        jobs = await get_user_crontab(cron_user)
+
+    if not jobs:
+        return f"用户 {cron_user} 没有定时任务"
+
+    lines = [f"## {cron_user} 的定时任务 ({len(jobs)} 条)\n"]
+    for j in jobs:
+        status = "启用" if j["enabled"] else "禁用"
+        lines.append(
+            f"- [{status}] `{j['schedule']}` ({j['description']})\n"
+            f"  命令: `{j['command'][:120]}`"
+            + (f"\n  备注: {j['comment']}" if j["comment"] else "")
+        )
+    return "\n".join(lines)
+
+
+@tool
+def validate_cron_expr(expression: str) -> str:
+    """验证 cron 表达式是否合法，返回中文描述和未来 5 次执行时间。
+
+    Args:
+        expression: 5 字段的 cron 表达式，如 "0 8 * * *"
+    """
+    from modules.cron.services import validate_cron_expression
+    result = validate_cron_expression(expression)
+    if not result["valid"]:
+        return f"无效的表达式: {result['error']}"
+    runs = "\n".join(f"  - {r}" for r in result["next_runs"])
+    return f"表达式: `{expression}` — {result['description']}\n\n未来 5 次执行:\n{runs}"
+
+
+# ─── moderate: 定时任务管理 ───
+
+@tool
+async def create_cron_job(cron_user: str, schedule: str, command: str, comment: str = "") -> str:
+    """创建新的 cron 定时任务。
+
+    Args:
+        cron_user: Linux 用户名（如 "zhengxiaodong" 或 "root"）
+        schedule: cron 表达式（5 字段，如 "0 8 * * *" 表示每天 8 点）
+        command: 要执行的完整命令（使用绝对路径）
+        comment: 可选的任务备注
+    """
+    from modules.cron.services import add_cron_job, validate_cron_expression
+    from modules.agents.safety import check_shell_command
+
+    # 安全检查：命令不能包含黑名单模式
+    safe, reason = check_shell_command(command)
+    if not safe:
+        return f"拒绝创建: {reason}"
+
+    validation = validate_cron_expression(schedule)
+    if not validation["valid"]:
+        return f"表达式无效: {validation['error']}"
+
+    try:
+        await add_cron_job(cron_user, schedule, command, comment)
+    except ValueError as e:
+        return f"创建失败: {e}"
+    except RuntimeError as e:
+        return f"系统错误: {e}"
+
+    return (
+        f"已创建定时任务:\n"
+        f"- 用户: {cron_user}\n"
+        f"- 时间: `{schedule}` ({validation['description']})\n"
+        f"- 命令: `{command}`\n"
+        f"- 下次执行: {validation['next_runs'][0]}"
+    )
+
+
+@tool
+async def modify_cron_schedule(cron_user: str, old_schedule: str, command: str, new_schedule: str) -> str:
+    """修改已有 cron 任务的执行时间。
+
+    Args:
+        cron_user: Linux 用户名
+        old_schedule: 当前的 cron 表达式
+        command: 任务命令（用于定位具体任务）
+        new_schedule: 新的 cron 表达式
+    """
+    from modules.cron.services import update_cron_schedule, validate_cron_expression
+
+    validation = validate_cron_expression(new_schedule)
+    if not validation["valid"]:
+        return f"新表达式无效: {validation['error']}"
+
+    try:
+        await update_cron_schedule(cron_user, old_schedule, command, new_schedule)
+    except ValueError as e:
+        return f"修改失败: {e}"
+    except RuntimeError as e:
+        return f"系统错误: {e}"
+
+    return (
+        f"已修改定时任务:\n"
+        f"- 用户: {cron_user}\n"
+        f"- 旧时间: `{old_schedule}`\n"
+        f"- 新时间: `{new_schedule}` ({validation['description']})\n"
+        f"- 下次执行: {validation['next_runs'][0]}"
+    )
+
+
+@tool
+async def toggle_cron_job_tool(cron_user: str, schedule: str, command: str, enabled: bool) -> str:
+    """启用或禁用 cron 定时任务。
+
+    Args:
+        cron_user: Linux 用户名
+        schedule: cron 表达式
+        command: 任务命令
+        enabled: True=启用, False=禁用
+    """
+    from modules.cron.services import toggle_cron_job
+
+    try:
+        await toggle_cron_job(cron_user, schedule, command, enabled)
+    except ValueError as e:
+        return f"操作失败: {e}"
+
+    action = "启用" if enabled else "禁用"
+    return f"已{action}定时任务: `{schedule}` {command[:80]}"
+
+
+# ─── danger: 定时任务删除 ───
+
+@tool
+async def delete_cron_job_tool(cron_user: str, schedule: str, command: str) -> str:
+    """删除 cron 定时任务。此操作不可逆，建议先备份 crontab。
+
+    Args:
+        cron_user: Linux 用户名
+        schedule: cron 表达式
+        command: 任务命令
+    """
+    from modules.cron.services import delete_cron_job
+
+    try:
+        await delete_cron_job(cron_user, schedule, command)
+    except ValueError as e:
+        return f"删除失败: {e}"
+
+    return f"已删除定时任务: 用户={cron_user}, 时间=`{schedule}`, 命令=`{command[:80]}`"
+
+
 # ─── 工具注册表 ───
 
 def get_server_tools(user_role: str = "admin") -> list:
@@ -780,6 +1113,25 @@ def get_server_tools(user_role: str = "admin") -> list:
         get_asset_inventory,
         get_asset_topology,
         auto_fix_compliance,
+        # 服务增强
+        service_enable_disable_tool,
+        get_service_dependencies_tool,
+        # Docker 增强
+        list_docker_networks,
+        docker_container_exec,
+        docker_prune,
+        # 用户审计与管理
+        get_user_login_history_tool,
+        get_active_sessions_tool,
+        manage_linux_user,
+        kill_single_process_tool,
+        # 定时任务
+        list_cron_jobs,
+        validate_cron_expr,
+        create_cron_job,
+        modify_cron_schedule,
+        toggle_cron_job_tool,
+        delete_cron_job_tool,
     ]
 
     if user_role == "admin":

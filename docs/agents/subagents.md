@@ -26,7 +26,7 @@ SubAgent 定义在 `modules/agents/subagents.py`，遵循 LangChain 官方规范
 
 **描述**: 搜索技术文档、错误解决方案、软件版本信息和最佳实践。每次委派一个主题。
 
-**工具集**（最小化）:
+**工具集**（2 个，SubAgent 专属）:
 
 | 工具 | 来源 | 说明 |
 |------|------|------|
@@ -66,7 +66,7 @@ task(subagent_type="researcher", message="搜索 Dify worker 容器 OOM killed �
 
 **描述**: 分析服务日志和系统日志，诊断崩溃、识别错误模式、追踪性能问题和调查安全事件。
 
-**工具集**（最小化）:
+**工具集**（2 个，从主 agent 工具继承）:
 
 | 工具 | 来源 | 说明 |
 |------|------|------|
@@ -108,7 +108,7 @@ task(subagent_type="log-analyzer", message="分析 docker-worker-1 容器最近�
 
 **描述**: 审计服务器安全配置，包括 SSH 设置、开放端口、用户权限、防火墙规则和文件权限，返回按风险分级的发现。
 
-**工具集**（最小化）:
+**工具集**（1 个，从主 agent 工具继承）:
 
 | 工具 | 来源 | 说明 |
 |------|------|------|
@@ -151,7 +151,7 @@ task(subagent_type="security-auditor", message="审计当前服务器的 SSH 配
 
 **描述**: 跨维度关联分析，将系统指标时间线、容器状态变化、日志异常和历史故障案例关联起来，找出根因。当复杂的多组件异常需要调查时委派。
 
-**工具集**（6 个）:
+**工具集**（11 个，从主 agent 工具继承）:
 
 | 工具 | 来源 | 说明 |
 |------|------|------|
@@ -162,8 +162,10 @@ task(subagent_type="security-auditor", message="审计当前服务器的 SSH 配
 | `list_systemd_services` | 主 agent 工具 | 服务状态 |
 | `get_service_logs` | 主 agent 工具 | 服务日志 |
 | `search_fault_cases` | 主 agent 工具 | 搜索历史类似案例 |
-
-注：实际工具集按顺序为 analyze_resource_trend, get_system_overview, list_docker_containers, get_container_logs, list_systemd_services, get_service_logs, search_fault_cases（共 7 个）。
+| `get_user_login_history_tool` | 主 agent 工具 | 用户登录历史（关联异常时间点）|
+| `get_active_sessions_tool` | 主 agent 工具 | 当前活跃会话 |
+| `list_docker_networks` | 主 agent 工具 | Docker 网络拓扑 |
+| `get_service_dependencies_tool` | 主 agent 工具 | 服务依赖关系 |
 
 **工作流程**:
 1. 调用 `analyze_resource_trend` 获取最近资源趋势
@@ -189,10 +191,59 @@ task(subagent_type="security-auditor", message="审计当前服务器的 SSH 配
 - 多个服务同时出现异常
 - 性能突然下降但单一指标无明显问题
 - 需要排查跨容器、跨服务的级联故障
+- 异常时间点与用户登录活动的关联分析
 
 **委派示例**:
 ```
 task(subagent_type="correlation-analyzer", message="服务器在今天下午 3 点左右出现了内存突增和多个容器重启，请分析可能的根因")
+```
+
+---
+
+## 5. ops-scheduler — 定时任务调度专家
+
+**名称**: `ops-scheduler`
+
+**描述**: 管理 cron 定时任务 — 创建、修改、删除和监控。当用户需要安排自动化操作、检查现有调度或设置定期维护任务时委派。
+
+**工具集**（6 个，从主 agent 工具继承）:
+
+| 工具 | 来源 | 说明 |
+|------|------|------|
+| `list_cron_jobs` | 主 agent 工具 | 列出指定用户的 cron 任务 |
+| `validate_cron_expr` | 主 agent 工具 | 验证表达式并预览执行时间 |
+| `create_cron_job` | 主 agent 工具 | 创建新任务 |
+| `modify_cron_schedule` | 主 agent 工具 | 修改任务时间 |
+| `delete_cron_job_tool` | 主 agent 工具 | 删除任务 |
+| `toggle_cron_job_tool` | 主 agent 工具 | 启用/禁用任务 |
+
+**工作流程**:
+1. 理解用户的调度需求
+2. 用 `validate_cron_expr` 验证表达式正确性
+3. 用 `list_cron_jobs` 检查是否已有类似任务
+4. 创建/修改任务，确保命令路径使用绝对路径
+5. 提供任务摘要和下次执行时间
+
+**安全规则**:
+- 命令必须使用绝对路径
+- 禁止创建含 rm -rf、shutdown、reboot 等危险命令的任务
+- 创建前验证表达式合法性
+- 创建和删除操作在 supervised 模式下需要审批
+
+**输出格式**（500 词以内）:
+- 任务摘要
+- 执行时间描述
+- 下次执行时间
+
+**使用场景**:
+- 添加新的定期监控脚本
+- 修改现有任务的执行频率
+- 查看和清理过时的定时任务
+- 临时禁用/启用某些定时任务
+
+**委派示例**:
+```
+task(subagent_type="ops-scheduler", message="创建一个每天凌晨 3 点执行的磁盘清理任务")
 ```
 
 ---
@@ -203,7 +254,7 @@ task(subagent_type="correlation-analyzer", message="服务器在今天下午 3 �
 
 SubAgent 配置支持两种方式：
 
-1. **硬编码默认**（`modules/agents/subagents.py:get_subagents()`）：上述 4 个 SubAgent
+1. **硬编码默认**（`modules/agents/subagents.py:get_subagents()`）：上述 5 个 SubAgent
 2. **自定义 JSON**（`data/custom_subagents.json`）：通过管理面板保存，优先于默认配置
 
 ### 自定义 SubAgent 格式
@@ -229,6 +280,16 @@ SubAgent 配置支持两种方式：
 
 | 来源 | 说明 |
 |------|------|
-| custom | 主 agent 的 22 个自定义工具（tools.py）|
+| custom | 主 agent 的 37 个自定义工具（tools.py）|
 | subagent | SubAgent 专属工具（web_search, think）|
 | builtin | 框架内置工具（execute, read_file 等）|
+
+### SubAgent 工具集汇总
+
+| SubAgent | 工具数量 | 工具列表 |
+|----------|---------|---------|
+| researcher | 2 | web_search, think |
+| log-analyzer | 2 | get_container_logs, get_service_logs |
+| security-auditor | 1 | get_system_overview |
+| correlation-analyzer | 11 | analyze_resource_trend, get_system_overview, list_docker_containers, get_container_logs, list_systemd_services, get_service_logs, search_fault_cases, get_user_login_history_tool, get_active_sessions_tool, list_docker_networks, get_service_dependencies_tool |
+| ops-scheduler | 6 | list_cron_jobs, validate_cron_expr, create_cron_job, modify_cron_schedule, delete_cron_job_tool, toggle_cron_job_tool |

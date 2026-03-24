@@ -11,7 +11,7 @@ ServerHub Agent 使用三层记忆架构，平衡短期状态保持、长期知�
 │                   记忆系统架构                       │
 ├─────────────────┬───────────────┬───────────────────┤
 │   短期记忆       │   长期记忆    │   结构化存储       │
-│  (Checkpoint)   │  (AGENTS.md)  │  (SQLiteStore)    │
+│  (Checkpoint)   │ (agent-memory)│  (SQLiteStore)    │
 ├─────────────────┼───────────────┼───────────────────┤
 │ per-conversation│ 跨会话知识    │ namespace+KV 数据  │
 │ state 持久化    │ 注入系统提示词 │                   │
@@ -19,8 +19,8 @@ ServerHub Agent 使用三层记忆架构，平衡短期状态保持、长期知�
 │ AsyncSqliteSaver│ MemoryMiddle  │ AsyncSqliteStore  │
 │ LangGraph 标准  │ ware          │ deepagents 框架    │
 ├─────────────────┼───────────────┼───────────────────┤
-│ data/agent-     │ AGENTS.md     │ data/agent-        │
-│ checkpoints.db  │ (文件)        │ store.db           │
+│ data/agent-     │ data/agent-   │ data/agent-        │
+│ checkpoints.db  │ memory.md     │ store.db           │
 └─────────────────┴───────────────┴───────────────────┘
 ```
 
@@ -59,15 +59,15 @@ await agent.ainvoke({"messages": [...]}, config=config)
 
 ---
 
-## 长期记忆：AGENTS.md
+## 长期记忆：data/agent-memory.md
 
 ### 技术实现
 
-使用 Deep Agents 框架的 `MemoryMiddleware`。通过 `memory=["AGENTS.md 路径"]` 参数启用。
+使用 Deep Agents 框架的 `MemoryMiddleware`。通过 `memory=["data/agent-memory.md 路径"]` 参数启用。
 
 ```python
-memory_file = str(BASE_DIR / "AGENTS.md")
-memory_paths = [memory_file] if Path(memory_file).exists() else []
+memory_path = Path(settings.db_path).parent / "agent-memory.md"
+memory_paths = [str(memory_path)] if memory_path.exists() else []
 
 agent = create_deep_agent(
     ...
@@ -77,13 +77,13 @@ agent = create_deep_agent(
 
 ### 工作原理
 
-1. **加载阶段**：每次 agent 被调用时，MemoryMiddleware 读取 `AGENTS.md` 文件内容，追加到系统提示词末尾
-2. **更新阶段**：Agent 可以通过 `edit_file` 工具直接编辑 `AGENTS.md`，更新自己的长期记忆
-3. **持久化**：`AGENTS.md` 是普通文件，所有知识以人类可读的 Markdown 格式存储
+1. **加载阶段**：每次 agent 被调用时，MemoryMiddleware 读取 `data/agent-memory.md` 文件内容，追加到系统提示词末尾
+2. **更新阶段**：Agent 可以通过 `edit_file` 工具直接编辑 `data/agent-memory.md`，更新自己的长期记忆
+3. **持久化**：`data/agent-memory.md` 是普通文件，所有知识以人类可读的 Markdown 格式存储
 
-### AGENTS.md 内容结构
+### data/agent-memory.md 内容结构
 
-`AGENTS.md` 是 AI 运维助手的知识库，建议包含：
+`data/agent-memory.md` 是 AI 运维助手的知识库，建议包含：
 
 ```markdown
 # 服务器运维记忆
@@ -103,15 +103,16 @@ agent = create_deep_agent(
 
 ### 更新规则
 
-- **Agent 自动更新**：Agent 在处理问题时若发现有价值的运维知识，会主动调用 `edit_file("AGENTS.md", ...)` 更新
-- **不建议手动编辑**：`AGENTS.md` 是 Agent 的工作文件，人工编辑可能破坏格式
+- **Agent 自动更新**：Agent 在处理问题时若发现有价值的运维知识，会主动调用 `edit_file("data/agent-memory.md", ...)` 更新
+- **不建议手动编辑**：`data/agent-memory.md` 是 Agent 的工作文件，人工编辑可能破坏格式
 - **初始化**：项目初次部署时可手动填入服务器基本信息
 
-### 与 CLAUDE.md 的区别
+### 与根目录 AGENTS.md / CLAUDE.md 的区别
 
 | 文件 | 用途 | 读者 |
 |------|------|------|
-| `AGENTS.md` | AI 运维助手的长期记忆（运行时知识）| Agent（MemoryMiddleware）|
+| `data/agent-memory.md` | AI 运维助手的长期记忆（运行时知识）| Agent（MemoryMiddleware）|
+| `AGENTS.md` | 仓库协作说明 | 外部编码助手 |
 | `CLAUDE.md` | 开发者指引（架构、约定、规范）| 开发者（Claude Code）|
 
 ---
@@ -153,7 +154,7 @@ Agent 通过框架提供的 store API 读写，不需要 `@tool` 封装。具体
 
 ## 记忆系统对比
 
-| 维度 | Checkpoint | AGENTS.md | SQLiteStore |
+| 维度 | Checkpoint | data/agent-memory.md | SQLiteStore |
 |------|-----------|-----------|-------------|
 | 作用范围 | 单次对话 | 全局 | 全局 |
 | 数据格式 | LangGraph state（二进制）| Markdown 文本 | KV 结构化数据 |

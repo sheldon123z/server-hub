@@ -5,21 +5,22 @@
 
 ---
 
-## 自定义工具（22 个）
+## 自定义工具（37 个）
 
-### safe — 只读查询（15 个）
+### safe — 只读查询（21 个）
 
 这些工具不修改系统状态，可在 supervised 和 autonomous 模式下自由调用。
 
+---
+
 #### get_system_overview
 
-获取系统状态概览：CPU 使用率、内存、Swap、磁盘、GPU、负载、运行时间。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | Markdown 格式的多行字符串 |
-| 数据来源 | `modules/dashboard/collectors.py:get_system_info()` |
+- **风险等级**: safe
+- **说明**: 获取系统状态概览：CPU 使用率、内存、Swap、磁盘、GPU、负载、运行时间。
+- **参数**: 无
+- **返回**: Markdown 格式的多行字符串
+- **数据来源**: `modules/dashboard/collectors.py:get_system_info()`
+- **使用场景**: 快速了解服务器当前整体状态，巡检时首先调用
 
 返回示例：
 ```
@@ -37,94 +38,86 @@
 
 #### get_disk_info
 
-获取所有磁盘挂载点的使用情况（系统盘 `/` 以外的挂载点）。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | Markdown 表格，含挂载点、设备、使用率、容量 |
-| 数据来源 | `modules/dashboard/collectors.py:get_extra_disks()` |
+- **风险等级**: safe
+- **说明**: 获取所有磁盘挂载点的使用情况（系统盘 `/` 以外的挂载点）。
+- **参数**: 无
+- **返回**: Markdown 表格，含挂载点、设备、使用率、容量
+- **数据来源**: `modules/dashboard/collectors.py:get_extra_disks()`
+- **使用场景**: 检查存储空间是否充足，排查磁盘满的问题
 
 ---
 
 #### get_user_resources
 
-获取所有非管理员用户的资源使用情况。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | Markdown 表格：用户名 / 内存(GB) / 进程数 / GPU显存(MiB) |
-| 数据来源 | `modules/users/services.py:get_user_stats()` |
+- **风险等级**: safe
+- **说明**: 获取所有非管理员用户的资源使用情况。
+- **参数**: 无
+- **返回**: Markdown 表格：用户名 / 内存(GB) / 进程数 / GPU显存(MiB)
+- **数据来源**: `modules/users/services.py:get_user_stats()`
+- **使用场景**: 监控学生用户资源占用，发现超配额用户
 
 ---
 
 #### get_user_quotas
 
-获取所有用户资源配额配置（读取 `config/user-quotas.conf`）。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | Markdown 表格：标识 / 内存上限(GB) / 进程上限 / 备注 |
+- **风险等级**: safe
+- **说明**: 获取所有用户资源配额配置（读取 `config/user-quotas.conf`）。
+- **参数**: 无
+- **返回**: Markdown 表格：标识 / 内存上限(GB) / 进程上限 / 备注
+- **使用场景**: 查看当前配额设置，与实际用量对比
 
 ---
 
 #### list_docker_containers
 
-列出所有 Docker 容器及其运行状态。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | Markdown 表格：容器名 / 状态 / 镜像 |
-| 说明 | 包含全部容器（含已停止），等价于 `docker ps -a` |
+- **风险等级**: safe
+- **说明**: 列出所有 Docker 容器及其运行状态。
+- **参数**: 无
+- **返回**: Markdown 表格：容器名 / 状态 / 镜像
+- **说明**: 包含全部容器（含已停止），等价于 `docker ps -a`
+- **使用场景**: 检查容器健康状态，发现异常停止或频繁重启的容器
 
 ---
 
 #### get_container_logs
 
-获取指定 Docker 容器的最近日志。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `name: str`（容器名）、`tail: int`（行数，默认 50，上限 200）|
-| 返回 | Markdown 代码块，最多截取 3000 字符 |
+- **风险等级**: safe
+- **说明**: 获取指定 Docker 容器的最近日志。
+- **参数**: `name: str`（容器名）、`tail: int`（行数，默认 50，上限 200）
+- **返回**: Markdown 代码块，最多截取 3000 字符
+- **使用场景**: 排查容器崩溃、错误日志分析
 
 ---
 
 #### list_systemd_services
 
-列出所有管理的 systemd 服务及其状态。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | Markdown 表格：服务名 / 运行状态 / 是否自启 |
-| 说明 | 仅显示 `settings.managed_services` 白名单中的服务 |
+- **风险等级**: safe
+- **说明**: 列出所有管理的 systemd 服务及其状态。
+- **参数**: 无
+- **返回**: Markdown 表格：服务名 / 运行状态 / 是否自启
+- **说明**: 仅显示 `settings.managed_services` 白名单中的服务
+- **使用场景**: 检查关键服务运行状态
 
 ---
 
 #### get_service_logs
 
-获取指定 systemd 服务的 journald 日志。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `name: str`（服务名）、`lines: int`（行数，默认 50，上限 200）|
-| 返回 | Markdown 代码块，最多截取 3000 字符 |
-| 说明 | 服务名必须在 `settings.managed_services` 白名单中 |
+- **风险等级**: safe
+- **说明**: 获取指定 systemd 服务的 journald 日志。
+- **参数**: `name: str`（服务名）、`lines: int`（行数，默认 50，上限 200）
+- **返回**: Markdown 代码块，最多截取 3000 字符
+- **说明**: 服务名必须在 `settings.managed_services` 白名单中
+- **使用场景**: 排查服务启动失败、异常退出
 
 ---
 
 #### analyze_resource_trend
 
-分析系统资源的历史趋势，查询监控数据库中的指标历史。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `metric: str`（all/cpu/memory/gpu/disk，默认 all）、`hours: int`（时间范围小时数，默认 168）|
-| 返回 | 统计报告：均值、峰值、P95、最低值、趋势方向、7 天预测 |
+- **风险等级**: safe
+- **说明**: 分析系统资源的历史趋势，查询监控数据库中的指标历史，计算统计量和趋势预测。
+- **参数**: `metric: str`（all/cpu/memory/gpu/disk，默认 all）、`hours: int`（时间范围小时数，默认 168）
+- **返回**: 统计报告：均值、峰值、P95、最低值、趋势方向、7 天预测
+- **使用场景**: 容量规划、资源瓶颈预判、趋势报告
 
 支持指标：
 
@@ -142,197 +135,312 @@
 
 #### check_compliance
 
-执行 CIS Benchmark 安全合规基线检查。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `category: str`（分类过滤，留空检查全部）|
-| 返回 | 合规率 + Markdown 表格（检查项 / 结果 / 严重级别 / 详情）|
-| 数据来源 | `data/compliance_baselines.json`（15 条基线）|
+- **风险等级**: safe
+- **说明**: 执行 CIS Benchmark 安全合规基线检查。
+- **参数**: `category: str`（分类过滤，留空检查全部）
+- **返回**: 合规率 + Markdown 表格（检查项 / 结果 / 严重级别 / 详情）
+- **数据来源**: `data/compliance_baselines.json`
+- **使用场景**: 安全巡检、合规审计
 
 ---
 
 #### search_fault_cases
 
-从历史故障案例库中检索匹配的问题和解决方案。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `query: str`（搜索关键词）|
-| 返回 | 最多 5 条匹配案例（标题 / 症状 / 根因 / 解决方案 / 标签）|
-| 搜索机制 | 优先使用 FTS5 全文搜索，降级为 LIKE 查询 |
+- **风险等级**: safe
+- **说明**: 从历史故障案例库中检索匹配的问题和解决方案。
+- **参数**: `query: str`（搜索关键词）
+- **返回**: 最多 5 条匹配案例（标题 / 症状 / 根因 / 解决方案 / 标签）
+- **搜索机制**: 优先使用 FTS5 全文搜索，降级为 LIKE 查询
+- **使用场景**: 遇到问题时先查案例库，避免重复排查
 
 ---
 
 #### save_fault_case
 
-将故障案例保存到案例库，并更新 FTS5 全文索引。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `title, category, symptoms, root_cause, solution, tags` |
-| 返回 | 保存成功的案例 ID |
-| 分类枚举 | memory / docker / service / network / security / gpu |
+- **风险等级**: safe
+- **说明**: 将故障案例保存到案例库，并更新 FTS5 全文索引。
+- **参数**: `title: str`, `category: str`, `symptoms: str`, `root_cause: str`, `solution: str`, `tags: str`（可选，逗号分隔）
+- **返回**: 保存成功的案例 ID
+- **分类枚举**: memory / docker / service / network / security / gpu
+- **使用场景**: 故障解决后沉淀经验，供后续检索
 
 ---
 
 #### get_asset_inventory
 
-查询服务器资产清单（服务、容器、端口、存储等）。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `asset_type: str`（service/container/compose/port/storage，留空返回全部）|
-| 返回 | 按类型分组的资产列表 |
+- **风险等级**: safe
+- **说明**: 查询服务器资产清单（服务、容器、端口、存储等）。
+- **参数**: `asset_type: str`（service/container/compose/port/storage，留空返回全部）
+- **返回**: 按类型分组的资产列表
+- **使用场景**: 资产盘点、了解服务器上运行了哪些服务
 
 ---
 
 #### get_asset_topology
 
-获取资产依赖关系拓扑图（文本形式）。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 无 |
-| 返回 | 资产依赖关系的 Markdown 描述 |
+- **风险等级**: safe
+- **说明**: 生成服务器资产拓扑关系图（Mermaid 格式）并分析潜在风险（单点故障、冗余不足等）。
+- **参数**: 无
+- **返回**: Mermaid 图 + 风险分析文本
+- **使用场景**: 了解服务间依赖关系，发现单点故障风险
 
 ---
 
 #### send_notification
 
-发送 Telegram 通知消息。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `message: str`（消息内容）|
-| 返回 | 成功/失败信息 |
-| 风险级别 | safe（TOOL_RISK_MAP 中标记，因为只是通知，不影响系统）|
+- **风险等级**: safe
+- **说明**: 发送 Telegram 通知消息。
+- **参数**: `message: str`（消息内容）
+- **返回**: 成功/失败信息
+- **使用场景**: 告警通知、巡检结果推送
 
 ---
 
-### moderate — 可逆操作（6 个）
+#### get_service_dependencies_tool
 
-这些工具会修改系统状态，但操作可撤销。supervised 模式下部分需要审批。
+- **风险等级**: safe
+- **说明**: 获取 systemd 服务的依赖关系树。
+- **参数**: `name: str`（服务名称）
+- **返回**: 依赖项列表（最多 30 项）
+- **使用场景**: 了解服务依赖链，排查服务启动顺序问题，评估停止某服务的影响范围
+
+---
+
+#### list_docker_networks
+
+- **风险等级**: safe
+- **说明**: 列出 Docker 网络，包含名称、驱动和范围。
+- **参数**: 无
+- **返回**: Docker 网络列表（名称 / 驱动 / 范围）
+- **使用场景**: 排查容器网络连通性问题，了解网络拓扑
+
+---
+
+#### get_user_login_history_tool
+
+- **风险等级**: safe
+- **说明**: 查询 Linux 用户登录历史。可以查看谁在什么时候从哪个 IP 登录了服务器。
+- **参数**: `username: str`（留空查所有用户）、`count: int`（最多返回条数，默认 10，上限 50）
+- **返回**: 登录记录列表
+- **使用场景**: 安全审计、追踪异常登录、确认用户活跃度
+
+---
+
+#### get_active_sessions_tool
+
+- **风险等级**: safe
+- **说明**: 获取当前服务器上的活跃登录会话。
+- **参数**: 无
+- **返回**: 活跃会话列表（用户名 / TTY / 登录时间 / 来源 IP）
+- **使用场景**: 查看谁在线、排查挂机用户、安全审计
+
+---
+
+#### list_cron_jobs
+
+- **风险等级**: safe
+- **说明**: 列出指定用户的 cron 定时任务，包含执行时间、命令、启用状态。
+- **参数**: `cron_user: str`（Linux 用户名，默认 "zhengxiaodong"，使用 "root" 查看 root 的任务）
+- **返回**: 定时任务列表（启用状态 / 调度表达式 / 描述 / 命令 / 备注）
+- **使用场景**: 检查定时任务配置，排查任务未执行问题
+
+---
+
+#### validate_cron_expr
+
+- **风险等级**: safe
+- **说明**: 验证 cron 表达式是否合法，返回中文描述和未来 5 次执行时间。
+- **参数**: `expression: str`（5 字段的 cron 表达式，如 "0 8 * * *"）
+- **返回**: 表达式描述 + 未来 5 次执行时间
+- **使用场景**: 创建或修改定时任务前验证表达式正确性
+
+---
+
+### moderate — 可逆操作（10 个）
+
+这些工具会修改系统状态，但操作可撤销。supervised 模式下需要审批。
+
+---
 
 #### docker_container_action
 
-对单个 Docker 容器执行操作。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `name: str`（容器名）、`action: str`（start / stop / restart）|
-| 返回 | 执行结果描述 |
-| 审批触发 | supervised 模式下触发 interrupt_on 审批 |
+- **风险等级**: moderate
+- **说明**: 对单个 Docker 容器执行操作。
+- **参数**: `name: str`（容器名）、`action: str`（start / stop / restart）
+- **返回**: 执行结果描述
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 重启异常容器、启动已停止的服务
 
 ---
 
 #### docker_compose_action
 
-对 Docker Compose 堆栈执行操作。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `stack_name: str`（dify / lobe / grid-autopilot）、`action: str`（up / down / restart / pull）|
-| 返回 | 执行结果描述 |
-| 审批触发 | supervised 模式下触发 interrupt_on 审批 |
+- **风险等级**: moderate
+- **说明**: 对 Docker Compose 堆栈执行操作。
+- **参数**: `stack_name: str`（dify / lobe / grid-autopilot）、`action: str`（up / down / restart / pull）
+- **返回**: 执行结果描述
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 重启整个服务栈、更新镜像
 
 ---
 
 #### service_control
 
-管理 systemd 服务（只允许白名单内的服务）。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `name: str`（服务名）、`action: str`（start / stop / restart）|
-| 返回 | 执行结果描述 |
-| 审批触发 | supervised 模式下触发 interrupt_on 审批 |
+- **风险等级**: moderate
+- **说明**: 管理 systemd 服务（只允许白名单内的服务）。
+- **参数**: `name: str`（服务名）、`action: str`（start / stop / restart）
+- **返回**: 执行结果描述
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 重启崩溃的服务、手动停止维护中的服务
 
 ---
 
 #### update_user_quotas
 
-修改用户资源配额（写入 `config/user-quotas.conf`）。
+- **风险等级**: moderate
+- **说明**: 修改用户资源配额（写入 `config/user-quotas.conf`）。
+- **参数**: `key: str`（用户名或 @组名）、`mem_gb: int`、`proc_limit: int`、`comment: str`（可选）
+- **返回**: 更新确认信息
+- **使用场景**: 调整用户资源限制、新增用户配额
 
-| 属性 | 值 |
-|------|---|
-| 参数 | `key: str`（用户名或 @组名）、`mem_gb: int`、`proc_limit: int`、`comment: str`（可选）|
-| 返回 | 更新确认信息 |
+---
+
+#### service_enable_disable_tool
+
+- **风险等级**: moderate
+- **说明**: 启用或禁用 systemd 服务的自启动。
+- **参数**: `name: str`（服务名称，如 nginx, docker）、`action: str`（"enable" 开机自启 / "disable" 禁止自启）
+- **返回**: 操作结果描述
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 设置服务开机自启、禁止不需要的服务自动运行
+
+---
+
+#### docker_container_exec
+
+- **风险等级**: moderate
+- **说明**: 在运行中的 Docker 容器内执行命令。
+- **参数**: `container_name: str`（容器名称）、`command: str`（要执行的 shell 命令）
+- **返回**: 命令输出（最多截取 5000 字符）
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 在容器内排查问题、查看容器内部状态、执行维护命令
+
+---
+
+#### kill_single_process_tool
+
+- **风险等级**: moderate
+- **说明**: 终止指定用户的单个进程。
+- **参数**: `pid: int`（进程 ID）、`username: str`（进程所属用户，用于安全校验）
+- **返回**: 操作结果描述
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 终止占用资源过高的单个进程，比 kill_user_processes 更精细
 
 ---
 
 #### create_cron_job
 
-创建 cron 定时任务。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 具体字段见 cron 模块文档 |
-| 审批触发 | supervised 模式下触发审批（approved_decisions: approve/reject）|
-
----
-
-#### modify_cron_schedule / toggle_cron_job_tool
-
-修改 cron 任务调度周期 / 启用或禁用 cron 任务。
-
-| 属性 | 值 |
-|------|---|
-| 风险级别 | moderate |
+- **风险等级**: moderate
+- **说明**: 创建新的 cron 定时任务。内置安全检查：命令不能包含 Shell 黑名单模式。
+- **参数**: `cron_user: str`（Linux 用户名）、`schedule: str`（cron 表达式）、`command: str`（完整命令，使用绝对路径）、`comment: str`（可选备注）
+- **返回**: 创建结果 + 下次执行时间
+- **审批触发**: supervised 模式下触发 interrupt_on 审批（approve/reject）
+- **使用场景**: 添加定时监控脚本、定期清理任务
 
 ---
 
-### danger — 高风险操作（4 个）
+#### modify_cron_schedule
+
+- **风险等级**: moderate
+- **说明**: 修改已有 cron 任务的执行时间。
+- **参数**: `cron_user: str`（Linux 用户名）、`old_schedule: str`（当前表达式）、`command: str`（任务命令，用于定位）、`new_schedule: str`（新表达式）
+- **返回**: 修改结果 + 新的下次执行时间
+- **使用场景**: 调整任务执行频率
+
+---
+
+#### toggle_cron_job_tool
+
+- **风险等级**: moderate
+- **说明**: 启用或禁用 cron 定时任务（通过注释/取消注释实现）。
+- **参数**: `cron_user: str`、`schedule: str`、`command: str`、`enabled: bool`（True=启用, False=禁用）
+- **返回**: 操作结果描述
+- **使用场景**: 临时停用某个定时任务而不删除它
+
+---
+
+### danger — 高风险操作（6 个）
 
 这些工具操作不可逆或风险极高。supervised 模式下始终触发审批，autonomous 模式下仍受 Shell 黑名单约束。
 
+---
+
 #### kill_user_processes
 
-终止指定用户的所有进程。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `username: str`（要终止进程的用户名）|
-| 返回 | 执行结果描述 |
-| 限制 | 不能终止管理员用户（zhengxiaodong, root）|
-| 审批触发 | supervised 模式下始终触发审批 |
+- **风险等级**: danger
+- **说明**: 终止指定用户的所有进程。不能终止管理员用户的进程。
+- **参数**: `username: str`（要终止进程的用户名）
+- **返回**: 执行结果描述
+- **限制**: 不能终止管理员用户（zhengxiaodong, root）
+- **审批触发**: supervised 模式下始终触发审批
+- **使用场景**: 用户进程失控时的紧急清理
 
 ---
 
 #### auto_fix_compliance
 
-自动修复指定的不合规项，执行 `fix_cmd` 并验证修复结果。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | `item_id: str`（合规基线项 ID）|
-| 返回 | 修复前 / 后对比 + 修复状态 |
-| 限制 | 仅对 `auto_fixable: true` 的基线项有效 |
-| 审批触发 | supervised 模式下始终触发审批 |
+- **风险等级**: danger
+- **说明**: 自动修复指定的不合规项，执行 `fix_cmd` 并验证修复结果。
+- **参数**: `item_id: str`（合规基线项 ID，如 ssh_empty_password, ssh_max_auth_tries）
+- **返回**: 修复前 / 后对比 + 修复状态
+- **限制**: 仅对 `auto_fixable: true` 的基线项有效
+- **审批触发**: supervised 模式下始终触发审批
+- **使用场景**: 自动化修复安全合规问题
 
 ---
 
 #### execute_ops_script
 
-执行注册的运维管理脚本（通过 `scripts_bridge` 白名单机制）。
+- **风险等级**: danger
+- **说明**: 执行注册的运维管理脚本（通过 `scripts_bridge` 白名单机制）。
+- **参数**: `script_key: str`（如 dify_manage, health_check）、`args: list[str]`（可选参数列表）
+- **返回**: 脚本 stdout + 退出码，最多截取 3000 字符
+- **限制**: 只能执行 `SCRIPT_REGISTRY` 白名单中的脚本
+- **审批触发**: supervised 模式下始终触发审批
+- **使用场景**: 执行预定义的运维脚本，如健康检查、Dify 管理
 
-| 属性 | 值 |
-|------|---|
-| 参数 | `script_key: str`（如 dify_manage, health_check）、`args: list[str]`（可选）|
-| 返回 | 脚本 stdout + 退出码，最多截取 3000 字符 |
-| 限制 | 只能执行 `SCRIPT_REGISTRY` 白名单中的脚本 |
-| 审批触发 | supervised 模式下始终触发审批 |
+---
+
+#### manage_linux_user
+
+- **风险等级**: danger
+- **说明**: 管理 Linux 用户：创建、删除或修改。此操作影响系统级别用户，需谨慎。
+- **参数**: `action: str`（"create" / "delete" / "modify"）、`username: str`（目标用户名）、`groups: str`（逗号分隔的附加组，如 "students,docker"，可选）、`shell: str`（登录 shell，默认 /bin/bash）
+- **返回**: 操作结果描述
+- **审批触发**: supervised 模式下始终触发审批
+- **使用场景**: 新增学生用户、调整用户组、删除离职用户
+
+---
+
+#### docker_prune
+
+- **风险等级**: danger
+- **说明**: 清理未使用的 Docker 资源。此操作不可逆。
+- **参数**: `resource_type: str`（"container" 停止的容器 / "image" 悬空镜像 / "volume" 未用卷 / "all" 全部，默认 "all"）
+- **返回**: 清理结果（最多 2000 字符）
+- **审批触发**: supervised 模式下始终触发审批
+- **使用场景**: 回收磁盘空间，清理无用的容器/镜像/卷
 
 ---
 
 #### delete_cron_job_tool
 
-删除 cron 定时任务（不可恢复）。
-
-| 属性 | 值 |
-|------|---|
-| 参数 | 任务标识 |
-| 审批触发 | supervised 模式下始终触发审批 |
+- **风险等级**: danger
+- **说明**: 删除 cron 定时任务。此操作不可逆，建议先备份 crontab。
+- **参数**: `cron_user: str`（Linux 用户名）、`schedule: str`（cron 表达式）、`command: str`（任务命令）
+- **返回**: 删除确认信息
+- **审批触发**: supervised 模式下始终触发审批
+- **使用场景**: 删除不再需要的定时任务
 
 ---
 
@@ -353,3 +461,18 @@
 | `task` | safe | 委派任务给子智能体 |
 
 `execute` 工具在 supervised 模式下会对匹配 `rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptables` 的命令触发审批。
+
+`write_file` / `edit_file` 在写入路径匹配 `/etc/|\.api_keys|\.telegram_config|config\.yaml|\.env` 时触发审批。
+
+---
+
+## 工具风险分布汇总
+
+| 风险级别 | 自定义工具 | 框架内置 | SubAgent 专属 | 合计 |
+|---------|-----------|---------|-------------|------|
+| safe | 21 | 5 | 2 | 28 |
+| moderate | 10 | 2 | 0 | 12 |
+| danger | 6 | 1 | 0 | 7 |
+| **合计** | **37** | **8** | **2** | **47** |
+
+> 注：47 为含重复计数的总数（SubAgent 专属工具 web_search/think 同时计入 safe 和 SubAgent 列）。去重后 TOOL_RISK_MAP 实际条目数为 **48**（37 自定义 + 9 框架内置 + 2 SubAgent）。

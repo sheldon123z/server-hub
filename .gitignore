@@ -16,6 +16,9 @@ venv/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/agent-memory.md
+data/custom_prompt.txt
+data/custom_subagents.json
 
 # IDE
 .idea/

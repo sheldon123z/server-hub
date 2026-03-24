@@ -183,7 +183,7 @@ create_deep_agent()
                └── 每轮对话的完整状态（工具调用历史、消息）
                └── 存储在 data/agent-checkpoints.db
 
-长期记忆 ──── AGENTS.md + MemoryMiddleware
+长期记忆 ──── data/agent-memory.md + MemoryMiddleware
                └── Agent 通过 edit_file() 自主更新
                └── 每次对话开始时注入系统提示词
 
@@ -374,12 +374,13 @@ server-hub/
 │   ├── server-hub.db
 │   ├── agent-checkpoints.db
 │   ├── agent-store.db
+│   ├── agent-memory.md        # AI 助手长期记忆（运行时维护）
 │   ├── custom_prompt.txt      # 自定义提示词（可选）
 │   └── custom_subagents.json  # 自定义 SubAgent（可选）
 │
 ├── docs/                      # 项目文档
 ├── CLAUDE.md                  # 开发者指引
-├── AGENTS.md                  # AI 助手长期记忆（勿手动编辑）
+├── AGENTS.md                  # 仓库协作说明
 ├── server-hub.service         # systemd 服务文件
 └── requirements.txt           # Python 依赖
 ```

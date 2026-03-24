@@ -62,8 +62,8 @@ MODULE_INFO = {
 ```
 deep_agent.py   → 工厂函数，组装 model + tools + backend + middleware + subagents + memory + store
 llm.py          → 8 家 LLM 服务商注册表，parse_model_id("provider:model")
-tools.py        → 15 个 @tool 服务器管理工具（只读 + 操作 + 危险三级）
-subagents.py    → 3 个 SubAgent 定义 + web_search/think 工具 + 配置序列化
+tools.py        → 37 个 @tool 服务器管理工具（只读 + 操作 + 危险三级）
+subagents.py    → 5 个 SubAgent 定义 + web_search/think 工具 + 配置序列化
 safety.py       → build_interrupt_config() 生成审批规则 + Shell 黑名单
 sandbox.py      → SafeLocalShellBackend（继承 LocalShellBackend，剥离敏感环境变量 + ulimit 资源限制）
 prompts.py      → 系统提示词 + get_system_prompt() 优先读自定义文件
@@ -78,6 +78,8 @@ terminal.py     → pty.fork() WebTerminal 类
 - `researcher` — 联网搜索（Tavily），tools: `[web_search, think]`
 - `log-analyzer` — 日志分析，tools: `[get_container_logs, get_service_logs]`
 - `security-auditor` — 安全审计，tools: `[get_system_overview]`
+- `correlation-analyzer` — 多源关联分析（11 个工具），跨维度定位根因
+- `ops-scheduler` — 定时任务管理（6 个 cron 工具），创建/修改/删除/启禁 cron 任务
 - 创建新 SubAgent 需遵循 `/create-subagent` skill 的 checklist
 
 **Middleware 栈** (12 个):
@@ -86,7 +88,7 @@ terminal.py     → pty.fork() WebTerminal 类
 
 **记忆系统**:
 - 短期: `AsyncSqliteSaver` checkpoint（per-conversation state）
-- 长期: `AGENTS.md` + `MemoryMiddleware`（agent 通过 edit_file 自动更新）
+- 长期: `data/agent-memory.md` + `MemoryMiddleware`（agent 通过 edit_file 自动更新）
 - 结构化: `AsyncSqliteStore`（namespace+key-value → `data/agent-store.db`）
 
 **内置工具** (由 middleware 注入): `execute`, `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`, `write_todos`, `task`。
@@ -110,7 +112,7 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 通过 `/api/agents/admin/*` 端点管理 agent 配置，无需重启服务：
 - `GET/PUT /api/agents/admin/prompt` — 系统提示词（持久化到 `data/custom_prompt.txt`）
 - `GET/PUT /api/agents/admin/subagents` — SubAgent 配置 + 可用工具 + 供应商列表（持久化到 `data/custom_subagents.json`）
-- `GET/PUT /api/agents/admin/memory` — AGENTS.md 长期记忆
+- `GET/PUT /api/agents/admin/memory` — `data/agent-memory.md` 运行时长期记忆
 - 巡检提示词/工具/间隔通过 `PUT /api/agents/patrols/{id}` 扩展字段修改
 
 保存后调用 `reset_agent_cache()` 使新配置在下次对话生效。
@@ -130,7 +132,16 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - `data/agent-checkpoints.db` — LangGraph checkpoint（agent 会话状态持久化）
 - `data/agent-store.db` — AsyncSqliteStore（agent 结构化长期存储）
 
-表结构在 `database.py:init_tables()` 中定义，应用启动时自动创建。新增表: `alert_rules`, `alert_history`, `patrol_templates`。
+表结构在 `database.py:init_tables()` 中定义，应用启动时自动创建。新增表: `alert_rules`, `alert_history`, `patrol_templates`, `cron_job_log`。
+
+### 四大管理模块能力
+
+| 模块 | 路径 | Web 管理能力 | AI 工具能力 |
+|------|------|------------|-----------|
+| 用户管理 | `modules/users/` | 资源监控 + 配额管理 + 用户增删改 + 登录历史 + 单进程 kill | `manage_linux_user`, `get_user_login_history_tool`, `get_active_sessions_tool`, `kill_single_process_tool` |
+| Docker | `modules/docker/` | 容器/堆栈/镜像 + 网络/卷 + 容器 exec + 镜像 pull + 资源清理 | `list_docker_networks`, `docker_container_exec`, `docker_prune` |
+| 服务管理 | `modules/services/` | systemd 启停/重启 + enable/disable + reload + 依赖树 + 资源使用 | `service_enable_disable_tool`, `get_service_dependencies_tool` |
+| 定时任务 | `modules/cron/` | cron CRUD + 启禁 + 表达式验证 + 执行历史 + 备份 | `list_cron_jobs`, `validate_cron_expr`, `create_cron_job`, `modify_cron_schedule`, `toggle_cron_job_tool`, `delete_cron_job_tool` |
 
 ## 关键约定
 
@@ -146,6 +157,6 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - **框架优先**: 在实现新功能前，必须先查阅 Deep Agents 框架已有的实现方式（查看 `deepagents` 包源码或用 Context7 查文档），优先使用框架提供的机制，而非自己从零实现。例如：代码执行应通过框架的 Backend 架构（`write_file` + `execute`），而非自造 `run_code` 工具
 - **继承扩展**: 需要定制框架行为时，优先继承框架的类并 override 具体方法（如 `SafeLocalShellBackend` 继承 `LocalShellBackend`），而非绕过框架
 - **提示词引导**: 对于行为规范（如代码应写入哪个目录），优先通过系统提示词引导 agent 行为，而非硬编码到工具中
-- **AGENTS.md 是 agent 记忆**: `AGENTS.md` 是 AI 运维助手的长期记忆文件，由 Deep Agents MemoryMiddleware 加载到系统提示词。Agent 通过 `edit_file()` 自动更新。不要手动编辑除非初始化服务器信息。与 `CLAUDE.md`（开发者指引）用途不同
+- **运行时 agent 记忆位于 `data/agent-memory.md`**: 该文件是 AI 运维助手的长期记忆，由 Deep Agents MemoryMiddleware 加载到系统提示词。Agent 通过 `edit_file()` 自动更新。仓库根目录 `AGENTS.md` 留给外部编码助手/仓库协作说明使用
 - **SubAgent 规范**: 创建新 SubAgent 必须使用 `/create-subagent` skill，遵循 LangChain 官方 SubAgent 规范（4 个 Required 字段 + 最小工具集 + 500 词输出限制）。详见 `~/.claude/skills/create-subagent/`
 - **配置持久化**: 自定义配置存 `data/` 目录（.gitignore 已排除），不修改源码文件。优先读自定义文件，不存在则用源码默认值
