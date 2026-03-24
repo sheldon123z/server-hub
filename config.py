@@ -27,6 +27,11 @@ class Settings:
         self.metrics_interval_seconds: int = 60
         self.metrics_retention_days: int = 90
 
+        # WebSocket
+        self.ws_metrics_interval: int = 5          # WS快速推送间隔(秒)
+        self.ws_full_metrics_interval: int = 60    # WS全量快照间隔(秒)
+        self.top_processes_limit: int = 15         # 进程排行数量
+
         # 日志路径白名单
         self.log_dirs: list = [
             "/home/zhengxiaodong/logs",
