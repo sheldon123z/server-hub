@@ -133,16 +133,18 @@ async def get_service_logs(name: str, lines: int = 50) -> str:
 
 @tool
 async def send_notification(message: str) -> str:
-    """发送 Telegram 通知消息。
+    """发送通知到所有启用的通知渠道（Telegram、企业微信、钉钉等）。
 
     Args:
         message: 消息内容
     """
-    from modules.notifications.services import send_telegram
-    result = await send_telegram(message)
-    if result.get("success"):
-        return "Telegram 消息已发送成功。"
-    return f"发送失败: {result.get('error', '未知错误')}"
+    from modules.notifications.services import send_notification as broadcast_notification
+    results = await broadcast_notification(message)
+    success = sum(1 for r in results if r.get("success"))
+    failed = len(results) - success
+    if failed == 0:
+        return f"通知已发送成功，共 {success} 个渠道。"
+    return f"通知发送完成: {success} 个渠道成功, {failed} 个渠道失败。"
 
 
 @tool

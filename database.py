@@ -75,6 +75,20 @@ async def init_tables(db: aiosqlite.Connection):
             error TEXT
         );
 
+        -- 通知渠道配置
+        CREATE TABLE IF NOT EXISTS notification_channels (
+            id TEXT PRIMARY KEY,
+            channel_type TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            priority INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_test_at TIMESTAMP,
+            last_test_ok INTEGER
+        );
+
         -- Agent 对话线程
         CREATE TABLE IF NOT EXISTS agent_conversations (
             id TEXT PRIMARY KEY,
@@ -285,3 +299,10 @@ async def init_tables(db: aiosqlite.Connection):
     except Exception:
         pass
     await db.commit()
+
+    # 兼容迁移: 为 notifications 表添加 channel_id 列
+    try:
+        await db.execute("ALTER TABLE notifications ADD COLUMN channel_id TEXT")
+        await db.commit()
+    except Exception:
+        pass  # 列已存在

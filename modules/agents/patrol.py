@@ -303,15 +303,15 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
         )
         await db.commit()
 
-        # 告警时发送 Telegram（优先用结构化摘要）
+        # 告警时发送通知到所有启用渠道，优先发送结构化摘要。
         if status in ("warning", "critical"):
             try:
-                from modules.notifications.services import send_telegram
+                from modules.notifications.services import send_notification
                 if report_json:
                     alert_text = f"[巡检告警] {display_name}\n{report_summary_text(report_json)}"
                 else:
                     alert_text = f"[巡检告警] {display_name}\n{report[:500]}"
-                await send_telegram(alert_text[:1000])
+                await send_notification(alert_text[:1000])
             except Exception:
                 pass
 
