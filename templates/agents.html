@@ -11,8 +11,9 @@
 .agent-tab { padding: 10px 20px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: var(--text2); transition: all 0.15s; }
 .agent-tab:hover { color: var(--text); }
 .agent-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-/* 统一三栏布局: 侧边栏 | 聊天 | 右栏（终端/巡检/管理） */
-.agent-main { display: grid; grid-template-columns: 180px 1fr 1fr; gap: 8px; flex: 1; overflow: hidden; min-height: 0; }
+/* 统一布局: 侧边栏 | 聊天 | 右栏（终端/巡检/管理，可隐藏） */
+.agent-main { display: grid; grid-template-columns: 180px 1fr; gap: 8px; flex: 1; overflow: hidden; min-height: 0; }
+.agent-main.has-right { grid-template-columns: 180px 1fr 1fr; }
 .right-panel { display: none; overflow-y: auto; min-height: 0; }
 .right-panel.active { display: flex; flex-direction: column; }
 .chat-sidebar { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
@@ -143,15 +144,15 @@
 
 <div class="agent-layout" x-data="agentApp()" x-init="init()">
 
-  <!-- 右栏标签切换 -->
+  <!-- 右栏标签切换（点击打开，再次点击关闭） -->
   <div class="agent-tabs">
-    <div class="agent-tab" :class="tab==='terminal'?'active':''" @click="tab='terminal'; initTerminal()">终端</div>
-    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab='patrol'">巡检</div>
-    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab='admin'; loadAdmin()">管理</div>
+    <div class="agent-tab" :class="tab==='terminal'?'active':''" @click="tab = tab==='terminal'?'none':'terminal'; if(tab==='terminal') initTerminal()">终端</div>
+    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab = tab==='patrol'?'none':'patrol'">巡检</div>
+    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab = tab==='admin'?'none':'admin'; if(tab==='admin') loadAdmin()">管理</div>
   </div>
 
-  <!-- 三栏布局: 侧边栏 | 聊天 | 右栏 -->
-  <div class="agent-main">
+  <!-- 布局: 侧边栏 | 聊天 | 右栏(可选) -->
+  <div class="agent-main" :class="tab!=='none'?'has-right':''">
 
     <!-- 左栏: 对话列表 (始终显示) -->
     <div class="chat-sidebar">
@@ -257,7 +258,7 @@
               <div class="p-dot" :class="'patrol-'+(p.last_status||'ok')" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
               <div class="p-info">
                 <div class="p-name" x-text="p.display_name"></div>
-                <div class="p-meta" x-text="p.enabled ? p.interval_minutes+'min' : '已禁用'"></div>
+                <div class="p-meta" x-text="p.enabled ? nextRunText(p) : '已禁用'"></div>
               </div>
             </div>
           </template>
@@ -283,10 +284,12 @@
                   <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
                 </div>
               </div>
-              <div class="p-desc">
-                <span x-text="p.description"></span>
-                <span style="margin-left:12px;color:var(--text3)" x-text="'间隔 '+p.interval_minutes+' 分钟'"></span>
-                <span style="margin-left:12px;color:var(--text3)" x-show="p.last_run" x-text="'上次: '+p.last_run"></span>
+              <div class="p-desc" x-text="p.description"></div>
+              <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--text3)">
+                <span x-text="'间隔 '+p.interval_minutes+' 分钟'"></span>
+                <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
+                <span x-show="p.enabled" x-text="nextRunText(p)"></span>
+                <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
               </div>
             </div>
 
@@ -425,7 +428,7 @@
 <script>
 function agentApp() {
   return {
-    tab: 'terminal', messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
+    tab: 'none', messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
@@ -451,7 +454,19 @@ function agentApp() {
       await this.loadConversations();
       await this.loadPatrols();
       setInterval(() => this.loadPatrols(), 30000);
-      this.$nextTick(() => this.initTerminal());
+    },
+
+    // ─── 巡检定时 ───
+    nextRunText(p) {
+      if (!p.enabled) return '已禁用';
+      if (!p.last_run) return '等待首次运行';
+      const last = new Date(p.last_run);
+      const next = new Date(last.getTime() + p.interval_minutes * 60000);
+      const now = new Date();
+      const diff = Math.round((next - now) / 60000);
+      if (diff <= 0) return '即将运行';
+      if (diff < 60) return diff + '分钟后运行';
+      return Math.floor(diff/60) + '小时' + (diff%60) + '分后运行';
     },
 
     // ─── 快捷指令 ───
