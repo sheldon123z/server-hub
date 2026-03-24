@@ -36,6 +36,13 @@ async def lifespan(app: FastAPI):
         app.include_router(m["router"])
     print(f"[ServerHub] 已加载 {len(modules)} 个模块")
 
+    # 确保默认通知渠道存在
+    try:
+        from modules.notifications.services import ensure_default_channels
+        await ensure_default_channels()
+    except Exception as e:
+        print(f"[ServerHub] 默认通知渠道初始化失败: {e}")
+
     # 启动后台指标采集
     try:
         from modules.monitoring.scheduler import start_scheduler
@@ -386,13 +393,14 @@ async def notifications_page(request: Request):
         return RedirectResponse("/login", status_code=302)
     if user["role"] != "admin":
         return RedirectResponse("/", status_code=302)
-    history = []
+    channels, history = [], []
     try:
-        from modules.notifications.services import get_notification_history
+        from modules.notifications.services import get_channels, get_notification_history
+        channels = await get_channels()
         history = await get_notification_history()
     except Exception as e:
         print(f"[Notifications] 加载失败: {e}")
-    ctx = _page_context(request, user, "notifications", history=history)
+    ctx = _page_context(request, user, "notifications", history=history, channels=channels)
     return templates.TemplateResponse("notifications.html", ctx)
 
 

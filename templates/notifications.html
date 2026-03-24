@@ -3,50 +3,431 @@
 {% block page_title %}通知管理{% endblock %}
 
 {% block content %}
-<div x-data="{ message: '' }">
+<style>
+.notif-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.notif-tab { padding: 10px 20px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: var(--text2); transition: all 0.15s; }
+.notif-tab:hover { color: var(--text); }
+.notif-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.channel-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+.cb-telegram { background: var(--accent-dim); color: var(--accent); }
+.cb-wecom { background: var(--green-dim); color: var(--green); }
+.cb-dingtalk { background: var(--yellow-dim); color: var(--yellow); }
+.cb-qqbot { background: rgba(167,139,250,0.12); color: var(--purple); }
+.cb-email { background: rgba(148,163,184,0.12); color: var(--text3); }
+.toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 10px; cursor: pointer; transition: 0.2s; }
+.toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--text3); border-radius: 50%; transition: 0.2s; }
+.toggle input:checked + .toggle-slider { background: var(--accent-dim); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(16px); background: var(--accent); }
+.result-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 12px; background: var(--bg); margin-top: 6px; }
+.edit-form { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 12px; }
+.edit-form .form-group { margin-bottom: 10px; }
+.test-status { font-size: 14px; }
+</style>
 
-<!-- 发送通知 -->
-<div class="data-table-wrapper mb-4">
-  <div class="data-table-header"><h3>发送 Telegram 通知</h3></div>
-  <div style="padding:16px">
-    <div class="form-group">
-      <label class="form-label">消息内容</label>
-      <textarea x-model="message" class="form-input" rows="3" placeholder="输入通知消息..."></textarea>
-    </div>
-    <div class="flex gap-2">
-      <button class="btn btn-primary btn-sm" @click="
-        if(!message.trim()){showToast('请输入消息','err');return}
-        apiCall('/api/notifications/send','POST',{message:message}).then(()=>{showToast('发送成功','ok');message='';htmx.ajax('GET','/notifications',{target:'#main-content'})}).catch(e=>showToast('发送失败: '+e.message,'err'))
-      ">发送</button>
-      <button class="btn btn-sm" @click="
-        apiCall('/api/notifications/test','POST').then(()=>showToast('测试消息已发送','ok')).catch(e=>showToast('失败: '+e.message,'err'))
-      ">发送测试</button>
+<div x-data="notificationManager()">
+
+<!-- Tab -->
+<div class="notif-tabs">
+  <div class="notif-tab" :class="{ active: tab === 'send' }" @click="tab='send'">发送通知</div>
+  <div class="notif-tab" :class="{ active: tab === 'channels' }" @click="tab='channels'">渠道配置</div>
+  <div class="notif-tab" :class="{ active: tab === 'history' }" @click="tab='history'; loadHistory()">发送历史</div>
+</div>
+
+<!-- Tab 1: 发送通知 -->
+<div x-show="tab==='send'" x-cloak>
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>发送通知</h3></div>
+    <div style="padding:16px">
+      <div class="form-group">
+        <label class="form-label">消息内容</label>
+        <textarea x-model="message" class="form-input" rows="3" placeholder="输入通知消息..."></textarea>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary btn-sm" :disabled="sending" @click="sendMessage()">
+          <span x-show="!sending">发送</span>
+          <span x-show="sending">发送中...</span>
+        </button>
+        <button class="btn btn-sm" :disabled="sending" @click="sendTest()">
+          <span x-show="!sending">发送测试</span>
+          <span x-show="sending">测试中...</span>
+        </button>
+      </div>
+
+      <!-- 已启用渠道 -->
+      <div class="flex gap-2 mt-3" style="flex-wrap:wrap">
+        <template x-for="ch in channels.filter(c=>c.enabled)" :key="ch.id">
+          <span class="channel-badge" :class="'cb-'+ch.channel_type" x-text="ch.display_name"></span>
+        </template>
+        <span x-show="channels.filter(c=>c.enabled).length===0" class="text-xs text-muted">暂无启用的渠道</span>
+      </div>
+
+      <!-- 发送结果 -->
+      <template x-if="sendResults">
+        <div class="mt-3">
+          <div class="text-xs text-muted mb-2">发送结果:</div>
+          <template x-for="r in sendResults.results" :key="r.channel">
+            <div class="result-item">
+              <span class="channel-badge" :class="'cb-'+(r.channel||'')" x-text="r.display_name || r.channel"></span>
+              <span x-show="r.success" class="badge badge-ok">成功</span>
+              <span x-show="!r.success" class="badge badge-crit" x-text="'失败: '+(r.error||'')"></span>
+            </div>
+          </template>
+        </div>
+      </template>
     </div>
   </div>
 </div>
 
-<!-- 发送历史 -->
-<div class="data-table-wrapper">
-  <div class="data-table-header"><h3>发送历史</h3></div>
-  <table>
-    <thead><tr><th>时间</th><th>渠道</th><th>消息</th><th>状态</th></tr></thead>
-    <tbody>
-    {% for n in history %}
-      <tr>
-        <td class="text-xs text-muted">{{ n.timestamp }}</td>
-        <td><span class="badge badge-info">{{ n.channel }}</span></td>
-        <td class="text-sm" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.message }}</td>
-        <td>
-          {% if n.success %}<span class="badge badge-ok">成功</span>
-          {% else %}<span class="badge badge-crit">失败</span>{% endif %}
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="4" class="empty-state">暂无记录</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+<!-- Tab 2: 渠道配置 -->
+<div x-show="tab==='channels'" x-cloak>
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>渠道列表</h3>
+      <button class="btn btn-primary btn-sm" @click="startNew()" x-show="editingChannel!=='new'">添加渠道</button>
+    </div>
+    <table>
+      <thead><tr><th>名称</th><th>类型</th><th>状态</th><th>测试</th><th>操作</th></tr></thead>
+      <tbody>
+        <template x-for="ch in channels" :key="ch.id">
+          <tr>
+            <td><strong x-text="ch.display_name"></strong></td>
+            <td><span class="channel-badge" :class="'cb-'+ch.channel_type" x-text="typeDisplayName(ch.channel_type)"></span></td>
+            <td>
+              <label class="toggle">
+                <input type="checkbox" :checked="ch.enabled" @change="toggleChannel(ch.id, $event.target.checked)">
+                <span class="toggle-slider"></span>
+              </label>
+            </td>
+            <td>
+              <span class="test-status" x-show="ch.last_test_at === null || ch.last_test_at === undefined">--</span>
+              <span class="test-status" x-show="ch.last_test_at && ch.last_test_ok" style="color:var(--green)">&#10003;</span>
+              <span class="test-status" x-show="ch.last_test_at && !ch.last_test_ok" style="color:var(--red)">&#10007;</span>
+            </td>
+            <td>
+              <div class="flex gap-2">
+                <button class="btn btn-xs" @click="startEdit(ch)">编辑</button>
+                <button class="btn btn-xs" @click="testChannel(ch.id)">测试</button>
+                <button class="btn btn-danger btn-xs" @click="deleteChannel(ch.id, ch.display_name)">删除</button>
+              </div>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="channels.length===0">
+          <td colspan="5" class="empty-state">暂无渠道，点击上方按钮添加</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 添加/编辑表单 -->
+  <template x-if="editingChannel !== null">
+    <div class="edit-form">
+      <h3 class="text-sm mb-3" x-text="editingChannel === 'new' ? '添加渠道' : '编辑渠道'"></h3>
+
+      <!-- 渠道类型（仅新建时可选） -->
+      <div class="form-group" x-show="editingChannel === 'new'">
+        <label class="form-label">渠道类型</label>
+        <select class="form-input" x-model="editForm.channel_type" @change="onTypeChange()">
+          <option value="">-- 选择类型 --</option>
+          <template x-for="(info, tid) in channelTypes" :key="tid">
+            <option :value="tid" x-text="info.display_name"></option>
+          </template>
+        </select>
+      </div>
+
+      <!-- 显示名称 -->
+      <div class="form-group">
+        <label class="form-label">显示名称</label>
+        <input type="text" class="form-input" x-model="editForm.display_name" placeholder="例如: 运维群">
+      </div>
+
+      <!-- 动态配置字段 -->
+      <template x-for="field in getConfigFields()" :key="field.name">
+        <div class="form-group">
+          <label class="form-label">
+            <span x-text="field.label"></span>
+            <span x-show="field.required" style="color:var(--red)"> *</span>
+          </label>
+          <!-- text / password -->
+          <template x-if="field.type === 'text' || field.type === 'password'">
+            <input :type="field.type" class="form-input"
+              :placeholder="field.sensitive && editingChannel !== 'new' ? '留空保留原值' : (field.default || '')"
+              x-model="editForm.config[field.name]">
+          </template>
+          <!-- number -->
+          <template x-if="field.type === 'number'">
+            <input type="number" class="form-input"
+              :placeholder="field.default || ''"
+              x-model.number="editForm.config[field.name]">
+          </template>
+          <!-- boolean -->
+          <template x-if="field.type === 'boolean'">
+            <label class="toggle" style="margin-top:6px">
+              <input type="checkbox" x-model="editForm.config[field.name]">
+              <span class="toggle-slider"></span>
+            </label>
+          </template>
+        </div>
+      </template>
+
+      <div class="flex gap-2" style="justify-content:flex-end">
+        <button class="btn btn-sm" @click="cancelEdit()">取消</button>
+        <button class="btn btn-primary btn-sm" @click="saveChannel()">保存</button>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- Tab 3: 发送历史 -->
+<div x-show="tab==='history'" x-cloak>
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>发送历史</h3>
+      <select class="form-input" style="width:auto;padding:4px 8px;font-size:12px" x-model="historyFilter" @change="loadHistory()">
+        <option value="">全部渠道</option>
+        <template x-for="ch in channels" :key="ch.id">
+          <option :value="ch.id" x-text="ch.display_name"></option>
+        </template>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>时间</th><th>渠道</th><th>消息</th><th>状态</th></tr></thead>
+      <tbody>
+        <template x-for="n in history" :key="n.id || n.timestamp">
+          <tr>
+            <td class="text-xs text-muted" x-text="n.timestamp"></td>
+            <td><span class="channel-badge" :class="'cb-'+(n.channel||'')" x-text="n.channel"></span></td>
+            <td class="text-sm" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="n.message"></td>
+            <td>
+              <span x-show="n.success" class="badge badge-ok">成功</span>
+              <span x-show="!n.success" class="badge badge-crit">失败</span>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="history.length===0">
+          <td colspan="4" class="empty-state">暂无记录</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 </div>
+
+<script>
+function notificationManager() {
+  return {
+    tab: 'send',
+    message: '',
+    sending: false,
+    sendResults: null,
+
+    channels: {{ channels | tojson }},
+    channelTypes: {},
+    editingChannel: null,
+    editForm: { channel_type: '', display_name: '', config: {}, enabled: true },
+
+    history: {{ history | tojson }},
+    historyFilter: '',
+
+    async init() {
+      await this.loadChannelTypes();
+    },
+
+    async loadChannelTypes() {
+      try {
+        this.channelTypes = await apiCall('/api/notifications/channel-types');
+      } catch(e) {
+        console.error('Failed to load channel types:', e);
+      }
+    },
+
+    async sendMessage() {
+      if (!this.message.trim()) { showToast('请输入消息', 'err'); return; }
+      this.sending = true;
+      this.sendResults = null;
+      try {
+        const data = await apiCall('/api/notifications/send', 'POST', { message: this.message });
+        this.sendResults = data;
+        if (data.all_success) {
+          showToast('全部发送成功', 'ok');
+          this.message = '';
+        } else {
+          showToast('部分渠道发送失败', 'warn');
+        }
+      } catch(e) {
+        showToast('发送失败: ' + e.message, 'err');
+      }
+      this.sending = false;
+    },
+
+    async sendTest() {
+      this.sending = true;
+      this.sendResults = null;
+      try {
+        const data = await apiCall('/api/notifications/test', 'POST');
+        this.sendResults = data;
+        showToast(data.all_success ? '测试全部成功' : '部分渠道测试失败', data.all_success ? 'ok' : 'warn');
+      } catch(e) {
+        showToast('测试失败: ' + e.message, 'err');
+      }
+      this.sending = false;
+    },
+
+    async loadChannels() {
+      try {
+        const data = await apiCall('/api/notifications/channels');
+        this.channels = data.channels || data;
+      } catch(e) {
+        showToast('加载渠道失败', 'err');
+      }
+    },
+
+    async saveChannel() {
+      const form = this.editForm;
+      if (!form.display_name.trim()) { showToast('请输入显示名称', 'err'); return; }
+      if (this.editingChannel === 'new' && !form.channel_type) { showToast('请选择渠道类型', 'err'); return; }
+
+      // 必填字段校验
+      const fields = this.getConfigFields();
+      for (const f of fields) {
+        if (f.required && !form.config[f.name] && form.config[f.name] !== 0 && form.config[f.name] !== false) {
+          showToast(f.label + ' 为必填项', 'err');
+          return;
+        }
+      }
+
+      // 编辑模式下，敏感字段若未修改则不传
+      let configToSend = { ...form.config };
+      if (this.editingChannel !== 'new') {
+        for (const f of fields) {
+          if (f.sensitive && (!configToSend[f.name] || /^\*+/.test(configToSend[f.name]))) {
+            delete configToSend[f.name];
+          }
+        }
+      }
+
+      try {
+        if (this.editingChannel === 'new') {
+          await apiCall('/api/notifications/channels', 'POST', {
+            channel_type: form.channel_type,
+            display_name: form.display_name,
+            config: configToSend,
+            enabled: form.enabled
+          });
+          showToast('渠道已添加', 'ok');
+        } else {
+          await apiCall('/api/notifications/channels/' + this.editingChannel, 'PUT', {
+            display_name: form.display_name,
+            config: configToSend,
+            enabled: form.enabled
+          });
+          showToast('渠道已更新', 'ok');
+        }
+        this.cancelEdit();
+        await this.loadChannels();
+      } catch(e) {
+        showToast('保存失败: ' + e.message, 'err');
+      }
+    },
+
+    async deleteChannel(id, name) {
+      if (!confirm('确定删除渠道 "' + name + '"？')) return;
+      try {
+        await apiCall('/api/notifications/channels/' + id, 'DELETE');
+        showToast('已删除', 'ok');
+        await this.loadChannels();
+      } catch(e) {
+        showToast('删除失败: ' + e.message, 'err');
+      }
+    },
+
+    async testChannel(id) {
+      try {
+        const data = await apiCall('/api/notifications/channels/' + id + '/test', 'POST');
+        showToast(data.success !== false ? '测试成功' : '测试失败', data.success !== false ? 'ok' : 'err');
+        await this.loadChannels();
+      } catch(e) {
+        showToast('测试失败: ' + e.message, 'err');
+      }
+    },
+
+    async toggleChannel(id, enabled) {
+      try {
+        await apiCall('/api/notifications/channels/' + id, 'PUT', { enabled });
+        showToast(enabled ? '已启用' : '已禁用', 'ok');
+        await this.loadChannels();
+      } catch(e) {
+        showToast('操作失败: ' + e.message, 'err');
+        await this.loadChannels();
+      }
+    },
+
+    startEdit(channel) {
+      this.editingChannel = channel.id;
+      const schema = this.channelTypes[channel.channel_type]?.config_schema || [];
+      let config = {};
+      for (const f of schema) {
+        if (f.sensitive) {
+          config[f.name] = '****';
+        } else {
+          config[f.name] = channel.config?.[f.name] ?? f.default ?? '';
+        }
+      }
+      this.editForm = {
+        channel_type: channel.channel_type,
+        display_name: channel.display_name,
+        config: config,
+        enabled: channel.enabled
+      };
+    },
+
+    startNew() {
+      this.editingChannel = 'new';
+      this.editForm = { channel_type: '', display_name: '', config: {}, enabled: true };
+    },
+
+    cancelEdit() {
+      this.editingChannel = null;
+      this.editForm = { channel_type: '', display_name: '', config: {}, enabled: true };
+    },
+
+    onTypeChange() {
+      const schema = this.channelTypes[this.editForm.channel_type]?.config_schema || [];
+      let config = {};
+      for (const f of schema) {
+        config[f.name] = f.default ?? '';
+      }
+      this.editForm.config = config;
+      if (!this.editForm.display_name) {
+        this.editForm.display_name = this.channelTypes[this.editForm.channel_type]?.display_name || '';
+      }
+    },
+
+    async loadHistory() {
+      try {
+        let url = '/api/notifications/history?limit=50';
+        if (this.historyFilter) url += '&channel_id=' + this.historyFilter;
+        const data = await apiCall(url);
+        this.history = data.notifications || data;
+      } catch(e) {
+        showToast('加载历史失败', 'err');
+      }
+    },
+
+    getConfigFields() {
+      const type = this.editForm.channel_type;
+      if (!type || !this.channelTypes[type]) return [];
+      return this.channelTypes[type].config_schema || [];
+    },
+
+    typeDisplayName(type) {
+      if (this.channelTypes[type]) return this.channelTypes[type].display_name;
+      return {telegram:'Telegram', wecom:'企业微信', dingtalk:'钉钉', qqbot:'QQ机器人', email:'邮件'}[type] || type;
+    }
+  }
+}
+</script>
 {% endblock %}

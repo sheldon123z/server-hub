@@ -133,11 +133,11 @@ async def execute_patrol(task: dict):
         )
         await db.commit()
 
-        # 告警时发送 Telegram
+        # 告警时发送通知到所有启用渠道
         if status in ("warning", "critical"):
             try:
-                from modules.notifications.services import send_telegram
-                await send_telegram(f"[巡检告警] {display_name}\n{report[:500]}")
+                from modules.notifications.services import send_notification
+                await send_notification(f"[巡检告警] {display_name}\n{report[:500]}")
             except Exception:
                 pass
 
