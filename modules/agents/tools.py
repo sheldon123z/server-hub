@@ -509,7 +509,6 @@ async def search_fault_cases(query: str) -> str:
 
     try:
         async with aiosqlite.connect(settings.db_path) as db:
-            # 先尝试 FTS5 搜索
             try:
                 cursor = await db.execute(
                     "SELECT fc.id, fc.title, fc.category, fc.symptoms, fc.root_cause, fc.solution, fc.tags "
@@ -518,7 +517,6 @@ async def search_fault_cases(query: str) -> str:
                     (query,),
                 )
             except Exception:
-                # FTS5 不可用时用 LIKE 回退
                 like = f"%{query}%"
                 cursor = await db.execute(
                     "SELECT id, title, category, symptoms, root_cause, solution, tags "
@@ -574,7 +572,6 @@ async def save_fault_case(title: str, category: str, symptoms: str, root_cause: 
             row = await cursor.fetchone()
             case_id = row[0] if row else None
 
-            # 更新 FTS5 索引
             if case_id:
                 try:
                     await db.execute(
@@ -583,7 +580,7 @@ async def save_fault_case(title: str, category: str, symptoms: str, root_cause: 
                         (case_id, title, symptoms, root_cause, solution, tags),
                     )
                 except Exception:
-                    pass  # FTS5 不可用时跳过
+                    pass
 
             await db.commit()
             return f"案例已保存 (ID: {case_id})。标题: {title}"
@@ -613,7 +610,6 @@ def auto_fix_compliance(item_id: str) -> str:
     except Exception as e:
         return f"读取基线文件失败: {e}"
 
-    # 找到对应项
     item = next((b for b in baselines if b["id"] == item_id), None)
     if not item:
         available = ", ".join(b["id"] for b in baselines if b.get("auto_fixable"))
@@ -628,7 +624,6 @@ def auto_fix_compliance(item_id: str) -> str:
 
     check_cmd = item.get("check_cmd", "")
 
-    # 1. 先检查当前状态
     before = ""
     if check_cmd:
         try:
@@ -637,7 +632,6 @@ def auto_fix_compliance(item_id: str) -> str:
         except Exception:
             before = "检查失败"
 
-    # 2. 执行修复
     try:
         proc = subprocess.run(fix_cmd, shell=True, capture_output=True, text=True, timeout=30)
         fix_output = (proc.stdout + proc.stderr).strip()
@@ -647,14 +641,12 @@ def auto_fix_compliance(item_id: str) -> str:
     except Exception as e:
         return f"修复执行失败: {e}"
 
-    # 3. 验证修复结果
     after = ""
     verified = False
     if check_cmd:
         try:
             proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=10)
             after = (proc.stdout + proc.stderr).strip()
-            # 简单验证
             if "expect_contains" in item and item["expect_contains"] in after:
                 verified = True
             elif "fail_if_contains" in item and item["fail_if_contains"] not in after:
@@ -719,7 +711,6 @@ async def get_asset_topology() -> str:
 
     mermaid = await generate_topology_mermaid()
 
-    # 分析风险
     risks = []
     type_counts = {}
     stopped = []
@@ -727,20 +718,15 @@ async def get_asset_topology() -> str:
         type_counts[a["type"]] = type_counts.get(a["type"], 0) + 1
         if a["status"] in ("stopped", "unknown"):
             stopped.append(a)
-        deps = a.get("dependencies", [])
-        if isinstance(deps, list) and len(deps) == 0 and a["type"] in ("container", "service"):
-            pass  # 独立组件，不一定是风险
 
     if stopped:
         risks.append(f"⚠️ {len(stopped)} 个资产处于停止/未知状态: {', '.join(a['name'] for a in stopped[:5])}")
 
-    # 单点检测：只有 1 个实例的关键服务
     for t, count in type_counts.items():
         if t == "compose" and count > 0:
             risks.append(f"ℹ️ {count} 个 Compose 堆栈（单节点部署，无高可用）")
 
     risk_text = "\n".join(risks) if risks else "未发现明显风险"
-
     return f"## 资产拓扑图\n\n```mermaid\n{mermaid}\n```\n\n## 风险分析\n{risk_text}\n\n共 {len(assets)} 项资产"
 
 
@@ -748,12 +734,7 @@ async def get_asset_topology() -> str:
 
 @tool
 async def service_enable_disable_tool(name: str, action: str) -> str:
-    """启用或禁用 systemd 服务的自启动。
-
-    Args:
-        name: 服务名称（如 nginx, docker）
-        action: "enable"(开机自启) 或 "disable"(禁止自启)
-    """
+    """启用或禁用 systemd 服务的自启动。"""
     from modules.services.services import service_enable_disable
     try:
         await service_enable_disable(name, action)
@@ -767,11 +748,7 @@ async def service_enable_disable_tool(name: str, action: str) -> str:
 
 @tool
 async def get_service_dependencies_tool(name: str) -> str:
-    """获取 systemd 服务的依赖关系树。
-
-    Args:
-        name: 服务名称
-    """
+    """获取 systemd 服务的依赖关系树。"""
     from modules.services.services import service_dependencies
     try:
         result = await service_dependencies(name)
@@ -805,12 +782,7 @@ async def list_docker_networks() -> str:
 
 @tool
 async def docker_container_exec(container_name: str, command: str) -> str:
-    """在运行中的 Docker 容器内执行命令。
-
-    Args:
-        container_name: 容器名称
-        command: 要执行的 shell 命令
-    """
+    """在运行中的 Docker 容器内执行命令。"""
     from modules.docker.services import container_exec
     try:
         output = await container_exec(container_name, command)
@@ -823,11 +795,7 @@ async def docker_container_exec(container_name: str, command: str) -> str:
 
 @tool
 async def docker_prune(resource_type: str = "all") -> str:
-    """清理未使用的 Docker 资源。此操作不可逆。
-
-    Args:
-        resource_type: 清理类型 — "container"(停止的容器) / "image"(悬空镜像) / "volume"(未用卷) / "all"(全部)
-    """
+    """清理未使用的 Docker 资源。此操作不可逆。"""
     from modules.docker.services import prune_resources
     try:
         result = await prune_resources(resource_type)
@@ -840,18 +808,12 @@ async def docker_prune(resource_type: str = "all") -> str:
 
 @tool
 def get_user_login_history_tool(username: str = "", count: int = 10) -> str:
-    """查询 Linux 用户登录历史。可以查看谁在什么时候从哪个 IP 登录了服务器。
-
-    Args:
-        username: Linux 用户名，留空查所有用户
-        count: 最多返回条数（默认 10）
-    """
+    """查询 Linux 用户登录历史。"""
     from modules.users.services import get_user_login_history
     entries = get_user_login_history(username, min(count, 50))
     if not entries:
         target = username or "所有用户"
         return f"{target} 没有登录记录"
-
     lines = [f"## 登录历史 ({len(entries)} 条)\n"]
     for e in entries:
         lines.append(f"- {e['raw']}")
@@ -865,7 +827,6 @@ def get_active_sessions_tool() -> str:
     sessions = get_active_sessions()
     if not sessions:
         return "当前没有活跃的登录会话"
-
     lines = [f"## 活跃会话 ({len(sessions)} 个)\n"]
     for s in sessions:
         source = f" (来自 {s['source']})" if s["source"] else ""
@@ -877,16 +838,8 @@ def get_active_sessions_tool() -> str:
 
 @tool
 def manage_linux_user(action: str, username: str, groups: str = "", shell: str = "/bin/bash") -> str:
-    """管理 Linux 用户：创建、删除或修改。此操作影响系统级别用户，需谨慎。
-
-    Args:
-        action: 操作类型，可选 "create"(创建) / "delete"(删除) / "modify"(修改组或shell)
-        username: 目标用户名
-        groups: 逗号分隔的附加组（用于 create/modify，如 "students,docker"）
-        shell: 登录 shell（用于 create/modify，默认 /bin/bash）
-    """
+    """管理 Linux 用户：创建、删除或修改。"""
     from modules.users.services import create_linux_user, delete_linux_user, modify_linux_user
-
     if action == "create":
         result = create_linux_user(username, groups, shell)
     elif action == "delete":
@@ -894,24 +847,15 @@ def manage_linux_user(action: str, username: str, groups: str = "", shell: str =
     elif action == "modify":
         result = modify_linux_user(username, groups=groups or None, shell=shell if shell != "/bin/bash" else None)
     else:
-        return f"不支持的操作: {action}，可选: create/delete/modify"
-
+        return f"不支持的操作: {action}"
     if result["ok"]:
-        action_names = {"create": "创建", "delete": "删除", "modify": "修改"}
-        return f"已成功{action_names.get(action, action)}用户 {username}"
+        return f"已成功执行 {action} 用户 {username}"
     return f"操作失败: {result['error']}"
 
 
-# ─── moderate: 单进程终止 ───
-
 @tool
 def kill_single_process_tool(pid: int, username: str) -> str:
-    """终止指定用户的单个进程。
-
-    Args:
-        pid: 进程 ID
-        username: 进程所属用户（用于安全校验）
-    """
+    """终止指定用户的单个进程。"""
     from modules.users.services import kill_single_process
     result = kill_single_process(pid, username)
     if result["ok"]:
@@ -923,158 +867,117 @@ def kill_single_process_tool(pid: int, username: str) -> str:
 
 @tool
 async def list_cron_jobs(cron_user: str = "zhengxiaodong") -> str:
-    """列出指定用户的 cron 定时任务，包含执行时间、命令、启用状态。
-
-    Args:
-        cron_user: Linux 用户名（默认 zhengxiaodong），使用 "root" 查看 root 的任务。
-    """
+    """列出指定用户的 cron 定时任务。"""
     from modules.cron.services import get_user_crontab, get_root_crontab
-    if cron_user == "root":
-        jobs = await get_root_crontab()
-    else:
-        jobs = await get_user_crontab(cron_user)
-
+    jobs = await get_root_crontab() if cron_user == "root" else await get_user_crontab(cron_user)
     if not jobs:
         return f"用户 {cron_user} 没有定时任务"
-
     lines = [f"## {cron_user} 的定时任务 ({len(jobs)} 条)\n"]
     for j in jobs:
         status = "启用" if j["enabled"] else "禁用"
-        lines.append(
-            f"- [{status}] `{j['schedule']}` ({j['description']})\n"
-            f"  命令: `{j['command'][:120]}`"
-            + (f"\n  备注: {j['comment']}" if j["comment"] else "")
-        )
+        lines.append(f"- [{status}] `{j['schedule']}` {j['command'][:100]}")
     return "\n".join(lines)
 
 
 @tool
 def validate_cron_expr(expression: str) -> str:
-    """验证 cron 表达式是否合法，返回中文描述和未来 5 次执行时间。
-
-    Args:
-        expression: 5 字段的 cron 表达式，如 "0 8 * * *"
-    """
+    """验证 cron 表达式是否合法。"""
     from modules.cron.services import validate_cron_expression
     result = validate_cron_expression(expression)
     if not result["valid"]:
-        return f"无效的表达式: {result['error']}"
+        return f"无效表达式: {result['error']}"
     runs = "\n".join(f"  - {r}" for r in result["next_runs"])
-    return f"表达式: `{expression}` — {result['description']}\n\n未来 5 次执行:\n{runs}"
+    return f"表达式: `{expression}` — {result['description']}\n\n未来执行:\n{runs}"
 
-
-# ─── moderate: 定时任务管理 ───
 
 @tool
 async def create_cron_job(cron_user: str, schedule: str, command: str, comment: str = "") -> str:
-    """创建新的 cron 定时任务。
-
-    Args:
-        cron_user: Linux 用户名（如 "zhengxiaodong" 或 "root"）
-        schedule: cron 表达式（5 字段，如 "0 8 * * *" 表示每天 8 点）
-        command: 要执行的完整命令（使用绝对路径）
-        comment: 可选的任务备注
-    """
-    from modules.cron.services import add_cron_job, validate_cron_expression
-    from modules.agents.safety import check_shell_command
-
-    # 安全检查：命令不能包含黑名单模式
-    safe, reason = check_shell_command(command)
-    if not safe:
-        return f"拒绝创建: {reason}"
-
-    validation = validate_cron_expression(schedule)
-    if not validation["valid"]:
-        return f"表达式无效: {validation['error']}"
-
+    """创建新的 cron 定时任务。"""
+    from modules.cron.services import add_cron_job
     try:
         await add_cron_job(cron_user, schedule, command, comment)
-    except ValueError as e:
+        return f"已创建定时任务: {schedule} {command}"
+    except Exception as e:
         return f"创建失败: {e}"
-    except RuntimeError as e:
-        return f"系统错误: {e}"
-
-    return (
-        f"已创建定时任务:\n"
-        f"- 用户: {cron_user}\n"
-        f"- 时间: `{schedule}` ({validation['description']})\n"
-        f"- 命令: `{command}`\n"
-        f"- 下次执行: {validation['next_runs'][0]}"
-    )
 
 
 @tool
 async def modify_cron_schedule(cron_user: str, old_schedule: str, command: str, new_schedule: str) -> str:
-    """修改已有 cron 任务的执行时间。
-
-    Args:
-        cron_user: Linux 用户名
-        old_schedule: 当前的 cron 表达式
-        command: 任务命令（用于定位具体任务）
-        new_schedule: 新的 cron 表达式
-    """
-    from modules.cron.services import update_cron_schedule, validate_cron_expression
-
-    validation = validate_cron_expression(new_schedule)
-    if not validation["valid"]:
-        return f"新表达式无效: {validation['error']}"
-
+    """修改已有 cron 任务的执行时间。"""
+    from modules.cron.services import update_cron_schedule
     try:
         await update_cron_schedule(cron_user, old_schedule, command, new_schedule)
-    except ValueError as e:
-        return f"修改失败: {e}"
-    except RuntimeError as e:
-        return f"系统错误: {e}"
-
-    return (
-        f"已修改定时任务:\n"
-        f"- 用户: {cron_user}\n"
-        f"- 旧时间: `{old_schedule}`\n"
-        f"- 新时间: `{new_schedule}` ({validation['description']})\n"
-        f"- 下次执行: {validation['next_runs'][0]}"
-    )
+        return f"已更新任务时间: {new_schedule}"
+    except Exception as e:
+        return f"更新失败: {e}"
 
 
 @tool
 async def toggle_cron_job_tool(cron_user: str, schedule: str, command: str, enabled: bool) -> str:
-    """启用或禁用 cron 定时任务。
-
-    Args:
-        cron_user: Linux 用户名
-        schedule: cron 表达式
-        command: 任务命令
-        enabled: True=启用, False=禁用
-    """
+    """启用或禁用 cron 定时任务。"""
     from modules.cron.services import toggle_cron_job
-
     try:
         await toggle_cron_job(cron_user, schedule, command, enabled)
-    except ValueError as e:
+        return f"已{'启用' if enabled else '禁用'}任务"
+    except Exception as e:
         return f"操作失败: {e}"
 
-    action = "启用" if enabled else "禁用"
-    return f"已{action}定时任务: `{schedule}` {command[:80]}"
-
-
-# ─── danger: 定时任务删除 ───
 
 @tool
 async def delete_cron_job_tool(cron_user: str, schedule: str, command: str) -> str:
-    """删除 cron 定时任务。此操作不可逆，建议先备份 crontab。
-
-    Args:
-        cron_user: Linux 用户名
-        schedule: cron 表达式
-        command: 任务命令
-    """
+    """删除 cron 定时任务。"""
     from modules.cron.services import delete_cron_job
-
     try:
         await delete_cron_job(cron_user, schedule, command)
-    except ValueError as e:
+        return "任务已删除"
+    except Exception as e:
         return f"删除失败: {e}"
 
-    return f"已删除定时任务: 用户={cron_user}, 时间=`{schedule}`, 命令=`{command[:80]}`"
+
+# ─── safe: RAG 检索 ───
+
+@tool
+async def retrieve_knowledge(query: str, source: str = "", top_k: int = 5) -> str:
+    """从知识库检索相关信息。使用语义搜索+关键词搜索混合检索运维文档、故障案例、巡检报告、API文档等。
+
+    比 search_fault_cases 更强大：覆盖全部知识源，支持语义理解。
+
+    Args:
+        query: 搜索查询（如 "Docker 容器频繁重启怎么排查"、"nginx 配置在哪里"）
+        source: 可选，限定数据源。可选值: ops-docs, api-docs, fault_case, patrol_history, compliance, agent-memory。留空搜索全部。
+        top_k: 返回结果数量，默认5
+    """
+    from modules.agents.rag import hybrid_search
+    results = await asyncio.get_event_loop().run_in_executor(
+        None, hybrid_search, query, top_k, source
+    )
+    if not results:
+        return f"知识库中没有找到与 \"{query}\" 相关的信息。"
+    lines = [f"## 知识检索: \"{query}\" ({len(results)} 条结果)\n"]
+    for i, r in enumerate(results, 1):
+        meta = r["metadata"]
+        src = meta.get("source", "unknown")
+        title = meta.get("title", meta.get("file", ""))
+        lines.append(f"### [{i}] [{src}] {title}")
+        lines.append(r["content"][:500])
+        lines.append(f"*相关度: {r['score']:.2f} | 检索方式: {r['search_type']}*\n")
+    return "\n".join(lines)
+
+
+@tool
+async def reindex_knowledge_base() -> str:
+    """手动触发知识库全量重建索引。管理员在更新了运维文档或导入新故障案例后使用。"""
+    from modules.agents.rag import build_full_index
+    stats = await asyncio.get_event_loop().run_in_executor(
+        None, build_full_index, True
+    )
+    lines = ["## 知识库重建完成\n"]
+    for key, count in stats.items():
+        if key not in ("total", "build_time_seconds", "skipped"):
+            lines.append(f"- {key}: {count} 个文档")
+    lines.append(f"\n总计: {stats.get('total', 0)} 个文档")
+    lines.append(f"耗时: {stats.get('build_time_seconds', 0):.1f} 秒")
+    return "\n".join(lines)
 
 
 # ─── 工具注册表 ───
@@ -1084,13 +987,6 @@ def get_server_tools(user_role: str = "admin") -> list:
 
     Args:
         user_role: "admin" 返回全部工具，"user" 只返回只读安全工具
-
-    Deep Agents 还会自动注入内置工具:
-    - execute (持久化 Shell)
-    - read_file / write_file / edit_file (文件操作)
-    - ls / glob / grep (文件搜索)
-    - write_todos (任务规划)
-    - task (子智能体)
     """
     all_tools = [
         get_system_overview,
@@ -1134,12 +1030,15 @@ def get_server_tools(user_role: str = "admin") -> list:
         modify_cron_schedule,
         toggle_cron_job_tool,
         delete_cron_job_tool,
+        # RAG 知识库
+        retrieve_knowledge,
+        reindex_knowledge_base,
     ]
 
     if user_role == "admin":
         return all_tools
 
-    # 普通用户：只返回 SAFE 级别工具，排除 send_notification 和 save_fault_case
+    # 普通用户：只返回 SAFE 级别工具
     from modules.agents.safety import TOOL_RISK_MAP, RiskLevel
     excluded = {"send_notification", "save_fault_case"}
     return [

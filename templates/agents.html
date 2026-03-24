@@ -755,6 +755,48 @@
       </div>
     </div>
 
+    <!-- RAG 知识库 -->
+    <div class="admin-section">
+      <h3>RAG 知识库
+        <span class="badge" :class="adminData.rag.status==='ready'?'badge-ok':adminData.rag.status==='building'?'badge-warn':'badge-crit'"
+              style="font-size:10px;margin-left:6px"
+              x-text="adminData.rag.status==='ready'?'正常':adminData.rag.status==='building'?'构建中':adminData.rag.status==='error'?'错误':'未知'"></span>
+      </h3>
+      <template x-if="adminData.rag.error">
+        <div style="color:var(--crit);font-size:12px;margin-bottom:8px" x-text="'错误: '+adminData.rag.error"></div>
+      </template>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+        <div style="padding:8px;background:var(--bg2);border-radius:6px">
+          <div class="text-muted" style="font-size:10px;margin-bottom:4px">总文档数</div>
+          <div style="font-size:18px;font-weight:600;color:var(--accent)" x-text="adminData.rag.total_docs||0"></div>
+        </div>
+        <div style="padding:8px;background:var(--bg2);border-radius:6px">
+          <div class="text-muted" style="font-size:10px;margin-bottom:4px">存储大小</div>
+          <div style="font-size:18px;font-weight:600;color:var(--accent)" x-text="(adminData.rag.storage_mb||0).toFixed(1)+' MB'"></div>
+        </div>
+      </div>
+      <template x-if="adminData.rag.sources && Object.keys(adminData.rag.sources).length">
+        <div style="margin-top:8px">
+          <div class="text-muted" style="font-size:10px;margin-bottom:4px">各数据源文档数</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <template x-for="[src,cnt] in Object.entries(adminData.rag.sources)" :key="src">
+              <span class="badge badge-info" style="font-size:10px" x-text="src+': '+cnt"></span>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div style="margin-top:8px;font-size:11px;color:var(--text3)">
+        <span x-show="adminData.rag.embedding_model">模型: <span x-text="adminData.rag.embedding_model"></span></span>
+        <span x-show="adminData.rag.last_indexed" style="margin-left:12px">上次索引: <span x-text="adminData.rag.last_indexed"></span></span>
+      </div>
+      <div class="admin-actions">
+        <button class="btn btn-xs btn-primary" :disabled="adminData.ragReindexing" @click="reindexRAG()">
+          <span x-show="!adminData.ragReindexing">重建索引</span>
+          <span x-show="adminData.ragReindexing">重建中...</span>
+        </button>
+      </div>
+    </div>
+
     <!-- 巡检提示词 -->
     <div class="admin-section">
       <h3>巡检任务提示词</h3>
@@ -832,7 +874,7 @@ function agentApp() {
     // 弹窗
     confirmModal: { show: false, title: '', message: '', confirmText: '', onConfirm: ()=>{} },
     // 管理面板
-    adminData: { prompt: '', promptCustom: false, subagents: [], availableTools: [], providers: [], memory: '', editingSubagent: -1 },
+    adminData: { prompt: '', promptCustom: false, subagents: [], availableTools: [], providers: [], memory: '', editingSubagent: -1, rag: {}, ragReindexing: false },
     // 快捷指令
     showSlashMenu: false, slashIdx: 0, filteredCommands: [],
     slashCommands: [
@@ -1185,10 +1227,11 @@ function agentApp() {
     // ─── 管理面板 ───
     async loadAdmin() {
       try {
-        const [promptRes, subRes, memRes] = await Promise.all([
+        const [promptRes, subRes, memRes, ragRes] = await Promise.all([
           fetch('/api/agents/admin/prompt').then(r=>r.json()),
           fetch('/api/agents/admin/subagents').then(r=>r.json()),
           fetch('/api/agents/admin/memory').then(r=>r.json()),
+          fetch('/api/agents/admin/rag').then(r=>r.json()).catch(()=>({ok:false})),
         ]);
         this.adminData.prompt = promptRes.content || '';
         this.adminData.promptCustom = promptRes.is_custom || false;
@@ -1197,6 +1240,7 @@ function agentApp() {
         this.adminData.providers = subRes.providers || [];
         this.adminData.memory = memRes.content || '';
         this.adminData.editingSubagent = -1;
+        this.adminData.rag = ragRes.ok ? ragRes.stats : { status: 'error', error: ragRes.error || 'RAG 未初始化' };
       } catch(e) { showToast('加载管理数据失败','err'); }
     },
 
@@ -1252,6 +1296,17 @@ function agentApp() {
         if(d.ok) showToast('记忆已保存','ok');
         else showToast('保存失败','err');
       } catch(e) { showToast('保存失败','err'); }
+    },
+
+    async reindexRAG() {
+      this.adminData.ragReindexing = true;
+      try {
+        const r = await fetch('/api/agents/admin/rag/reindex',{method:'POST'});
+        const d = await r.json();
+        if(d.ok) { showToast('索引重建完成','ok'); this.adminData.rag = d.stats; }
+        else showToast(d.error||'重建失败','err');
+      } catch(e) { showToast('重建失败','err'); }
+      finally { this.adminData.ragReindexing = false; }
     },
 
     async savePatrolPrompt(p) {

@@ -1018,6 +1018,31 @@ async def update_memory(request: Request, user=Depends(require_role("admin"))):
     return {"ok": True, "message": "记忆已保存"}
 
 
+# ─── RAG 知识库管理 ───
+
+@router.get("/admin/rag")
+async def get_rag_stats(user=Depends(require_role("admin"))):
+    """获取 RAG 知识库统计信息"""
+    try:
+        from modules.agents.rag import get_index_stats
+        stats = get_index_stats()
+        return {"ok": True, "stats": stats}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/admin/rag/reindex")
+async def trigger_reindex(user=Depends(require_role("admin"))):
+    """手动触发 RAG 知识库全量重建"""
+    try:
+        from modules.agents.rag import build_full_index, get_index_stats
+        await asyncio.get_event_loop().run_in_executor(None, build_full_index, True)
+        stats = get_index_stats()
+        return {"ok": True, "stats": stats}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ─── WebSocket 终端 ───
 
 @router.websocket("/ws/terminal")

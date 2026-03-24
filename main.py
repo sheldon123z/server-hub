@@ -54,6 +54,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[ServerHub] 指标采集启动失败: {e}")
 
+    # 启动 RAG 知识库索引
+    try:
+        from modules.agents.rag import build_full_index
+        import asyncio as _aio
+        stats = await _aio.get_event_loop().run_in_executor(None, build_full_index)
+        print(f"[ServerHub] RAG 知识库已构建: {stats}")
+    except Exception as e:
+        print(f"[ServerHub] RAG 知识库构建失败 (非致命): {e}")
+
     # 启动 AI 巡检调度器
     try:
         from modules.agents.patrol import start_patrol_scheduler
