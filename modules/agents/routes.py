@@ -544,9 +544,11 @@ async def update_prompt(request: Request, user=Depends(require_role("admin"))):
 async def list_subagents(user=Depends(require_role("admin"))):
     """获取所有 SubAgent 配置 + 可用工具列表"""
     from modules.agents.subagents import get_subagents_config, get_available_tools
+    from modules.agents.llm import get_provider_status
     return {
         "subagents": get_subagents_config(),
         "available_tools": get_available_tools(),
+        "providers": get_provider_status(),
     }
 
 
