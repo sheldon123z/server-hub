@@ -42,6 +42,9 @@ TOOL_RISK_MAP = {
     "grep": RiskLevel.SAFE,
     "write_todos": RiskLevel.SAFE,
     "task": RiskLevel.SAFE,
+    # SubAgent 工具
+    "web_search": RiskLevel.SAFE,
+    "think": RiskLevel.SAFE,
 }
 
 

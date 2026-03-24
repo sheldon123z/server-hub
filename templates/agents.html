@@ -63,14 +63,27 @@
 /* Todo 面板 */
 .todo-panel { border-top: 1px solid var(--border); padding: 10px 14px; flex-shrink: 0; max-height: 200px; overflow-y: auto; transition: max-height 0.2s; }
 .todo-panel.collapsed { max-height: 36px; overflow: hidden; }
-.todo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; cursor: pointer; }
+.todo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; cursor: pointer; }
 .todo-header h4 { font-size: 12px; color: var(--text2); margin: 0; }
 .todo-count { font-size: 11px; color: var(--text3); }
-.todo-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+.todo-progress { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 8px; }
+.todo-progress-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s ease; }
+.todo-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; border-radius: 4px; transition: background 0.3s; }
 .todo-icon { width: 16px; text-align: center; flex-shrink: 0; }
 .todo-text { flex: 1; line-height: 1.4; }
 .todo-text.completed { text-decoration: line-through; color: var(--text3); }
-.todo-text.in-progress { color: var(--accent); }
+.todo-text.in_progress { color: var(--accent); }
+.todo-item.in_progress .todo-icon { animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.todo-item.just-completed { animation: flash-green 0.6s ease-out; }
+@keyframes flash-green { 0% { background: rgba(34,197,94,0.25); } 100% { background: transparent; } }
+
+/* 快捷指令菜单 */
+.slash-menu { position: absolute; bottom: 100%; left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px; max-height: 260px; overflow-y: auto; box-shadow: 0 -4px 16px rgba(0,0,0,0.4); z-index: 100; margin-bottom: 4px; }
+.slash-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; border-radius: 6px; transition: background 0.1s; }
+.slash-item:hover, .slash-item.active { background: var(--accent-dim); }
+.slash-cmd { font-weight: 600; color: var(--accent); font-size: 13px; min-width: 90px; font-family: monospace; }
+.slash-desc { color: var(--text2); font-size: 12px; }
 
 /* 终端 */
 .terminal-container { flex: 1; background: #0a0e17; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; padding: 4px; min-height: 0; }
@@ -148,16 +161,33 @@
           </h4>
           <span class="todo-count" x-text="todos.filter(t=>t.status==='completed').length+'/'+todos.length+' 完成'"></span>
         </div>
+        <div class="todo-progress">
+          <div class="todo-progress-bar" :style="'width:'+todoProgress()+'%'"></div>
+        </div>
         <template x-for="(t,i) in todos" :key="i">
-          <div class="todo-item">
+          <div class="todo-item" :class="t.status + (t._justCompleted?' just-completed':'')">
             <span class="todo-icon" x-text="t.status==='completed'?'✅':t.status==='in_progress'?'🔄':'⬜'"></span>
             <span class="todo-text" :class="t.status" x-text="t.content"></span>
           </div>
         </template>
       </div>
 
-      <div class="chat-input-area">
-        <textarea x-model="inputText" placeholder="输入消息... (Enter 发送)" @keydown.enter.prevent="if(!$event.shiftKey)sendMessage()" :disabled="isTyping"></textarea>
+      <div class="chat-input-area" style="position:relative">
+        <!-- 快捷指令菜单 -->
+        <div class="slash-menu" x-show="showSlashMenu" @click.away="showSlashMenu=false">
+          <template x-for="(cmd,i) in filteredCommands" :key="cmd.cmd">
+            <div class="slash-item" :class="slashIdx===i?'active':''"
+                 @click="selectCommand(cmd)" @mouseenter="slashIdx=i">
+              <span class="slash-cmd" x-text="cmd.cmd"></span>
+              <span class="slash-desc" x-text="cmd.desc"></span>
+            </div>
+          </template>
+        </div>
+        <textarea x-model="inputText" placeholder="输入消息或 / 快捷指令... (Enter 发送)"
+                  @input="onSlashInput()"
+                  @keydown="handleSlashKey($event)"
+                  @keydown.enter.prevent="if(showSlashMenu){selectCommand(filteredCommands[slashIdx])}else if(!$event.shiftKey){sendMessage()}"
+                  :disabled="isTyping"></textarea>
         <button class="btn btn-primary" @click="sendMessage()" :disabled="isTyping||!inputText.trim()">发送</button>
       </div>
     </div>
@@ -206,11 +236,75 @@ function agentApp() {
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
+    // 快捷指令
+    showSlashMenu: false, slashIdx: 0, filteredCommands: [],
+    slashCommands: [
+      { cmd: '/status', desc: '系统状态概览', prompt: '查看当前服务器状态概览，包括CPU、内存、磁盘、GPU' },
+      { cmd: '/docker', desc: 'Docker 容器状态', prompt: '列出所有Docker容器及其运行状态' },
+      { cmd: '/services', desc: 'Systemd 服务状态', prompt: '列出所有管理的systemd服务状态' },
+      { cmd: '/users', desc: '用户资源使用', prompt: '查看所有用户的资源使用情况，包括内存和进程数' },
+      { cmd: '/disk', desc: '磁盘使用率', prompt: '检查所有磁盘挂载点使用率' },
+      { cmd: '/gpu', desc: 'GPU 状态', prompt: '查看GPU使用情况，包括利用率、显存和温度' },
+      { cmd: '/logs', desc: '查看服务日志', prompt: '查看 {arg} 的最近日志', hasArg: true, argHint: '服务名' },
+      { cmd: '/search', desc: '搜索互联网', prompt: '搜索互联网获取最新信息: {arg}', hasArg: true, argHint: '关键词' },
+      { cmd: '/health', desc: '全面健康检查', prompt: '执行全面的服务器健康检查，检查所有关键指标' },
+      { cmd: '/security', desc: '安全审计', prompt: '对服务器进行安全审计，检查SSH、端口、权限、防火墙配置' },
+      { cmd: '/help', desc: '显示所有指令', prompt: '' },
+    ],
 
     async init() {
       await this.loadConversations();
       await this.loadPatrols();
       setInterval(() => this.loadPatrols(), 30000);
+    },
+
+    // ─── 快捷指令 ───
+    onSlashInput() {
+      const text = this.inputText;
+      if (text.startsWith('/')) {
+        const query = text.slice(1).toLowerCase().split(' ')[0];
+        this.filteredCommands = this.slashCommands.filter(c =>
+          c.cmd.slice(1).includes(query) || c.desc.toLowerCase().includes(query)
+        );
+        this.showSlashMenu = this.filteredCommands.length > 0;
+        this.slashIdx = 0;
+      } else {
+        this.showSlashMenu = false;
+      }
+    },
+    handleSlashKey(e) {
+      if (!this.showSlashMenu) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); this.slashIdx = Math.min(this.slashIdx + 1, this.filteredCommands.length - 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); this.slashIdx = Math.max(this.slashIdx - 1, 0); }
+      else if (e.key === 'Escape') { this.showSlashMenu = false; }
+      else if (e.key === 'Tab') { e.preventDefault(); this.selectCommand(this.filteredCommands[this.slashIdx]); }
+    },
+    selectCommand(cmd) {
+      if (!cmd) return;
+      this.showSlashMenu = false;
+      if (cmd.cmd === '/help') {
+        this.messages.push({role:'assistant', content: this.slashCommands.map(c => `**${c.cmd}** — ${c.desc}`).join('\n')});
+        this.inputText = '';
+        return;
+      }
+      if (cmd.hasArg) {
+        const parts = this.inputText.split(' ');
+        const arg = parts.slice(1).join(' ').trim();
+        if (!arg) {
+          this.inputText = cmd.cmd + ' ';
+          return; // 等待用户输入参数
+        }
+        this.inputText = cmd.prompt.replace('{arg}', arg);
+      } else {
+        this.inputText = cmd.prompt;
+      }
+      this.sendMessage();
+    },
+
+    // ─── Todo 辅助 ───
+    todoProgress() {
+      if (!this.todos.length) return 0;
+      return Math.round(this.todos.filter(t => t.status === 'completed').length / this.todos.length * 100);
     },
 
     // ─── 对话 ───
@@ -263,7 +357,20 @@ function agentApp() {
         case 'message': this.messages.push({role:'assistant',content:data.content}); break;
         case 'tool_call': this.messages.push({role:'tool_call',tool:data.tool,args:data.input}); break;
         case 'tool_result': this.messages.push({role:'tool_result',tool:data.tool||'',content:data.content}); break;
-        case 'todo_update': this.todos = data; this.todoCollapsed = false; break;
+        case 'todo_update':
+          // 检测刚完成的项目，添加动画标记
+          const oldTodos = this.todos;
+          const newTodos = data.map(t => {
+            const old = oldTodos.find(o => o.content === t.content);
+            if (old && old.status !== 'completed' && t.status === 'completed') {
+              setTimeout(() => { t._justCompleted = false; }, 700);
+              return {...t, _justCompleted: true};
+            }
+            return {...t, _justCompleted: false};
+          });
+          this.todos = newTodos;
+          this.todoCollapsed = false;
+          break;
         case 'approval_request':
           this.messages.push({role:'approval',approval_id:data.approval_id,actions:data.actions,description:data.description||'需要确认操作'});
           break;

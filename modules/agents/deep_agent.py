@@ -22,6 +22,7 @@ from modules.agents.llm import get_chat_model
 from modules.agents.tools import get_server_tools
 from modules.agents.safety import build_interrupt_config
 from modules.agents.prompts import SYSTEM_PROMPT
+from modules.agents.subagents import get_subagents
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
     tools = get_server_tools()
     interrupt_config = build_interrupt_config(safety_mode)
     backend = _create_backend()
+    subagents = get_subagents()
 
     # Checkpoint 持久化
     checkpoint_path = settings.agent_checkpoint_db
@@ -78,6 +80,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
         interrupt_on=interrupt_config if interrupt_config else None,
         checkpointer=checkpointer,
         backend=backend,
+        subagents=subagents,
     )
 
     _agent_cache[cache_key] = agent
