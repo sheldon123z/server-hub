@@ -580,3 +580,92 @@ select.form-input {
 .justify-between { justify-content: space-between; }
 .gap-2 { gap: 8px; }
 .gap-3 { gap: 12px; }
+
+/* ═══════════════════ 监控大屏 V2 样式 ═══════════════════ */
+
+/* ─── 告警摘要条 ─── */
+.alert-bar { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; }
+.alert-badge { padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+.alert-badge-critical { background: rgba(248,113,113,0.15); color: #f87171; }
+.alert-badge-warning { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.alert-badge-ok { background: rgba(74,222,128,0.15); color: #4ade80; }
+
+/* WS 连接状态 */
+.ws-indicator { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--text3); }
+.ws-dot { width: 8px; height: 8px; border-radius: 50%; }
+.ws-indicator.connected .ws-dot { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.5); }
+.ws-indicator.disconnected .ws-dot { background: #f87171; }
+
+/* ─── 增强指标卡片 ─── */
+.stats-grid-enhanced { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-card-enhanced { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; position: relative; overflow: hidden; transition: border-color 0.2s, transform 0.15s; }
+.stat-card-enhanced:hover { border-color: var(--accent); transform: translateY(-2px); }
+.stat-card-wide { grid-column: span 2; }
+.stat-card-header { display: flex; align-items: center; gap: 8px; color: var(--text2); font-size: 13px; margin-bottom: 8px; }
+.stat-card-value { font-size: 24px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.stat-card-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.stat-card-label { font-size: 12px; color: var(--text3); }
+.sparkline-container { position: absolute; bottom: 0; left: 0; right: 0; height: 35px; opacity: 0.4; pointer-events: none; }
+
+/* ─── 图表卡片 ─── */
+.chart-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.chart-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.chart-card-header h3 { font-size: 15px; font-weight: 600; color: var(--text); margin: 0; }
+.chart-box-sm { height: 200px; }
+.chart-box-md { height: 300px; }
+.chart-box-lg { height: 360px; }
+
+/* ─── 底部双栏 ─── */
+.dashboard-bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.info-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; cursor: pointer; transition: border-color 0.2s; }
+.info-card:hover { border-color: var(--accent); }
+.info-card h3 { font-size: 15px; font-weight: 600; color: var(--text); margin: 0 0 12px; display: flex; align-items: center; }
+
+/* Docker 组行 */
+.docker-group-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(51,65,85,0.3); }
+.docker-group-name { flex: 1; color: var(--text); font-weight: 500; text-transform: capitalize; }
+.docker-group-count { color: var(--text2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.docker-group-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+
+/* ─── 详情面板 ─── */
+.detail-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.detail-header h2 { font-size: 18px; font-weight: 600; color: var(--text); margin: 0; }
+.back-btn { background: none; border: 1px solid var(--border); color: var(--accent); padding: 6px 12px; border-radius: var(--radius); cursor: pointer; font-size: 13px; transition: background 0.2s; }
+.back-btn:hover { background: var(--card); }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ─── Modal 弹窗 (监控大屏用) ─── */
+.modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 12px; width: 90%; max-width: 900px; max-height: 80vh; overflow-y: auto; padding: 24px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h3 { font-size: 16px; font-weight: 600; color: var(--text); margin: 0; }
+.modal-close { background: none; border: none; color: var(--text3); font-size: 20px; cursor: pointer; padding: 4px 8px; }
+.modal-close:hover { color: var(--text); }
+
+/* modal-overlay 已定义于通用样式，补充 backdrop-filter */
+.modal-overlay { backdrop-filter: blur(4px); }
+
+/* ─── 进程表格 ─── */
+.process-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.process-table th { text-align: left; padding: 8px 10px; color: var(--text2); border-bottom: 1px solid var(--border); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(0,0,0,0.15); }
+.process-table td { padding: 6px 10px; color: var(--text); border-bottom: 1px solid rgba(51,65,85,0.3); }
+.process-table tr:hover td { background: rgba(56,189,248,0.05); }
+.process-table tr:last-child td { border-bottom: none; }
+.kill-btn { background: rgba(248,113,113,0.15); color: #f87171; border: none; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.kill-btn:hover { background: rgba(248,113,113,0.3); }
+
+/* ─── 告警时间线 ─── */
+.alert-timeline { list-style: none; padding: 0; }
+.alert-timeline li { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(51,65,85,0.3); align-items: center; }
+.alert-time { color: var(--text3); font-size: 12px; min-width: 140px; font-variant-numeric: tabular-nums; }
+.alert-severity { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.alert-msg { color: var(--text); font-size: 13px; flex: 1; }
+
+/* ─── 响应式 (监控大屏) ─── */
+@media (max-width: 768px) {
+  .stats-grid-enhanced { grid-template-columns: repeat(2, 1fr); }
+  .stat-card-wide { grid-column: span 2; }
+  .dashboard-bottom-grid { grid-template-columns: 1fr; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .modal-content { width: 95%; }
+}

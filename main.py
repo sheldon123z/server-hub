@@ -89,6 +89,10 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # 认证路由
 app.include_router(auth_router)
 
+# WebSocket 路由（不走模块自发现，因为 ws_router 无 prefix 需直接挂载）
+from modules.monitoring.routes import ws_router
+app.include_router(ws_router)
+
 
 # ─── 审计中间件 ───
 
@@ -239,6 +243,7 @@ async def dashboard_users_brief(request: Request):
 
 
 # ─── 监控页面 ───
+# 注意: 此路由保留独立的 /monitoring 页面。如需合并到仪表盘，可改为 RedirectResponse("/dashboard")
 
 @app.get("/monitoring", response_class=HTMLResponse)
 async def monitoring_page(request: Request):
