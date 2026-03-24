@@ -7,4 +7,5 @@ MODULE_INFO = {
     "category": "监控",
     "required_role": "user",
     "order": 15,
+    "hidden": True,
 }

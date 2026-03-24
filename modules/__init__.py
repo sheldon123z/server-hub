@@ -1,9 +1,10 @@
 """模块自动发现与注册"""
 
 import importlib
-import pkgutil
+import logging
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
 _modules = []
 
 
@@ -27,7 +28,7 @@ def discover_modules():
             if info and router:
                 _modules.append({**info, "router": router})
         except Exception as e:
-            print(f"[WARN] 加载模块 {item.name} 失败: {e}")
+            logger.exception("加载模块 %s 失败: %s", item.name, e)
 
     _modules.sort(key=lambda m: m.get("order", 99))
     return _modules
@@ -44,6 +45,8 @@ def get_sidebar_items(user_role: str = "user"):
 
     items = []
     for m in _modules:
+        if m.get("hidden"):
+            continue
         required = role_level.get(m.get("required_role", "user"), 1)
         if user_level >= required:
             items.append({

@@ -3,11 +3,9 @@ ServerHub — NF5468M6 服务器管理系统
 FastAPI + Jinja2/HTMX + SQLite
 """
 
-import logging
-import os
-import sys
-from pathlib import Path
 from contextlib import asynccontextmanager
+import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +19,11 @@ from fastapi.templating import Jinja2Templates
 
 from config import settings
 from database import get_db, close_db
-from auth.user_store import ensure_admin
 from auth.dependencies import get_current_user
 from auth.routes import router as auth_router
+from auth.user_store import ensure_admin
 from modules import discover_modules, get_sidebar_items
+from modules.audit.middleware import AuditMiddleware
 
 
 # ─── 生命周期 ───
@@ -37,39 +36,39 @@ async def lifespan(app: FastAPI):
     modules = discover_modules()
     for m in modules:
         app.include_router(m["router"])
-    print(f"[ServerHub] 已加载 {len(modules)} 个模块")
+    logger.info("[ServerHub] 已加载 %s 个模块", len(modules))
 
     # 确保默认通知渠道存在
     try:
         from modules.notifications.services import ensure_default_channels
         await ensure_default_channels()
     except Exception as e:
-        print(f"[ServerHub] 默认通知渠道初始化失败: {e}")
+        logger.exception("[ServerHub] 默认通知渠道初始化失败: %s", e)
 
     # 启动后台指标采集
     try:
         from modules.monitoring.scheduler import start_scheduler
         await start_scheduler()
-        print("[ServerHub] 指标采集已启动")
+        logger.info("[ServerHub] 指标采集已启动")
     except Exception as e:
-        print(f"[ServerHub] 指标采集启动失败: {e}")
+        logger.exception("[ServerHub] 指标采集启动失败: %s", e)
 
     # 启动 RAG 知识库索引
     try:
         from modules.agents.rag import build_full_index
         import asyncio as _aio
         stats = await _aio.get_event_loop().run_in_executor(None, build_full_index)
-        print(f"[ServerHub] RAG 知识库已构建: {stats}")
+        logger.info("[ServerHub] RAG 知识库已构建: %s", stats)
     except Exception as e:
-        print(f"[ServerHub] RAG 知识库构建失败 (非致命): {e}")
+        logger.warning("[ServerHub] RAG 知识库构建失败 (非致命): %s", e)
 
     # 启动 AI 巡检调度器
     try:
         from modules.agents.patrol import start_patrol_scheduler
         await start_patrol_scheduler()
-        print("[ServerHub] AI 巡检调度器已启动")
+        logger.info("[ServerHub] AI 巡检调度器已启动")
     except Exception as e:
-        print(f"[ServerHub] AI 巡检调度器启动失败: {e}")
+        logger.exception("[ServerHub] AI 巡检调度器启动失败: %s", e)
 
     yield
 
@@ -105,37 +104,7 @@ app.include_router(ws_router)
 
 # ─── 审计中间件 ───
 
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class AuditMiddlewareWrapper(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        if request.method in ("POST", "PUT", "DELETE") and "/api/" in str(request.url.path):
-            try:
-                from modules.audit.middleware import log_audit
-                user = None
-                try:
-                    from auth.jwt_handler import verify_token
-                    token = request.cookies.get("access_token")
-                    if token:
-                        payload = verify_token(token)
-                        if payload:
-                            user = payload.get("sub", "unknown")
-                except Exception:
-                    user = "unknown"
-                await log_audit(
-                    username=user or "unknown",
-                    action=f"{request.method} {request.url.path}",
-                    target=str(request.url.path),
-                    details="",
-                    ip=request.client.host if request.client else "unknown",
-                    success=response.status_code < 400,
-                )
-            except Exception as e:
-                logger.error(f"审计日志写入失败: {e}")
-        return response
-
-app.add_middleware(AuditMiddlewareWrapper)
+app.add_middleware(AuditMiddleware)
 
 
 # ─── 页面路由辅助 ───
@@ -174,29 +143,7 @@ async def dashboard_page(request: Request):
     user = await _get_user_or_redirect(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
-
-    from modules.dashboard.collectors import get_system_info, get_extra_disks
-    from modules.users.services import get_user_stats as _get_users
-    sys_info = get_system_info()
-
-    # Docker 容器简要
-    docker_containers = []
-    try:
-        from modules.docker.services import list_containers
-        docker_containers = await list_containers()
-    except Exception:
-        pass
-
-    # 用户简要
-    users = []
-    try:
-        users = _get_users()
-    except Exception:
-        pass
-
-    ctx = _page_context(request, user, "dashboard",
-                        sys=sys_info, docker_containers=docker_containers, users=users)
-    return templates.TemplateResponse("dashboard.html", ctx)
+    return templates.TemplateResponse("dashboard.html", _page_context(request, user, "dashboard"))
 
 
 # ─── 仪表盘局部刷新 ───
@@ -252,18 +199,13 @@ async def dashboard_users_brief(request: Request):
 
 
 # ─── 监控页面 ───
-# 注意: 此路由保留独立的 /monitoring 页面。如需合并到仪表盘，可改为 RedirectResponse("/dashboard")
 
 @app.get("/monitoring", response_class=HTMLResponse)
 async def monitoring_page(request: Request):
     user = await _get_user_or_redirect(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    from modules.dashboard.collectors import get_system_info, get_extra_disks
-    sys_info = get_system_info()
-    extra_disks = get_extra_disks()
-    ctx = _page_context(request, user, "monitoring", sys=sys_info, extra_disks=extra_disks)
-    return templates.TemplateResponse("monitoring.html", ctx)
+    return RedirectResponse("/dashboard", status_code=302)
 
 
 # ─── 用户管理页面 ───
@@ -296,7 +238,7 @@ async def docker_page(request: Request):
         images = await list_images()
         stacks = await list_compose_stacks()
     except Exception as e:
-        print(f"[Docker] 加载失败: {e}")
+        logger.exception("[Docker] 加载失败: %s", e)
 
     ctx = _page_context(request, user, "docker",
                         containers=containers, images=images, stacks=stacks)
@@ -315,7 +257,7 @@ async def services_page(request: Request):
         from modules.services.services import list_services
         services = await list_services()
     except Exception as e:
-        print(f"[Services] 加载失败: {e}")
+        logger.exception("[Services] 加载失败: %s", e)
     ctx = _page_context(request, user, "services", services=services)
     return templates.TemplateResponse("services.html", ctx)
 
@@ -334,7 +276,7 @@ async def cron_page(request: Request):
         if user["role"] == "admin":
             root_jobs = await get_root_crontab()
     except Exception as e:
-        print(f"[Cron] 加载失败: {e}")
+        logger.exception("[Cron] 加载失败: %s", e)
     ctx = _page_context(request, user, "cron", user_jobs=user_jobs, root_jobs=root_jobs)
     return templates.TemplateResponse("cron.html", ctx)
 
@@ -356,7 +298,7 @@ async def network_page(request: Request):
         proxy = await get_proxy_status()
         connections = await get_connections_summary()
     except Exception as e:
-        print(f"[Network] 加载失败: {e}")
+        logger.exception("[Network] 加载失败: %s", e)
 
     ctx = _page_context(request, user, "network", ports=ports, proxy=proxy, connections=connections)
     return templates.TemplateResponse("network.html", ctx)
@@ -379,7 +321,7 @@ async def proxy_page(request: Request):
         proxy_instances = payload.get("instances", [])
         default_proxy_instance_id = payload.get("default_instance_id")
     except Exception as e:
-        print(f"[Proxy] 加载失败: {e}")
+        logger.exception("[Proxy] 加载失败: %s", e)
     ctx = _page_context(
         request,
         user,
@@ -404,7 +346,7 @@ async def logs_page(request: Request):
         from modules.logs.services import list_log_files
         files = list_log_files()
     except Exception as e:
-        print(f"[Logs] 加载失败: {e}")
+        logger.exception("[Logs] 加载失败: %s", e)
     ctx = _page_context(request, user, "logs", files=files)
     return templates.TemplateResponse("logs.html", ctx)
 
@@ -424,7 +366,7 @@ async def notifications_page(request: Request):
         channels = await get_channels()
         history = await get_notification_history()
     except Exception as e:
-        print(f"[Notifications] 加载失败: {e}")
+        logger.exception("[Notifications] 加载失败: %s", e)
     ctx = _page_context(request, user, "notifications", history=history, channels=channels)
     return templates.TemplateResponse("notifications.html", ctx)
 
@@ -445,7 +387,7 @@ async def audit_page(request: Request, page: int = 1, limit: int = 50, username:
         logs = result["items"]
         total = result["total"]
     except Exception as e:
-        print(f"[Audit] 加载失败: {e}")
+        logger.exception("[Audit] 加载失败: %s", e)
     ctx = _page_context(request, user, "audit",
                         logs=logs, total=total, page=page, limit=limit)
     return templates.TemplateResponse("audit.html", ctx)

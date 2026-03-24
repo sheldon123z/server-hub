@@ -4,12 +4,12 @@
 """
 
 import logging
-import time
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from auth.dependencies import get_current_user_optional
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ async def log_audit(
     action: str,
     target: str,
     details: str = "",
+    detail: str | None = None,
     ip: str = "",
     success: bool = True,
 ):
@@ -31,19 +32,21 @@ async def log_audit(
         action: 操作类型 (POST/PUT/DELETE 等)
         target: 操作目标 (API 路径)
         details: 详细信息
+        detail: details 的兼容别名
         ip: 客户端 IP
         success: 是否成功
     """
+    detail_text = detail if detail is not None else details
     try:
         db = await get_db()
         await db.execute(
             "INSERT INTO audit_log (username, action, target, details, ip_address, success) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (username, action, target, details, ip, 1 if success else 0),
+            (username, action, target, detail_text, ip, 1 if success else 0),
         )
         await db.commit()
-    except Exception as e:
-        logger.error(f"审计日志写入失败: {e}")
+    except Exception:
+        logger.exception("审计日志写入失败")
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
@@ -61,14 +64,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # 提取用户名
-        username = "anonymous"
-        # request.state.user 由认证中间件设置
-        if hasattr(request.state, "user") and request.state.user:
-            user = request.state.user
-            if isinstance(user, dict):
-                username = user.get("username", "anonymous")
-            elif hasattr(user, "username"):
-                username = user.username
+        user = await get_current_user_optional(request)
+        username = user["username"] if user else "anonymous"
 
         # 客户端 IP
         ip = request.client.host if request.client else ""
@@ -80,7 +77,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         success = 200 <= response.status_code < 400
         await log_audit(
             username=username,
-            action=request.method,
+            action=f"{request.method} {request.url.path}",
             target=request.url.path,
             details=f"status={response.status_code}",
             ip=ip,

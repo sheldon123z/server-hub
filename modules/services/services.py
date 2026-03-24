@@ -6,6 +6,7 @@ Systemd 服务管理服务层
 import asyncio
 
 from config import settings
+from utils.command import run_command_async
 
 
 async def _run(cmd: list[str], timeout: int = 15, check: bool = True) -> tuple[int, str]:
@@ -20,24 +21,8 @@ async def _run(cmd: list[str], timeout: int = 15, check: bool = True) -> tuple[i
     Returns:
         (returncode, stdout)
     """
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        raise RuntimeError(f"命令超时 ({timeout}s): {' '.join(cmd)}")
-
-    output = stdout.decode("utf-8", errors="replace").strip()
-
-    if check and proc.returncode != 0:
-        raise RuntimeError(f"命令失败 (exit={proc.returncode}): {output}")
-
-    return proc.returncode, output
+    result = await run_command_async(cmd, timeout=timeout, check=check)
+    return result.returncode, result.output
 
 
 def _validate_service(name: str) -> str:

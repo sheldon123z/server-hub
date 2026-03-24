@@ -1,12 +1,41 @@
 """SQLite 数据库管理"""
 
 import asyncio
-import aiosqlite
+import logging
 import os
+
+import aiosqlite
+
 from config import settings
 
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
+logger = logging.getLogger(__name__)
+
+
+async def _table_columns(db: aiosqlite.Connection, table_name: str) -> set[str]:
+    cursor = await db.execute(f"PRAGMA table_info({table_name})")
+    rows = await cursor.fetchall()
+    return {row[1] for row in rows}
+
+
+async def _ensure_column(
+    db: aiosqlite.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    columns = await _table_columns(db, table_name)
+    if column_name in columns:
+        return
+
+    statement = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+    try:
+        await db.execute(statement)
+        logger.info("数据库迁移: %s.%s 已添加", table_name, column_name)
+    except Exception:
+        logger.exception("数据库迁移失败: %s", statement)
+        raise
 
 
 async def get_db() -> aiosqlite.Connection:
@@ -40,6 +69,7 @@ async def init_tables(db: aiosqlite.Connection):
             display_name TEXT DEFAULT '',
             role TEXT NOT NULL DEFAULT 'user',
             disabled INTEGER DEFAULT 0,
+            token_version INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP
         );
@@ -267,42 +297,20 @@ async def init_tables(db: aiosqlite.Connection):
             ON cron_job_log(cron_user);
     """)
 
-    # FTS5 虚拟表（不能在 executescript 中创建）
     try:
         await db.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS fault_cases_fts USING fts5("
             "title, symptoms, root_cause, solution, tags, content=fault_cases, content_rowid=id)"
         )
     except Exception:
-        pass
+        logger.exception("创建 FTS5 虚拟表 fault_cases_fts 失败")
+        raise
 
-    # 兼容旧版：为 alert_rules 表添加基线检测相关列
-    for col, default in [("rule_type", "'threshold'"), ("baseline_window_hours", "168"), ("stddev_multiplier", "3.0")]:
-        try:
-            await db.execute(f"SELECT {col} FROM alert_rules LIMIT 0")
-        except Exception:
-            try:
-                await db.execute(f"ALTER TABLE alert_rules ADD COLUMN {col} DEFAULT {default}")
-            except Exception:
-                pass
-
-    # 兼容旧版：为 agent_patrol_history 表添加 report_json 和 triggered_by 列
-    try:
-        await db.execute("SELECT report_json FROM agent_patrol_history LIMIT 0")
-    except Exception:
-        try:
-            await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN report_json TEXT")
-        except Exception:
-            pass
-    try:
-        await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN triggered_by TEXT DEFAULT 'scheduler'")
-    except Exception:
-        pass
+    await _ensure_column(db, "panel_users", "token_version", "INTEGER NOT NULL DEFAULT 0")
+    await _ensure_column(db, "alert_rules", "rule_type", "TEXT DEFAULT 'threshold'")
+    await _ensure_column(db, "alert_rules", "baseline_window_hours", "INTEGER DEFAULT 168")
+    await _ensure_column(db, "alert_rules", "stddev_multiplier", "REAL DEFAULT 3.0")
+    await _ensure_column(db, "agent_patrol_history", "report_json", "TEXT")
+    await _ensure_column(db, "agent_patrol_history", "triggered_by", "TEXT DEFAULT 'scheduler'")
+    await _ensure_column(db, "notifications", "channel_id", "TEXT")
     await db.commit()
-
-    # 兼容迁移: 为 notifications 表添加 channel_id 列
-    try:
-        await db.execute("ALTER TABLE notifications ADD COLUMN channel_id TEXT")
-        await db.commit()
-    except Exception:
-        pass  # 列已存在

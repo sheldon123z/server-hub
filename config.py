@@ -1,17 +1,59 @@
 """ServerHub 配置管理"""
 
+import logging
 import os
+import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
+logger = logging.getLogger(__name__)
+
+
+def _write_secret_file(path: Path, value: str) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(value, encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        logger.warning("无法调整文件权限: %s", path)
+    return value
+
+
+def _load_or_create_secret(env_name: str, fallback_file: str, *, nbytes: int, label: str) -> str:
+    value = os.getenv(env_name)
+    if value:
+        return value
+
+    path = BASE_DIR / "data" / fallback_file
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+
+    generated = secrets.token_urlsafe(nbytes)
+    logger.warning("%s 未通过环境变量提供，已生成并保存到 %s", label, path)
+    return _write_secret_file(path, generated)
+
+
+def get_or_create_bootstrap_admin_password() -> str:
+    """按需生成首次启动管理员密码。"""
+    return _load_or_create_secret(
+        "SERVERHUB_ADMIN_PASSWORD",
+        "bootstrap-admin-password.txt",
+        nbytes=18,
+        label="SERVERHUB_ADMIN_PASSWORD",
+    )
 
 class Settings:
     """应用配置，优先读取环境变量 SERVERHUB_*"""
 
     def __init__(self):
-        self.secret_key: str = os.getenv("SERVERHUB_SECRET_KEY", "change-me-to-a-random-string")
+        self.secret_key: str = _load_or_create_secret(
+            "SERVERHUB_SECRET_KEY",
+            "serverhub-secret.key",
+            nbytes=48,
+            label="SERVERHUB_SECRET_KEY",
+        )
         self.admin_username: str = os.getenv("SERVERHUB_ADMIN_USERNAME", "admin")
-        self.admin_password: str = os.getenv("SERVERHUB_ADMIN_PASSWORD", "admin123")
+        self.admin_password: str = os.getenv("SERVERHUB_ADMIN_PASSWORD", "")
 
         self.db_path: str = str(BASE_DIR / "data" / "server-hub.db")
         self.quota_file: str = "/home/zhengxiaodong/scripts/config/user-quotas.conf"
@@ -22,10 +64,14 @@ class Settings:
         self.jwt_algorithm: str = "HS256"
         self.access_token_expire_minutes: int = 60 * 24  # 24 hours
         self.refresh_token_expire_days: int = 30
+        self.cookie_secure_mode: str = os.getenv("SERVERHUB_COOKIE_SECURE", "auto").lower()
+        self.cookie_samesite: str = os.getenv("SERVERHUB_COOKIE_SAMESITE", "lax").lower()
 
         # 监控
         self.metrics_interval_seconds: int = 60
         self.metrics_retention_days: int = 90
+        self.gpu_metrics_ttl_seconds: int = int(os.getenv("SERVERHUB_GPU_METRICS_TTL_SECONDS", "20"))
+        self.top_processes_cache_seconds: int = int(os.getenv("SERVERHUB_TOP_PROCESSES_CACHE_SECONDS", "10"))
 
         # WebSocket
         self.ws_metrics_interval: int = 5          # WS快速推送间隔(秒)

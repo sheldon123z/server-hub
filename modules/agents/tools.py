@@ -405,94 +405,9 @@ def check_compliance(category: str = "") -> str:
     Args:
         category: 可选，只检查指定分类（如 SSH安全、口令策略、网络安全）。留空检查全部。
     """
-    import subprocess
-    from pathlib import Path
-    from config import BASE_DIR
+    from modules.agents.compliance import run_compliance_checks
 
-    baselines_path = Path(BASE_DIR) / "data" / "compliance_baselines.json"
-    if not baselines_path.exists():
-        return "合规基线文件不存在: data/compliance_baselines.json"
-
-    try:
-        baselines = json.loads(baselines_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        return f"读取基线文件失败: {e}"
-
-    if category:
-        baselines = [b for b in baselines if category.lower() in b.get("category", "").lower()]
-
-    if not baselines:
-        return f"没有找到分类 '{category}' 的基线检查项。"
-
-    results = []
-    pass_count = 0
-    total = len(baselines)
-
-    for baseline in baselines:
-        bid = baseline["id"]
-        name = baseline["name"]
-        severity = baseline.get("severity", "medium")
-        check_cmd = baseline.get("check_cmd", "")
-
-        try:
-            proc = subprocess.run(
-                check_cmd, shell=True, capture_output=True, text=True, timeout=10,
-            )
-            output = (proc.stdout + proc.stderr).strip()
-        except subprocess.TimeoutExpired:
-            results.append(f"| {name} | TIMEOUT | {severity} | 命令超时 |")
-            continue
-        except Exception as e:
-            results.append(f"| {name} | ERROR | {severity} | {e} |")
-            continue
-
-        # 判定是否通过
-        passed = True
-        detail = output[:100]
-
-        if "expect_contains" in baseline:
-            if baseline["expect_contains"] not in output:
-                passed = False
-                detail = f"期望包含 '{baseline['expect_contains']}', 实际: {output[:80]}"
-
-        if "fail_if_contains" in baseline and baseline["fail_if_contains"] in output:
-            passed = False
-            detail = f"检测到不安全配置: {output[:80]}"
-
-        if "expect_regex" in baseline:
-            match = re.search(baseline["expect_regex"], output)
-            if match:
-                try:
-                    val = int(match.group(1))
-                    if "expect_max" in baseline and val > baseline["expect_max"]:
-                        passed = False
-                        detail = f"当前值 {val} 超过最大值 {baseline['expect_max']}"
-                    if "expect_min" in baseline and val < baseline["expect_min"]:
-                        passed = False
-                        detail = f"当前值 {val} 低于最小值 {baseline['expect_min']}"
-                except (ValueError, IndexError):
-                    pass
-            else:
-                passed = False
-                detail = f"未匹配到期望模式"
-
-        status = "PASS" if passed else "FAIL"
-        if passed:
-            pass_count += 1
-
-        fix_info = ""
-        if not passed and baseline.get("fix_guide"):
-            fix_info = f" → {baseline['fix_guide']}"
-
-        results.append(f"| {name} | {status} | {severity} | {detail}{fix_info} |")
-
-    compliance_rate = round(pass_count / total * 100, 1) if total > 0 else 0
-    header = (
-        f"## 安全合规检查报告\n\n"
-        f"合规率: **{compliance_rate}%** ({pass_count}/{total} 通过)\n\n"
-        f"| 检查项 | 结果 | 严重级别 | 详情 |\n|---|---|---|---|"
-    )
-    return header + "\n" + "\n".join(results)
+    return run_compliance_checks(category)
 
 
 # ─── safe: 故障案例库 ───
@@ -592,78 +507,14 @@ async def save_fault_case(title: str, category: str, symptoms: str, root_cause: 
 
 @tool
 def auto_fix_compliance(item_id: str) -> str:
-    """自动修复指定的不合规项。仅对 auto_fixable=true 的基线项有效，执行 fix_cmd 并验证修复结果。
+    """自动修复指定的不合规项。仅对白名单中的 auto_fixable 项生效，并在执行后验证结果。
 
     Args:
         item_id: 合规基线项 ID（如 ssh_empty_password, ssh_max_auth_tries）
     """
-    import subprocess
-    from pathlib import Path
-    from config import BASE_DIR
+    from modules.agents.compliance import fix_compliance_item
 
-    baselines_path = Path(BASE_DIR) / "data" / "compliance_baselines.json"
-    if not baselines_path.exists():
-        return "合规基线文件不存在"
-
-    try:
-        baselines = json.loads(baselines_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        return f"读取基线文件失败: {e}"
-
-    item = next((b for b in baselines if b["id"] == item_id), None)
-    if not item:
-        available = ", ".join(b["id"] for b in baselines if b.get("auto_fixable"))
-        return f"未找到基线项 '{item_id}'。可自动修复的项: {available}"
-
-    if not item.get("auto_fixable"):
-        return f"基线项 '{item['name']}' 不支持自动修复。修复指导: {item.get('fix_guide', '无')}"
-
-    fix_cmd = item.get("fix_cmd", "")
-    if not fix_cmd:
-        return f"基线项 '{item['name']}' 没有定义 fix_cmd"
-
-    check_cmd = item.get("check_cmd", "")
-
-    before = ""
-    if check_cmd:
-        try:
-            proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=10)
-            before = (proc.stdout + proc.stderr).strip()
-        except Exception:
-            before = "检查失败"
-
-    try:
-        proc = subprocess.run(fix_cmd, shell=True, capture_output=True, text=True, timeout=30)
-        fix_output = (proc.stdout + proc.stderr).strip()
-        fix_ok = proc.returncode == 0
-    except subprocess.TimeoutExpired:
-        return f"修复命令超时 (30s): {fix_cmd[:100]}"
-    except Exception as e:
-        return f"修复执行失败: {e}"
-
-    after = ""
-    verified = False
-    if check_cmd:
-        try:
-            proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=10)
-            after = (proc.stdout + proc.stderr).strip()
-            if "expect_contains" in item and item["expect_contains"] in after:
-                verified = True
-            elif "fail_if_contains" in item and item["fail_if_contains"] not in after:
-                verified = True
-            else:
-                verified = fix_ok
-        except Exception:
-            after = "验证检查失败"
-
-    status = "已修复" if verified else "修复执行完成（请人工验证）"
-    return (
-        f"## 合规修复: {item['name']}\n\n"
-        f"**状态**: {status}\n"
-        f"**修复前**: {before[:200]}\n"
-        f"**修复后**: {after[:200]}\n"
-        f"**命令输出**: {fix_output[:200] if fix_output else '(无输出)'}\n"
-    )
+    return fix_compliance_item(item_id)
 
 
 # ─── safe: 资产台账 ───

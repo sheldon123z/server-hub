@@ -20,6 +20,8 @@ data/agent-memory.md
 data/custom_prompt.txt
 data/custom_subagents.json
 data/chroma_db/
+data/bootstrap-admin-password.txt
+data/serverhub-secret.key
 
 # IDE
 .idea/

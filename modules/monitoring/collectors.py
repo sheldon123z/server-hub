@@ -3,26 +3,27 @@
 采集 CPU、内存、GPU、磁盘、网络、Docker、进程等系统指标
 """
 
+import copy
 import json
 import logging
 import os
 import platform
 import re
-import subprocess
+import threading
 import time
 
 import psutil
 
+from config import settings
+from utils.command import run_command, run_command_text
+
 logger = logging.getLogger(__name__)
 
-
-def _run(cmd: str, timeout: int = 10) -> str:
-    """执行 shell 命令并返回 stdout"""
-    try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-        return r.stdout.strip()
-    except Exception:
-        return ""
+_gpu_cache = {"ts": 0.0, "value": None}
+_gpu_cache_lock = threading.Lock()
+_top_process_cache = {"ts": 0.0, "limit": 0, "value": None}
+_top_process_lock = threading.Lock()
+_top_process_cpu_primed = False
 
 
 def _read_os_pretty_name() -> str:
@@ -129,6 +130,12 @@ def collect_gpu() -> dict:
     采集 GPU 指标: 利用率、显存使用、温度、进程列表
     通过 nvidia-smi 解析获取
     """
+    now = time.time()
+    with _gpu_cache_lock:
+        cached = _gpu_cache["value"]
+        if cached is not None and now - _gpu_cache["ts"] < settings.gpu_metrics_ttl_seconds:
+            return copy.deepcopy(cached)
+
     result = {
         "available": False,
         "name": "",
@@ -140,9 +147,14 @@ def collect_gpu() -> dict:
     }
 
     # 基础 GPU 信息
-    raw = _run(
-        "nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,"
-        "temperature.gpu --format=csv,noheader,nounits 2>/dev/null"
+    raw = run_command_text(
+        [
+            "nvidia-smi",
+            "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ],
+        timeout=10,
+        check=False,
     )
     if not raw:
         return result
@@ -157,9 +169,14 @@ def collect_gpu() -> dict:
         result["temp"] = int(parts[4])
 
     # GPU 进程列表
-    procs_raw = _run(
-        "nvidia-smi --query-compute-apps=pid,used_gpu_memory,process_name "
-        "--format=csv,noheader,nounits 2>/dev/null"
+    procs_raw = run_command_text(
+        [
+            "nvidia-smi",
+            "--query-compute-apps=pid,used_gpu_memory,process_name",
+            "--format=csv,noheader,nounits",
+        ],
+        timeout=10,
+        check=False,
     )
     if procs_raw:
         for line in procs_raw.splitlines():
@@ -180,6 +197,9 @@ def collect_gpu() -> dict:
                     "name": pparts[2],
                 })
 
+    with _gpu_cache_lock:
+        _gpu_cache["ts"] = now
+        _gpu_cache["value"] = copy.deepcopy(result)
     return result
 
 
@@ -319,9 +339,10 @@ def collect_docker_stats() -> dict:
     }
 
     # docker stats JSON 输出
-    raw = _run(
-        "docker stats --no-stream --format '{{json .}}' 2>/dev/null",
+    raw = run_command_text(
+        ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
         timeout=30,
+        check=False,
     )
     if not raw:
         return result
@@ -345,9 +366,10 @@ def collect_docker_stats() -> dict:
     if not names:
         return result
 
-    ps_raw = _run(
-        "docker ps --format '{{json .}}' 2>/dev/null",
+    ps_raw = run_command_text(
+        ["docker", "ps", "--format", "{{json .}}"],
         timeout=15,
+        check=False,
     )
     ps_map: dict = {}
     if ps_raw:
@@ -367,13 +389,18 @@ def collect_docker_stats() -> dict:
                 }
 
     # 批量获取 RestartCount 和 compose project
-    names_arg = " ".join(f"'{n}'" for n in names)
-    inspect_raw = _run(
-        f"docker inspect --format '{{{{.Name}}}}|{{{{.RestartCount}}}}|"
-        f"{{{{index .Config.Labels \"com.docker.compose.project\"}}}}|"
-        f"{{{{.State.Status}}}}' {names_arg} 2>/dev/null",
+    inspect_result = run_command(
+        [
+            "docker",
+            "inspect",
+            "--format",
+            "{{.Name}}|{{.RestartCount}}|{{index .Config.Labels \"com.docker.compose.project\"}}|{{.State.Status}}",
+            *names,
+        ],
         timeout=15,
+        check=False,
     )
+    inspect_raw = inspect_result.output
     inspect_map: dict = {}
     if inspect_raw:
         for line in inspect_raw.splitlines():
@@ -540,20 +567,35 @@ def collect_inode() -> list:
 # Top Processes
 # ---------------------------------------------------------------------------
 
-def collect_top_processes(limit: int = 15) -> dict:
+def collect_top_processes(limit: int = 15, gpu_snapshot: dict | None = None) -> dict:
     """
     采集资源占用 Top N 进程
     按 CPU、内存、GPU 显存分别排序
     """
-    # 预热 cpu_percent（第一次调用返回 0）
-    for p in psutil.process_iter():
-        try:
-            p.cpu_percent(interval=0)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+    now = time.time()
+    with _top_process_lock:
+        cached = _top_process_cache["value"]
+        if (
+            cached is not None
+            and now - _top_process_cache["ts"] < settings.top_processes_cache_seconds
+            and _top_process_cache["limit"] >= limit
+        ):
+            return {
+                "by_cpu": cached["by_cpu"][:limit],
+                "by_mem": cached["by_mem"][:limit],
+                "by_gpu": cached["by_gpu"][:limit],
+            }
 
-    # 短暂等待以获取有意义的 cpu_percent
-    time.sleep(0.1)
+    sample_limit = max(limit, settings.top_processes_limit)
+
+    global _top_process_cpu_primed
+    if not _top_process_cpu_primed:
+        for process in psutil.process_iter():
+            try:
+                process.cpu_percent(interval=0)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        _top_process_cpu_primed = True
 
     procs = []
     for p in psutil.process_iter(["pid", "name", "username", "cpu_percent", "memory_info", "cmdline"]):
@@ -577,17 +619,30 @@ def collect_top_processes(limit: int = 15) -> dict:
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
-    by_cpu = sorted(procs, key=lambda x: x["cpu_percent"], reverse=True)[:limit]
-    by_mem = sorted(procs, key=lambda x: x["mem_rss_mb"], reverse=True)[:limit]
+    by_cpu = sorted(procs, key=lambda x: x["cpu_percent"], reverse=True)[:sample_limit]
+    by_mem = sorted(procs, key=lambda x: x["mem_rss_mb"], reverse=True)[:sample_limit]
 
     # GPU 进程排行
-    gpu_data = collect_gpu()
-    by_gpu = sorted(gpu_data.get("processes", []), key=lambda x: x.get("gpu_mem_mb", 0), reverse=True)[:limit]
+    gpu_data = gpu_snapshot or collect_gpu()
+    by_gpu = sorted(
+        gpu_data.get("processes", []),
+        key=lambda x: x.get("gpu_mem_mb", 0),
+        reverse=True,
+    )[:sample_limit]
 
-    return {
+    result = {
         "by_cpu": by_cpu,
         "by_mem": by_mem,
         "by_gpu": by_gpu,
+    }
+    with _top_process_lock:
+        _top_process_cache["ts"] = now
+        _top_process_cache["limit"] = sample_limit
+        _top_process_cache["value"] = copy.deepcopy(result)
+    return {
+        "by_cpu": result["by_cpu"][:limit],
+        "by_mem": result["by_mem"][:limit],
+        "by_gpu": result["by_gpu"][:limit],
     }
 
 
@@ -627,17 +682,18 @@ def collect_realtime_fast() -> dict:
 def collect_all() -> dict:
     """完整快照（含Docker和进程，60s周期用）"""
     uptime = _format_uptime(time.time() - psutil.boot_time())
+    gpu_snapshot = collect_gpu()
     return {
         "timestamp": time.time(),
         "uptime": uptime,
         "system_info": collect_system_info(),
         "cpu": collect_cpu(),
         "memory": collect_memory(),
-        "gpu": collect_gpu(),
+        "gpu": gpu_snapshot,
         "disk": collect_disk(),
         "network": collect_network(),
         "disk_io": collect_disk_io(),
         "inode": collect_inode(),
         "docker": collect_docker_stats(),
-        "top_processes": collect_top_processes(),
+        "top_processes": collect_top_processes(gpu_snapshot=gpu_snapshot),
     }

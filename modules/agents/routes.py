@@ -1048,19 +1048,14 @@ async def trigger_reindex(user=Depends(require_role("admin"))):
 @router.websocket("/ws/terminal")
 async def terminal_ws(websocket: WebSocket):
     """WebSocket 驱动的 PTY 终端（仅管理员）"""
-    # 手动验证 JWT（WebSocket 不支持 Depends）
     token = websocket.cookies.get("access_token")
     if not token:
         await websocket.close(code=4001, reason="未认证")
         return
     try:
-        from auth.jwt_handler import verify_token
-        from auth.user_store import get_user_by_name
-        payload = verify_token(token)
-        if not payload or payload.get("type") != "access":
-            await websocket.close(code=4001, reason="认证失败")
-            return
-        user = await get_user_by_name(payload["sub"])
+        from auth.dependencies import get_user_from_access_token
+
+        user = await get_user_from_access_token(token)
         if not user or user.get("disabled") or user["role"] != "admin":
             await websocket.close(code=4003, reason="权限不足")
             return

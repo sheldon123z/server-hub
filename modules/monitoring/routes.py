@@ -10,9 +10,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
-from auth.dependencies import get_current_user
-from auth.jwt_handler import verify_token
-from auth.user_store import get_user_by_name
+from auth.dependencies import get_current_user, get_user_from_access_token
 from database import get_db
 from modules.monitoring.collectors import (
     collect_all,
@@ -74,18 +72,7 @@ async def _ws_authenticate(websocket: WebSocket) -> dict | None:
     token = websocket.cookies.get("access_token")
     if not token:
         token = websocket.query_params.get("token")
-    if not token:
-        return None
-
-    payload = verify_token(token)
-    if not payload or payload.get("type") != "access":
-        return None
-
-    user = await get_user_by_name(payload["sub"])
-    if not user or user.get("disabled"):
-        return None
-
-    return user
+    return await get_user_from_access_token(token)
 
 
 @ws_router.websocket("/ws/metrics")
