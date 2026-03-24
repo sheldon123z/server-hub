@@ -1,32 +1,53 @@
 """SubAgent 定义 — 专业化子智能体
 
-通过 create_deep_agent(subagents=...) 注册，主 agent 可通过 task() 工具委派任务。
-每个 SubAgent 运行在隔离的上下文中，完成后将结果返回主 agent。
+遵循 LangChain 官方 SubAgent 规范 (https://docs.langchain.com/oss/python/deepagents/subagents):
+- name/description/system_prompt/tools 四个 Required 字段必须显式指定
+- tools 保持最小集合（"Keep this minimal and include only what's needed"）
+- system_prompt 包含输出格式和长度限制（防止 context bloat）
+- description 具体且 action-oriented（帮助主 agent 精准委派）
 """
 
 import json
 import os
 from pathlib import Path
+from typing import Literal
+
 from langchain_core.tools import tool
 
 
-# ─── 联网搜索工具 ───
+# ─── SubAgent 专属工具 ───
+
+# Tavily 客户端单例（避免每次调用创建新实例）
+_tavily_client = None
+
+
+def _get_tavily_client():
+    global _tavily_client
+    if _tavily_client is None:
+        api_key = os.getenv("TAVILY_API_KEY", "")
+        if not api_key:
+            return None
+        from tavily import TavilyClient
+        _tavily_client = TavilyClient(api_key=api_key)
+    return _tavily_client
+
 
 @tool
-def web_search(query: str, max_results: int = 5, topic: str = "general") -> str:
-    """搜索互联网获取最新信息。
+def web_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+) -> str:
+    """Search the web for up-to-date information on any topic.
 
     Args:
-        query: 搜索关键词
-        max_results: 最大结果数 (1-10)
-        topic: 搜索主题 ("general", "news", "finance")
+        query: Search query string
+        max_results: Maximum number of results (1-10)
+        topic: Search topic filter
     """
-    api_key = os.getenv("TAVILY_API_KEY", "")
-    if not api_key:
-        return "错误: 未配置 TAVILY_API_KEY，请在设置页面或 .env 中添加"
-
-    from tavily import TavilyClient
-    client = TavilyClient(api_key=api_key)
+    client = _get_tavily_client()
+    if client is None:
+        return "Error: TAVILY_API_KEY not configured"
     try:
         results = client.search(
             query=query,
@@ -36,47 +57,63 @@ def web_search(query: str, max_results: int = 5, topic: str = "general") -> str:
             include_answer=True,
         )
     except Exception as e:
-        return f"搜索失败: {e}"
+        return f"Search failed: {e}"
 
-    output = f"搜索: {query}\n"
+    output = f"Search: {query}\n"
     if results.get("answer"):
-        output += f"\n摘要: {results['answer']}\n"
+        output += f"\nSummary: {results['answer']}\n"
     for i, r in enumerate(results.get("results", []), 1):
         content = r.get("content", "")[:300]
-        output += f"\n[{i}] {r.get('title', '无标题')}\n    URL: {r.get('url', '')}\n    {content}\n"
+        output += f"\n[{i}] {r.get('title', 'Untitled')}\n    URL: {r.get('url', '')}\n    {content}\n"
     return output
 
 
 @tool
 def think(thought: str) -> str:
-    """反思工具 — 在搜索之间暂停思考，评估已有信息是否充分。
+    """Pause and reflect on research progress before deciding next steps.
 
     Args:
-        thought: 当前的思考内容，评估搜索进展
+        thought: Current assessment of gathered information and next actions
     """
-    return f"已记录思考: {thought}"
+    return f"Reflected: {thought}"
 
 
-# ─── SubAgent 定义 ───
+# ─── 需要从主 agent 工具集中引用的工具 ───
+
+def _get_tools_by_names(names: list[str]) -> list:
+    """从主 agent 的工具集中按名称提取工具对象"""
+    from modules.agents.tools import get_server_tools
+    server_tools = {t.name: t for t in get_server_tools()}
+    result = []
+    for name in names:
+        if name in server_tools:
+            result.append(server_tools[name])
+        elif name in TOOL_REGISTRY:
+            result.append(TOOL_REGISTRY[name])
+    return result
+
+
+# ─── SubAgent 定义（遵循官方规范）───
 
 def get_subagents() -> list[dict]:
-    """返回所有 SubAgent 配置
+    """返回所有 SubAgent 配置（遵循 LangChain 官方 SubAgent 规范）
 
-    SubAgent TypedDict 字段:
-        name: str           — 唯一标识，task(subagent_type="name") 调用
-        description: str    — 描述，帮助主 agent 决定何时委派
-        system_prompt: str  — 子 agent 的系统提示词
-        tools: list         — 可选，不指定则继承主 agent 全部工具
-        model: str          — 可选，覆盖模型 "provider:model"
+    每个 SubAgent 必须包含:
+        name: str           — 唯一标识，主 agent 通过 task(subagent_type="name") 调用
+        description: str    — action-oriented 描述，帮助主 agent 决定何时委派
+        system_prompt: str  — 详细工作流指令 + 输出格式 + 长度限制
+        tools: list         — 最小工具集（仅包含完成任务所需的工具）
+
+    可选:
+        model: str          — 覆盖模型 "provider:model"（默认继承主 agent）
     """
     return [
-        # 1. 联网研究员
+        # 1. 联网研究员 — 专属工具，不继承主 agent 工具
         {
             "name": "researcher",
             "description": (
-                "联网研究员 — 委派互联网搜索任务。适用于：查找最新技术文档、"
-                "搜索错误解决方案、获取软件版本信息、研究最佳实践。"
-                "每次只给一个搜索主题。"
+                "Conducts web research to find technical documentation, error solutions, "
+                "software version info, and best practices. Delegate ONE topic at a time."
             ),
             "system_prompt": (
                 "你是一个专业的互联网研究员，使用中文回复。\n\n"
@@ -85,61 +122,82 @@ def get_subagents() -> list[dict]:
                 "2. 每次搜索后用 think 工具评估是否需要继续搜索\n"
                 "3. 综合所有搜索结果，给出结构化的中文报告\n"
                 "4. 报告中使用 [1][2][3] 标注信息来源\n\n"
-                "停止搜索的条件：已有 3+ 相关来源，或最近两次搜索结果相似。\n"
-                "输出格式：先给结论摘要，再列详细发现，最后附来源列表。"
+                "停止搜索的条件：已有 3+ 相关来源，或最近两次搜索结果相似。\n\n"
+                "输出格式：\n"
+                "- 结论摘要（2-3 句）\n"
+                "- 详细发现（要点列表）\n"
+                "- 来源列表（URL）\n\n"
+                "IMPORTANT: Keep your response under 500 words."
             ),
             "tools": [web_search, think],
         },
-        # 2. 日志分析师
+        # 2. 日志分析师 — 最小工具集：仅日志相关
         {
             "name": "log-analyzer",
             "description": (
-                "日志分析师 — 深度分析服务日志和系统日志。适用于：排查服务崩溃、"
-                "分析错误模式、追踪性能问题、调查安全事件。"
+                "Analyzes service logs and system logs to diagnose crashes, identify error "
+                "patterns, trace performance issues, and investigate security incidents."
             ),
             "system_prompt": (
                 "你是一个专业的日志分析师，使用中文回复。\n\n"
+                "可用工具：\n"
+                "- execute: 运行 journalctl、docker logs、tail、awk 等命令\n"
+                "- read_file: 直接读取日志文件\n"
+                "- grep: 搜索日志中的关键词和模式\n"
+                "- get_container_logs: 获取 Docker 容器日志\n"
+                "- get_service_logs: 获取 systemd 服务日志\n\n"
                 "工作流程：\n"
-                "1. 使用 grep 或 read_file 查找相关日志文件\n"
-                "2. 使用 execute 运行 journalctl、docker logs、tail 等命令获取日志\n"
+                "1. 定位相关日志文件或服务\n"
+                "2. 使用 grep/execute 提取错误和异常条目\n"
                 "3. 分析错误模式、时间线、频率\n"
                 "4. 给出根因分析和修复建议\n\n"
                 "输出格式：\n"
                 "- 问题摘要（一句话）\n"
                 "- 关键日志条目（带时间戳，最多 10 条）\n"
                 "- 根因分析\n"
-                "- 推荐解决方案（附具体命令）"
+                "- 推荐解决方案（附具体命令）\n\n"
+                "IMPORTANT: Do NOT include raw log dumps. Summarize findings concisely. "
+                "Keep your response under 500 words."
             ),
-            # tools 不指定 — 继承主 agent 的全部工具
+            "tools": _get_tools_by_names([
+                "get_container_logs", "get_service_logs",
+            ]),
         },
-        # 3. 安全审计员
+        # 3. 安全审计员 — 最小工具集：仅安全相关
         {
             "name": "security-auditor",
             "description": (
-                "安全审计员 — 检查系统安全配置。适用于：SSH 配置审计、"
-                "端口暴露检查、用户权限审计、防火墙规则检查。"
+                "Audits server security configuration including SSH settings, open ports, "
+                "user permissions, firewall rules, and file permissions. Returns risk-graded findings."
             ),
             "system_prompt": (
                 "你是一个服务器安全审计专家，使用中文回复。\n\n"
+                "可用工具：\n"
+                "- execute: 运行 ss、iptables、ufw、last 等安全检查命令\n"
+                "- read_file: 读取配置文件（sshd_config, /etc/passwd 等）\n"
+                "- grep: 搜索配置文件中的安全相关设置\n"
+                "- get_system_overview: 获取系统基本信息\n\n"
                 "审计范围：\n"
-                "1. SSH 配置（/etc/ssh/sshd_config）— root 登录、密码认证、端口\n"
-                "2. 开放端口 — 使用 ss -tlnp 检查监听端口\n"
-                "3. 用户权限 — 检查 sudo 配置、/etc/passwd 异常用户\n"
-                "4. 防火墙 — 检查 iptables/ufw 规则\n"
-                "5. 文件权限 — 检查 /etc/shadow、SSH key 权限\n\n"
-                "注意：不要读取 ~/.api_keys、~/.telegram_config 等敏感文件。\n\n"
-                "输出格式：按风险分级\n"
-                "- 🔴 高危：需要立即修复\n"
-                "- 🟡 中危：建议修复\n"
-                "- 🟢 安全：配置正常\n"
-                "每个发现附带修复命令。"
+                "1. SSH 配置 — root 登录、密码认证、端口\n"
+                "2. 开放端口 — ss -tlnp 检查不必要的监听端口\n"
+                "3. 用户权限 — sudo 配置、/etc/passwd 异常用户\n"
+                "4. 防火墙 — iptables/ufw 规则\n"
+                "5. 文件权限 — /etc/shadow、SSH key 权限\n\n"
+                "NEVER read: ~/.api_keys, ~/.telegram_config, ~/config.yaml\n\n"
+                "输出格式（按风险分级）：\n"
+                "- HIGH: 需要立即修复（附修复命令）\n"
+                "- MEDIUM: 建议修复（附修复命令）\n"
+                "- OK: 配置正常\n\n"
+                "IMPORTANT: Keep your response under 500 words."
             ),
-            # tools 不指定 — 继承全部工具
+            "tools": _get_tools_by_names([
+                "get_system_overview",
+            ]),
         },
     ]
 
 
-# ─── 工具注册表（name → tool 对象映射）───
+# ─── 工具注册表（name → tool 对象映射，供前端管理和 JSON 配置反序列化）───
 
 TOOL_REGISTRY = {
     "web_search": web_search,
