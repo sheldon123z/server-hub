@@ -42,8 +42,8 @@ async def kill_user(username: str, user=Depends(require_role("admin"))):
 
 
 @router.get("/quotas")
-async def list_quotas(user=Depends(get_current_user)):
-    """获取所有配额配置"""
+async def list_quotas(user=Depends(require_role("admin"))):
+    """获取所有配额配置（仅管理员）"""
     return read_quotas()
 
 
