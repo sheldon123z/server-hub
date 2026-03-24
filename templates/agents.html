@@ -268,9 +268,9 @@
               <div style="display:flex;align-items:center;gap:12px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
                 <label style="display:flex;align-items:center;gap:4px">间隔
                   <input type="number" min="1" max="10080" style="width:56px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
-                         x-model.number="p._editInterval" x-init="p._editInterval=p.interval_minutes" @focus="p._editInterval=p._editInterval||p.interval_minutes"> 分钟</label>
-                <button class="btn btn-xs btn-primary" style="padding:2px 8px;font-size:10px" x-show="p._editInterval && p._editInterval!==p.interval_minutes"
-                        @click="updatePatrolInterval(p.id,p._editInterval)">保存生效</button>
+                         x-model.number="p._editInterval" x-init="p._editInterval=p.interval_minutes"> 分钟</label>
+                <button class="btn btn-xs btn-primary" style="padding:3px 10px;font-size:10px"
+                        @click="updatePatrolInterval(p.id, p._editInterval)">保存</button>
                 <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
                 <span x-show="p.enabled" style="color:var(--accent)" x-text="nextRunText(p)"></span>
                 <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
