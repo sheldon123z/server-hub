@@ -143,4 +143,15 @@ async def init_tables(db: aiosqlite.Connection):
         CREATE INDEX IF NOT EXISTS idx_patrol_hist
             ON agent_patrol_history(task_id, timestamp);
     """)
+
+    # ─── 增量迁移 ───
+    try:
+        await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN report_json TEXT")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN triggered_by TEXT DEFAULT 'scheduler'")
+    except Exception:
+        pass
+
     await db.commit()

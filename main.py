@@ -460,8 +460,6 @@ async def agents_page(request: Request):
     user = await _get_user_or_redirect(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
     ctx = _page_context(request, user, "agents")
     return templates.TemplateResponse("agents.html", ctx)
 
