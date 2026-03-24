@@ -1,13 +1,16 @@
 """
 Linux 用户与配额管理服务
-移植自 server-panel.py 的核心逻辑
+移植自 server-panel.py 的核心逻辑 + 用户生命周期管理
 """
 
 import os
 import re
 import subprocess
+from datetime import datetime
 
 from config import settings
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _run(cmd: str) -> str:
@@ -222,6 +225,255 @@ def kill_user_processes(username: str) -> dict:
     try:
         subprocess.run(["pkill", "-u", username], timeout=5)
         subprocess.run(["pkill", "-9", "-u", username], timeout=5)
+        return {"ok": True, "error": None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ─── 用户全量列表（含管理员） ───
+
+def get_all_linux_users() -> list[dict]:
+    """获取所有 Linux 用户 (UID >= 1000)，包含管理员，带详细信息"""
+    users = []
+    passwd_raw = _run("awk -F: '$3 >= 1000 {print $1\":\"$3\":\"$6\":\"$7}' /etc/passwd")
+    for line in passwd_raw.splitlines():
+        parts = line.split(":")
+        if len(parts) < 4:
+            continue
+        uname, uid, home, shell = parts[0], int(parts[1]), parts[2], parts[3]
+        groups = _run(f"id -Gn {uname} 2>/dev/null")
+        last_login = _run(f"lastlog -u {uname} 2>/dev/null | tail -1")
+        # lastlog 输出格式: Username  Port  From  Latest
+        login_info = ""
+        if last_login and "Never logged in" not in last_login:
+            # 跳过 header 行
+            cols = last_login.split(None, 3)
+            if len(cols) >= 4 and cols[0] == uname:
+                login_info = cols[3]  # Latest 部分
+
+        users.append({
+            "name": uname,
+            "uid": uid,
+            "home": home,
+            "shell": shell,
+            "groups": groups,
+            "last_login": login_info or "从未登录",
+            "is_admin": uname in settings.admin_linux_users,
+        })
+    users.sort(key=lambda x: x["uid"])
+    return users
+
+
+# ─── 登录历史 ───
+
+def get_user_login_history(username: str = "", count: int = 20) -> list[dict]:
+    """获取用户登录历史（基于 last 命令）
+
+    Args:
+        username: 留空则查询所有用户
+        count: 最大返回条数
+    """
+    if username and not _USERNAME_RE.match(username):
+        raise ValueError(f"无效的用户名: {username}")
+
+    cmd = f"last -n {min(count, 100)} -F -w"
+    if username:
+        cmd += f" {username}"
+    cmd += " 2>/dev/null"
+    raw = _run(cmd)
+
+    entries = []
+    for line in raw.splitlines():
+        if not line.strip() or line.startswith("wtmp begins") or line.startswith("reboot"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        entries.append({
+            "username": parts[0],
+            "tty": parts[1],
+            "source": parts[2] if not parts[2].startswith(":") or len(parts) > 9 else "",
+            "raw": line.strip(),
+        })
+    return entries[:count]
+
+
+def get_active_sessions() -> list[dict]:
+    """获取当前活跃登录会话（基于 who 命令）"""
+    raw = _run("who 2>/dev/null")
+    sessions = []
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            sessions.append({
+                "username": parts[0],
+                "tty": parts[1],
+                "login_time": " ".join(parts[2:4]) if len(parts) >= 4 else parts[2],
+                "source": parts[4].strip("()") if len(parts) >= 5 else "",
+            })
+    return sessions
+
+
+# ─── 用户增删改 ───
+
+def _validate_new_username(username: str):
+    """校验用户名合法性"""
+    if not _USERNAME_RE.match(username):
+        raise ValueError(f"用户名格式不合法: {username}")
+    if len(username) < 2 or len(username) > 32:
+        raise ValueError("用户名长度需在 2-32 字符之间")
+
+
+def create_linux_user(username: str, groups: str = "", shell: str = "/bin/bash") -> dict:
+    """创建新的 Linux 用户
+
+    Args:
+        username: 用户名
+        groups: 逗号分隔的附加组（如 "students,docker"）
+        shell: 登录 shell
+    """
+    _validate_new_username(username)
+
+    # 检查是否已存在
+    check = _run(f"id {username} 2>/dev/null")
+    if check:
+        return {"ok": False, "error": f"用户 {username} 已存在"}
+
+    # shell 白名单
+    allowed_shells = {"/bin/bash", "/bin/sh", "/bin/zsh", "/usr/bin/zsh", "/usr/sbin/nologin", "/bin/false"}
+    if shell not in allowed_shells:
+        return {"ok": False, "error": f"不允许的 shell: {shell}"}
+
+    cmd = ["sudo", "useradd", "-m", "-s", shell]
+    if groups:
+        # 验证组名
+        for g in groups.split(","):
+            g = g.strip()
+            if g and not _USERNAME_RE.match(g):
+                return {"ok": False, "error": f"无效的组名: {g}"}
+        cmd.extend(["-G", groups])
+    cmd.append(username)
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return {"ok": False, "error": r.stderr.strip()}
+        return {"ok": True, "error": None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def delete_linux_user(username: str, remove_home: bool = False) -> dict:
+    """删除 Linux 用户
+
+    Args:
+        username: 要删除的用户名
+        remove_home: 是否同时删除 home 目录
+    """
+    if not _USERNAME_RE.match(username):
+        return {"ok": False, "error": "用户名不合法"}
+
+    if username in settings.admin_linux_users:
+        return {"ok": False, "error": "不能删除管理员用户"}
+
+    # 检查用户是否存在
+    check = _run(f"id {username} 2>/dev/null")
+    if not check:
+        return {"ok": False, "error": f"用户 {username} 不存在"}
+
+    cmd = ["sudo", "userdel"]
+    if remove_home:
+        cmd.append("-r")
+    cmd.append(username)
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return {"ok": False, "error": r.stderr.strip()}
+        return {"ok": True, "error": None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def modify_linux_user(username: str, groups: str = None, shell: str = None) -> dict:
+    """修改用户属性（组、shell）"""
+    if not _USERNAME_RE.match(username):
+        return {"ok": False, "error": "用户名不合法"}
+
+    if username in settings.admin_linux_users:
+        return {"ok": False, "error": "不能修改管理员用户"}
+
+    cmd = ["sudo", "usermod"]
+    if groups is not None:
+        for g in groups.split(","):
+            g = g.strip()
+            if g and not _USERNAME_RE.match(g):
+                return {"ok": False, "error": f"无效的组名: {g}"}
+        cmd.extend(["-G", groups])
+    if shell is not None:
+        allowed_shells = {"/bin/bash", "/bin/sh", "/bin/zsh", "/usr/bin/zsh", "/usr/sbin/nologin", "/bin/false"}
+        if shell not in allowed_shells:
+            return {"ok": False, "error": f"不允许的 shell: {shell}"}
+        cmd.extend(["-s", shell])
+    cmd.append(username)
+
+    if len(cmd) <= 3:
+        return {"ok": False, "error": "未指定要修改的属性"}
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return {"ok": False, "error": r.stderr.strip()}
+        return {"ok": True, "error": None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def set_user_password(username: str, password: str) -> dict:
+    """设置用户密码"""
+    if not _USERNAME_RE.match(username):
+        return {"ok": False, "error": "用户名不合法"}
+
+    if username in settings.admin_linux_users:
+        return {"ok": False, "error": "不能修改管理员密码"}
+
+    if len(password) < 6:
+        return {"ok": False, "error": "密码长度至少 6 个字符"}
+
+    try:
+        r = subprocess.run(
+            ["sudo", "chpasswd"],
+            input=f"{username}:{password}",
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return {"ok": False, "error": r.stderr.strip()}
+        return {"ok": True, "error": None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ─── 单进程终止 ───
+
+def kill_single_process(pid: int, username: str) -> dict:
+    """终止指定用户的单个进程
+
+    Args:
+        pid: 进程 ID
+        username: 进程所属用户（用于校验）
+    """
+    if username in settings.admin_linux_users:
+        return {"ok": False, "error": "不能终止管理员进程"}
+
+    # 验证 PID 归属
+    proc_user = _run(f"ps -o user= -p {pid} 2>/dev/null").strip()
+    if not proc_user:
+        return {"ok": False, "error": f"进程 {pid} 不存在"}
+    if proc_user != username:
+        return {"ok": False, "error": f"进程 {pid} 不属于用户 {username}"}
+
+    try:
+        subprocess.run(["kill", str(pid)], timeout=5)
         return {"ok": True, "error": None}
     except Exception as e:
         return {"ok": False, "error": str(e)}

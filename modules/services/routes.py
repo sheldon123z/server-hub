@@ -11,6 +11,10 @@ from modules.services.services import (
     service_status,
     service_action,
     service_journal,
+    service_enable_disable,
+    service_reload,
+    service_resource_usage,
+    service_dependencies,
 )
 from modules.audit.middleware import log_audit
 
@@ -65,6 +69,66 @@ async def do_service_action(
     )
 
     return {"ok": True, "action": action, "service": name, "output": result}
+
+
+@router.post("/{name}/enable")
+async def do_enable(name: str, request: Request, user=Depends(require_role("admin"))):
+    """启用服务自启动"""
+    try:
+        result = await service_enable_disable(name, "enable")
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_audit(
+        username=user["username"], action="service.enable", target=name,
+        ip=request.client.host if request.client else "unknown",
+    )
+    return {"ok": True, "service": name, "output": result}
+
+
+@router.post("/{name}/disable")
+async def do_disable(name: str, request: Request, user=Depends(require_role("admin"))):
+    """禁用服务自启动"""
+    try:
+        result = await service_enable_disable(name, "disable")
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_audit(
+        username=user["username"], action="service.disable", target=name,
+        ip=request.client.host if request.client else "unknown",
+    )
+    return {"ok": True, "service": name, "output": result}
+
+
+@router.post("/{name}/reload")
+async def do_reload(name: str, request: Request, user=Depends(require_role("admin"))):
+    """重新加载服务配置"""
+    try:
+        result = await service_reload(name)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_audit(
+        username=user["username"], action="service.reload", target=name,
+        ip=request.client.host if request.client else "unknown",
+    )
+    return {"ok": True, "service": name, "output": result}
+
+
+@router.get("/{name}/resources")
+async def get_resources(name: str, user=Depends(get_current_user)):
+    """获取服务资源使用情况"""
+    try:
+        return await service_resource_usage(name)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{name}/dependencies")
+async def get_deps(name: str, user=Depends(get_current_user)):
+    """获取服务依赖关系"""
+    try:
+        return await service_dependencies(name)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{name}/journal")

@@ -3,12 +3,19 @@
 {% block page_title %}用户管理{% endblock %}
 
 {% block content %}
-<div x-data="{ tab: 'users', quotaData: {{ quotas|tojson }} }">
+<div x-data="userManager()" x-init="loadSessions()">
 
 <!-- 标签页 -->
 <div class="flex gap-2 mb-4">
   <button class="btn btn-sm" :class="tab==='users' ? 'btn-primary' : ''" @click="tab='users'">用户资源</button>
   <button class="btn btn-sm" :class="tab==='quotas' ? 'btn-primary' : ''" @click="tab='quotas'">配额管理</button>
+  {% if user.role == 'admin' %}
+  <button class="btn btn-sm" :class="tab==='manage' ? 'btn-primary' : ''" @click="tab='manage'; loadAllUsers()">用户管理</button>
+  {% endif %}
+  <div style="flex:1"></div>
+  <template x-if="sessions.length > 0">
+    <span class="badge badge-info" style="font-size:11px" x-text="sessions.length + ' 个活跃会话'"></span>
+  </template>
 </div>
 
 <!-- 用户资源 -->
@@ -53,21 +60,31 @@
           </td>
           <td>
             {% for p in u.top_procs[:3] %}
-              <div class="text-xs"><span class="text-accent">{{ p.name }}</span> {{ p.mem_mb }}MB (PID:{{ p.pid }})</div>
+              <div class="text-xs">
+                <span class="text-accent">{{ p.name }}</span> {{ p.mem_mb }}MB
+                {% if user.role == 'admin' %}
+                <button class="btn btn-xs" style="padding:0 4px;font-size:10px;line-height:16px"
+                        @click="killProcess('{{ u.name }}', {{ p.pid }})"
+                        title="终止 PID {{ p.pid }}">x</button>
+                {% endif %}
+              </div>
             {% endfor %}
             {% if not u.top_procs %}<span class="text-muted">-</span>{% endif %}
           </td>
           {% if user.role == 'admin' %}
           <td>
-            {% if u.proc_count > 0 %}
-            <button class="btn btn-danger btn-xs"
-                    hx-post="/api/users/{{ u.name }}/kill"
-                    hx-confirm="确定终止用户 {{ u.name }} 的所有进程?"
-                    hx-swap="none"
-                    @htmx:after-request="showToast('已终止 {{ u.name }} 的进程', 'ok'); setTimeout(()=>htmx.ajax('GET','/users',{target:'#main-content'}), 2000)">
-              终止全部
-            </button>
-            {% endif %}
+            <div class="flex gap-1">
+              {% if u.proc_count > 0 %}
+              <button class="btn btn-danger btn-xs"
+                      hx-post="/api/users/{{ u.name }}/kill"
+                      hx-confirm="确定终止用户 {{ u.name }} 的所有进程?"
+                      hx-swap="none"
+                      @htmx:after-request="showToast('已终止 {{ u.name }} 的进程', 'ok'); setTimeout(()=>htmx.ajax('GET','/users',{target:'#main-content'}), 2000)">
+                终止全部
+              </button>
+              {% endif %}
+              <button class="btn btn-xs" @click="showHistory('{{ u.name }}')" title="登录历史">历史</button>
+            </div>
           </td>
           {% endif %}
         </tr>
@@ -82,9 +99,7 @@
 <!-- 配额管理 -->
 <div x-show="tab==='quotas'">
   <div class="data-table-wrapper">
-    <div class="data-table-header">
-      <h3>资源配额</h3>
-    </div>
+    <div class="data-table-header"><h3>资源配额</h3></div>
     <table>
       <thead><tr><th>标识</th><th>内存上限 (GB)</th><th>进程上限</th><th>备注</th>
       {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
@@ -130,10 +145,192 @@
   </div>
 </div>
 
+{% if user.role == 'admin' %}
+<!-- 用户管理 -->
+<div x-show="tab==='manage'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>系统用户</h3>
+      <button class="btn btn-sm btn-primary" @click="showCreateUser=true">创建用户</button>
+    </div>
+    <template x-if="allUsers.length > 0">
+    <table>
+      <thead><tr><th>用户名</th><th>UID</th><th>组</th><th>Shell</th><th>Home</th><th>最后登录</th><th>操作</th></tr></thead>
+      <tbody>
+        <template x-for="u in allUsers" :key="u.uid">
+          <tr>
+            <td>
+              <strong x-text="u.name"></strong>
+              <template x-if="u.is_admin"><span class="badge badge-crit" style="font-size:10px;margin-left:4px">管理员</span></template>
+            </td>
+            <td class="text-xs text-muted" x-text="u.uid"></td>
+            <td class="text-xs" x-text="u.groups"></td>
+            <td class="text-xs font-mono" x-text="u.shell"></td>
+            <td class="text-xs font-mono" x-text="u.home"></td>
+            <td class="text-xs text-muted" x-text="u.last_login"></td>
+            <td>
+              <template x-if="!u.is_admin">
+                <div class="flex gap-1">
+                  <button class="btn btn-xs" @click="showHistory(u.name)">历史</button>
+                  <button class="btn btn-xs" @click="editUser=u; showEditUser=true">修改</button>
+                  <button class="btn btn-xs btn-danger" @click="deleteUser(u.name)">删除</button>
+                </div>
+              </template>
+              <template x-if="u.is_admin">
+                <button class="btn btn-xs" @click="showHistory(u.name)">历史</button>
+              </template>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    </template>
+    <template x-if="allUsers.length === 0">
+      <div class="empty-state">加载中...</div>
+    </template>
+  </div>
 </div>
 
-{% if user.role == 'admin' %}
+<!-- 创建用户弹窗 -->
+<div x-show="showCreateUser" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+     @click.self="showCreateUser=false" x-cloak>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:440px">
+    <h3 style="margin:0 0 16px">创建用户</h3>
+    <div class="mb-3">
+      <label class="form-label">用户名</label>
+      <input class="form-input" style="width:100%" x-model="newUser.username" placeholder="小写字母和数字">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">密码</label>
+      <input class="form-input" style="width:100%" type="password" x-model="newUser.password" placeholder="至少 6 个字符">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">附加组 (逗号分隔)</label>
+      <input class="form-input" style="width:100%" x-model="newUser.groups" placeholder="students,docker">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Shell</label>
+      <select class="form-input" style="width:100%" x-model="newUser.shell">
+        <option value="/bin/bash">/bin/bash</option>
+        <option value="/bin/zsh">/bin/zsh</option>
+        <option value="/usr/sbin/nologin">/usr/sbin/nologin</option>
+      </select>
+    </div>
+    <div class="flex gap-2 justify-end">
+      <button class="btn btn-sm" @click="showCreateUser=false">取消</button>
+      <button class="btn btn-sm btn-primary" @click="createUser()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 登录历史弹窗 -->
+<div x-show="showHistoryModal" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+     @click.self="showHistoryModal=false" x-cloak>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:700px;max-height:80vh;overflow-y:auto">
+    <h3 style="margin:0 0 12px" x-text="'登录历史: ' + historyUser"></h3>
+    <template x-if="historyEntries.length > 0">
+    <table>
+      <thead><tr><th>记录</th></tr></thead>
+      <tbody>
+        <template x-for="(e, i) in historyEntries" :key="i">
+          <tr><td class="font-mono text-xs" x-text="e.raw"></td></tr>
+        </template>
+      </tbody>
+    </table>
+    </template>
+    <template x-if="historyEntries.length === 0">
+      <div class="empty-state">暂无登录记录</div>
+    </template>
+    <div class="flex justify-end mt-3">
+      <button class="btn btn-sm" @click="showHistoryModal=false">关闭</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+</div>
+
 <script>
+function userManager() {
+  return {
+    tab: 'users',
+    sessions: [],
+    allUsers: [],
+    showCreateUser: false,
+    showEditUser: false,
+    showHistoryModal: false,
+    historyUser: '',
+    historyEntries: [],
+    editUser: null,
+    newUser: { username: '', password: '', groups: '', shell: '/bin/bash' },
+
+    async loadSessions() {
+      try {
+        const r = await fetch('/api/users/sessions').then(r => r.json());
+        this.sessions = r.sessions || [];
+      } catch(e) {}
+    },
+
+    async loadAllUsers() {
+      try {
+        const r = await fetch('/api/users/all').then(r => r.json());
+        this.allUsers = r.users || [];
+      } catch(e) {}
+    },
+
+    async createUser() {
+      const u = this.newUser;
+      if (!u.username || !u.password) { showToast('请填写用户名和密码', 'err'); return; }
+      try {
+        const resp = await fetch('/api/users/create', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(u),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          showToast(data.warning || '用户已创建', data.warning ? 'warn' : 'ok');
+          this.showCreateUser = false;
+          this.newUser = { username: '', password: '', groups: '', shell: '/bin/bash' };
+          await this.loadAllUsers();
+        } else { showToast(data.detail || '创建失败', 'err'); }
+      } catch(e) { showToast('创建失败: ' + e.message, 'err'); }
+    },
+
+    async deleteUser(username) {
+      if (!confirm(`确定删除用户 ${username}？\n注意：不会删除 home 目录`)) return;
+      try {
+        const resp = await fetch(`/api/users/${username}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (data.ok) { showToast('用户已删除', 'ok'); await this.loadAllUsers(); }
+        else { showToast(data.detail || '删除失败', 'err'); }
+      } catch(e) { showToast('删除失败: ' + e.message, 'err'); }
+    },
+
+    async showHistory(username) {
+      this.historyUser = username;
+      this.historyEntries = [];
+      this.showHistoryModal = true;
+      try {
+        const r = await fetch(`/api/users/${username}/history?count=30`).then(r => r.json());
+        this.historyEntries = r.entries || [];
+      } catch(e) {}
+    },
+
+    async killProcess(username, pid) {
+      if (!confirm(`终止进程 PID ${pid}?`)) return;
+      try {
+        const resp = await fetch(`/api/users/${username}/kill/${pid}`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) {
+          showToast(`进程 ${pid} 已终止`, 'ok');
+          setTimeout(() => htmx.ajax('GET', '/users', {target: '#main-content'}), 1500);
+        } else { showToast(data.detail || '终止失败', 'err'); }
+      } catch(e) { showToast('终止失败: ' + e.message, 'err'); }
+    },
+  };
+}
+
+{% if user.role == 'admin' %}
 async function saveQuotas() {
   const rows = document.querySelectorAll('input[data-idx]');
   const quotas = {{ quotas|tojson }};
@@ -161,6 +358,6 @@ async function addQuota() {
     htmx.ajax('GET', '/users', {target: '#main-content'});
   } catch(e) { showToast('添加失败: ' + e.message, 'err'); }
 }
-</script>
 {% endif %}
+</script>
 {% endblock %}

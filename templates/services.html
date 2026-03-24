@@ -3,19 +3,21 @@
 {% block page_title %}服务管理{% endblock %}
 
 {% block content %}
-<div x-data="{ journalService: '', journalContent: '' }">
+<div x-data="serviceManager()">
   <div class="data-table-wrapper">
     <div class="data-table-header">
       <h3>Systemd 服务</h3>
       <button class="btn btn-sm" hx-get="/services" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
     </div>
     <table>
-      <thead><tr><th>服务名</th><th>状态</th><th>启用</th>
+      <thead><tr><th>服务名</th><th>状态</th><th>自启动</th>
       {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
       <tbody>
       {% for s in services %}
         <tr>
-          <td><strong>{{ s.name }}</strong></td>
+          <td>
+            <strong style="cursor:pointer;text-decoration:underline dotted" @click="showDeps('{{ s.name }}')" title="查看依赖">{{ s.name }}</strong>
+          </td>
           <td>
             {% if s.active %}
               <span class="badge badge-ok">运行中</span>
@@ -24,21 +26,34 @@
             {% endif %}
           </td>
           <td>
+            {% if user.role == 'admin' %}
+            <label class="toggle-switch">
+              <input type="checkbox" {{ 'checked' if s.enabled }}
+                     @change="toggleEnabled('{{ s.name }}', $event.target.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            {% else %}
             {% if s.enabled %}
               <span class="text-green text-xs">已启用</span>
             {% else %}
               <span class="text-muted text-xs">未启用</span>
             {% endif %}
+            {% endif %}
           </td>
           {% if user.role == 'admin' %}
           <td>
-            <div class="flex gap-2">
-              <button class="btn btn-xs" @click="journalService='{{ s.name }}'; loadJournal()">日志</button>
+            <div class="flex gap-1">
+              <button class="btn btn-xs" @click="loadJournal('{{ s.name }}')">日志</button>
               {% if s.active %}
-              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/restart" hx-swap="none" hx-confirm="确定重启 {{ s.name }}?" @htmx:after-request="showToast('已重启', 'ok')">重启</button>
-              <button class="btn btn-danger btn-xs" hx-post="/api/services/{{ s.name }}/stop" hx-swap="none" hx-confirm="确定停止 {{ s.name }}?" @htmx:after-request="showToast('已停止', 'ok')">停止</button>
+              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/reload" hx-swap="none"
+                      @htmx:after-request="showToast('已重载', 'ok')">重载</button>
+              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/restart" hx-swap="none"
+                      hx-confirm="确定重启 {{ s.name }}?" @htmx:after-request="showToast('已重启', 'ok')">重启</button>
+              <button class="btn btn-danger btn-xs" hx-post="/api/services/{{ s.name }}/stop" hx-swap="none"
+                      hx-confirm="确定停止 {{ s.name }}?" @htmx:after-request="showToast('已停止', 'ok')">停止</button>
               {% else %}
-              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/start" hx-swap="none" @htmx:after-request="showToast('已启动', 'ok')">启动</button>
+              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/start" hx-swap="none"
+                      @htmx:after-request="showToast('已启动', 'ok')">启动</button>
               {% endif %}
             </div>
           </td>
@@ -49,6 +64,7 @@
     </table>
   </div>
 
+  <!-- 日志模态框 -->
   <template x-if="journalService">
     <div class="modal-overlay" @click.self="journalService=''">
       <div class="modal" style="width:800px;max-width:90vw">
@@ -56,21 +72,80 @@
           <h3 x-text="journalService + ' 日志'"></h3>
           <button class="btn btn-xs" @click="journalService=''">关闭</button>
         </div>
-        <div class="log-viewer" x-text="journalContent" style="max-height:60vh"></div>
+        <div class="log-viewer" x-html="journalContentHtml" style="max-height:60vh"></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- 依赖关系模态框 -->
+  <template x-if="depsService">
+    <div class="modal-overlay" @click.self="depsService=''">
+      <div class="modal" style="width:500px;max-width:90vw">
+        <div class="flex items-center justify-between mb-4">
+          <h3 x-text="depsService + ' 依赖关系'"></h3>
+          <button class="btn btn-xs" @click="depsService=''">关闭</button>
+        </div>
+        <pre style="font-size:12px;max-height:50vh;overflow:auto;white-space:pre-wrap" x-text="depsContent"></pre>
       </div>
     </div>
   </template>
 </div>
 
+<style>
+.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: var(--border); border-radius: 20px; transition: .2s; }
+.toggle-slider::before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .2s; }
+.toggle-switch input:checked + .toggle-slider { background: var(--success, #22c55e); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
+.log-line-error { color: #ef4444; }
+.log-line-warn { color: #eab308; }
+</style>
+
 <script>
-async function loadJournal() {
-  const name = document.querySelector('[x-data]')?._x_dataStack?.[0]?.journalService;
-  if (!name) return;
-  try {
-    const resp = await fetch(`/api/services/${name}/journal?lines=100`);
-    const data = await resp.json();
-    document.querySelector('[x-data]')._x_dataStack[0].journalContent = data.journal || '';
-  } catch(e) { showToast('获取日志失败', 'err'); }
+function serviceManager() {
+  return {
+    journalService: '', journalContentHtml: '',
+    depsService: '', depsContent: '',
+
+    async loadJournal(name) {
+      this.journalService = name;
+      this.journalContentHtml = '加载中...';
+      try {
+        const resp = await fetch(`/api/services/${name}/journal?lines=100`);
+        const data = await resp.json();
+        const raw = data.journal || '';
+        // 高亮 ERROR/WARN 行
+        this.journalContentHtml = raw.split('\n').map(line => {
+          if (/error|fatal|fail/i.test(line)) return `<span class="log-line-error">${this.esc(line)}</span>`;
+          if (/warn/i.test(line)) return `<span class="log-line-warn">${this.esc(line)}</span>`;
+          return this.esc(line);
+        }).join('\n');
+      } catch(e) { this.journalContentHtml = '获取日志失败'; }
+    },
+
+    async showDeps(name) {
+      this.depsService = name;
+      this.depsContent = '加载中...';
+      try {
+        const resp = await fetch(`/api/services/${name}/dependencies`);
+        const data = await resp.json();
+        this.depsContent = data.raw || '无依赖';
+      } catch(e) { this.depsContent = '查询失败'; }
+    },
+
+    async toggleEnabled(name, enabled) {
+      const action = enabled ? 'enable' : 'disable';
+      try {
+        const resp = await fetch(`/api/services/${name}/${action}`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) { showToast(`已${enabled ? '启用' : '禁用'} ${name} 自启动`, 'ok'); }
+        else { showToast(data.detail || '操作失败', 'err'); }
+      } catch(e) { showToast('操作失败: ' + e.message, 'err'); }
+    },
+
+    esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); },
+  };
 }
 </script>
 {% endblock %}

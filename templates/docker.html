@@ -3,12 +3,18 @@
 {% block page_title %}Docker 管理{% endblock %}
 
 {% block content %}
-<div x-data="{ tab: 'containers', logContainer: '', logContent: '' }">
+<div x-data="dockerManager()" x-init="loadExtra()">
 
 <div class="flex gap-2 mb-4">
   <button class="btn btn-sm" :class="tab==='containers'?'btn-primary':''" @click="tab='containers'">容器</button>
   <button class="btn btn-sm" :class="tab==='stacks'?'btn-primary':''" @click="tab='stacks'">Compose 堆栈</button>
   <button class="btn btn-sm" :class="tab==='images'?'btn-primary':''" @click="tab='images'">镜像</button>
+  <button class="btn btn-sm" :class="tab==='networks'?'btn-primary':''" @click="tab='networks'">网络</button>
+  <button class="btn btn-sm" :class="tab==='volumes'?'btn-primary':''" @click="tab='volumes'">卷</button>
+  {% if user.role == 'admin' %}
+  <div style="flex:1"></div>
+  <button class="btn btn-sm btn-danger" @click="pruneResources('all')">清理全部</button>
+  {% endif %}
 </div>
 
 <!-- 容器列表 -->
@@ -41,7 +47,10 @@
           {% if user.role == 'admin' %}
           <td>
             <div class="flex gap-2">
-              <button class="btn btn-xs" @click="logContainer='{{ c.Names if c.Names else c.name }}'; loadLogs()">日志</button>
+              <button class="btn btn-xs" @click="loadLogs('{{ c.Names if c.Names else c.name }}')">日志</button>
+              {% if st == 'running' or 'up' in (c.Status if c.Status else c.status)|lower %}
+              <button class="btn btn-xs" @click="openExec('{{ c.Names if c.Names else c.name }}')">Exec</button>
+              {% endif %}
               {% set name = c.Names if c.Names else c.name %}
               <button class="btn btn-xs" hx-post="/api/docker/containers/{{ name }}/restart" hx-confirm="确定重启 {{ name }}?" hx-swap="none" @htmx:after-request="showToast('已重启', 'ok')">重启</button>
               {% if st == 'running' or 'up' in (c.Status if c.Status else c.status)|lower %}
@@ -135,18 +144,122 @@
   </div>
 </div>
 
+<!-- 网络 -->
+<div x-show="tab==='networks'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>Docker 网络</h3></div>
+    <template x-if="networks.length > 0">
+    <table>
+      <thead><tr><th>名称</th><th>ID</th><th>驱动</th><th>范围</th></tr></thead>
+      <tbody>
+        <template x-for="n in networks" :key="n.id">
+          <tr>
+            <td><strong x-text="n.name"></strong></td>
+            <td class="font-mono text-xs text-muted" x-text="n.id"></td>
+            <td><span class="badge badge-info" x-text="n.driver"></span></td>
+            <td x-text="n.scope"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    </template>
+    <template x-if="networks.length === 0"><div class="empty-state">无网络</div></template>
+  </div>
+</div>
+
+<!-- 卷 -->
+<div x-show="tab==='volumes'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>Docker 卷</h3></div>
+    <template x-if="volumes.length > 0">
+    <table>
+      <thead><tr><th>名称</th><th>驱动</th><th>挂载点</th></tr></thead>
+      <tbody>
+        <template x-for="v in volumes" :key="v.name">
+          <tr>
+            <td><strong x-text="v.name"></strong></td>
+            <td><span class="badge badge-info" x-text="v.driver"></span></td>
+            <td class="font-mono text-xs" style="max-width:400px;overflow:hidden;text-overflow:ellipsis" x-text="v.mountpoint"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    </template>
+    <template x-if="volumes.length === 0"><div class="empty-state">无卷</div></template>
+  </div>
+</div>
+
+<!-- Exec 模态框 -->
+<div x-show="showExec" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+     @click.self="showExec=false" x-cloak>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:600px">
+    <h3 style="margin:0 0 12px">容器 Exec: <span x-text="execContainer" class="text-accent"></span></h3>
+    <input class="form-input font-mono" style="width:100%;margin-bottom:8px" placeholder="输入命令..." x-model="execCommand"
+           @keyup.enter="runExec()">
+    <pre style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:12px;max-height:400px;overflow:auto;font-size:12px;white-space:pre-wrap"
+         x-text="execOutput || '等待命令...'"></pre>
+    <div class="flex gap-2 justify-end mt-3">
+      <button class="btn btn-sm" @click="showExec=false">关闭</button>
+      <button class="btn btn-sm btn-primary" @click="runExec()">执行</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
-async function loadLogs() {
-  const name = document.querySelector('[x-data]')?._x_dataStack?.[0]?.logContainer;
-  if (!name) return;
-  try {
-    const resp = await fetch(`/api/docker/containers/${encodeURIComponent(name)}/logs?tail=200`);
-    const data = await resp.json();
-    const el = document.querySelector('[x-data]')?._x_dataStack?.[0];
-    if (el) el.logContent = data.logs || data;
-  } catch(e) { showToast('获取日志失败', 'err'); }
+function dockerManager() {
+  return {
+    tab: 'containers',
+    logContainer: '', logContent: '',
+    networks: [], volumes: [],
+    showExec: false, execContainer: '', execCommand: '', execOutput: '',
+
+    async loadExtra() {
+      try {
+        const [n, v] = await Promise.all([
+          fetch('/api/docker/networks').then(r => r.json()).catch(() => ({networks:[]})),
+          fetch('/api/docker/volumes').then(r => r.json()).catch(() => ({volumes:[]})),
+        ]);
+        this.networks = n.networks || [];
+        this.volumes = v.volumes || [];
+      } catch(e) {}
+    },
+
+    async loadLogs(name) {
+      this.logContainer = name;
+      this.logContent = '加载中...';
+      try {
+        const resp = await fetch(`/api/docker/containers/${encodeURIComponent(name)}/logs?tail=200`);
+        const data = await resp.json();
+        this.logContent = data.logs || JSON.stringify(data);
+      } catch(e) { this.logContent = '获取日志失败'; }
+    },
+
+    openExec(name) { this.execContainer = name; this.execOutput = ''; this.execCommand = ''; this.showExec = true; },
+
+    async runExec() {
+      if (!this.execCommand) return;
+      this.execOutput = '执行中...';
+      try {
+        const resp = await fetch(`/api/docker/containers/${encodeURIComponent(this.execContainer)}/exec`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ command: this.execCommand }),
+        });
+        const data = await resp.json();
+        this.execOutput = data.ok ? data.output : (data.detail || '执行失败');
+      } catch(e) { this.execOutput = '执行失败: ' + e.message; }
+    },
+
+    async pruneResources(type) {
+      if (!confirm(`确定清理 ${type === 'all' ? '全部' : type} 未使用的 Docker 资源？此操作不可逆。`)) return;
+      try {
+        const resp = await fetch(`/api/docker/prune/${type}`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) { showToast('清理完成', 'ok'); } else { showToast(data.detail || '清理失败', 'err'); }
+      } catch(e) { showToast('清理失败: ' + e.message, 'err'); }
+    },
+  };
 }
 </script>
 {% endblock %}

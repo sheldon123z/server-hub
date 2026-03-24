@@ -237,6 +237,20 @@ async def init_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_assets_type
             ON assets(type);
+
+        -- 定时任务变更日志
+        CREATE TABLE IF NOT EXISTS cron_job_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cron_user TEXT NOT NULL,
+            schedule TEXT NOT NULL,
+            command TEXT NOT NULL,
+            comment TEXT,
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            action TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cron_job_log_user
+            ON cron_job_log(cron_user);
     """)
 
     # FTS5 虚拟表（不能在 executescript 中创建）

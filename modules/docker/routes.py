@@ -6,6 +6,7 @@ Docker 管理 API 路由
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth.dependencies import get_current_user, require_role
+from pydantic import BaseModel, Field
 from modules.docker.services import (
     list_containers,
     container_logs,
@@ -16,6 +17,12 @@ from modules.docker.services import (
     remove_image,
     list_compose_stacks,
     compose_action,
+    list_networks,
+    list_volumes,
+    pull_image,
+    container_exec,
+    prune_resources,
+    get_container_env,
 )
 from modules.audit.middleware import log_audit
 
@@ -171,3 +178,106 @@ async def do_stack_action(
     )
 
     return {"ok": True, "action": action, "stack": name, "output": result}
+
+
+# ─── 网络 ───
+
+@router.get("/networks")
+async def get_networks(user=Depends(get_current_user)):
+    """列出 Docker 网络"""
+    try:
+        return {"networks": await list_networks()}
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── 卷 ───
+
+@router.get("/volumes")
+async def get_volumes(user=Depends(get_current_user)):
+    """列出 Docker 卷"""
+    try:
+        return {"volumes": await list_volumes()}
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── 镜像拉取 ───
+
+class PullImageRequest(BaseModel):
+    image: str = Field(..., min_length=1, max_length=200)
+
+
+@router.post("/images/pull")
+async def do_pull_image(body: PullImageRequest, request: Request, user=Depends(require_role("admin"))):
+    """拉取 Docker 镜像"""
+    try:
+        result = await pull_image(body.image)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await log_audit(
+        username=user["username"],
+        action="docker.image.pull",
+        target=body.image,
+        ip=request.client.host if request.client else "unknown",
+    )
+    return {"ok": True, "output": result}
+
+
+# ─── 容器 Exec ───
+
+class ExecRequest(BaseModel):
+    command: str = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/containers/{name}/exec")
+async def do_container_exec(name: str, body: ExecRequest, request: Request, user=Depends(require_role("admin"))):
+    """在容器内执行命令"""
+    try:
+        output = await container_exec(name, body.command)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await log_audit(
+        username=user["username"],
+        action="docker.container.exec",
+        target=name,
+        ip=request.client.host if request.client else "unknown",
+        detail=body.command[:100],
+    )
+    return {"ok": True, "output": output}
+
+
+# ─── 资源清理 ───
+
+@router.post("/prune/{resource_type}")
+async def do_prune(resource_type: str, request: Request, user=Depends(require_role("admin"))):
+    """清理未使用的 Docker 资源"""
+    try:
+        result = await prune_resources(resource_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    await log_audit(
+        username=user["username"],
+        action=f"docker.prune.{resource_type}",
+        target=resource_type,
+        ip=request.client.host if request.client else "unknown",
+        detail=result[:200],
+    )
+    return {"ok": True, "output": result}
+
+
+# ─── 容器环境变量 ───
+
+@router.get("/containers/{name}/env")
+async def get_env(name: str, user=Depends(require_role("admin"))):
+    """获取容器环境变量（敏感值已脱敏）"""
+    try:
+        envs = await get_container_env(name)
+        return {"envs": envs}
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))

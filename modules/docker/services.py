@@ -281,3 +281,126 @@ async def compose_action(stack_name: str, action: str) -> str:
         cmd = ["docker", "compose", "-f", compose_file, "pull"]
 
     return await run_cmd(cmd, timeout=120)
+
+
+# ─── 网络管理 ───
+
+async def list_networks() -> list[dict]:
+    """列出 Docker 网络"""
+    raw = await run_cmd(
+        ["docker", "network", "ls", "--format", "{{json .}}"],
+        timeout=15,
+    )
+    networks = []
+    for line in raw.strip().splitlines():
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+            networks.append({
+                "name": data.get("Name", ""),
+                "id": data.get("ID", "")[:12],
+                "driver": data.get("Driver", ""),
+                "scope": data.get("Scope", ""),
+            })
+        except json.JSONDecodeError:
+            continue
+    return networks
+
+
+# ─── 卷管理 ───
+
+async def list_volumes() -> list[dict]:
+    """列出 Docker 卷"""
+    raw = await run_cmd(
+        ["docker", "volume", "ls", "--format", "{{json .}}"],
+        timeout=15,
+    )
+    volumes = []
+    for line in raw.strip().splitlines():
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+            volumes.append({
+                "name": data.get("Name", ""),
+                "driver": data.get("Driver", ""),
+                "mountpoint": data.get("Mountpoint", ""),
+            })
+        except json.JSONDecodeError:
+            continue
+    return volumes
+
+
+# ─── 镜像拉取 ───
+
+async def pull_image(image: str) -> str:
+    """拉取 Docker 镜像"""
+    _validate_image_id(image)
+    return await run_cmd(["docker", "pull", image], timeout=300)
+
+
+# ─── 容器 exec ───
+
+async def container_exec(name: str, command: str) -> str:
+    """在运行中的容器内执行命令
+
+    Args:
+        name: 容器名称
+        command: 要执行的命令
+    """
+    _validate_name(name)
+    # 限制命令长度
+    if len(command) > 500:
+        raise ValueError("命令长度不能超过 500 字符")
+
+    output = await run_cmd(
+        ["docker", "exec", name, "sh", "-c", command],
+        timeout=30,
+    )
+    # 限制输出大小
+    if len(output) > 10240:
+        output = output[:10240] + "\n...(输出已截断)"
+    return output
+
+
+# ─── 资源清理 ───
+
+async def prune_resources(resource_type: str) -> str:
+    """清理未使用的 Docker 资源
+
+    Args:
+        resource_type: container / image / volume / all
+    """
+    if resource_type == "all":
+        return await run_cmd(["docker", "system", "prune", "-f"], timeout=60)
+    elif resource_type in ("container", "image", "volume", "network"):
+        return await run_cmd(["docker", resource_type, "prune", "-f"], timeout=60)
+    else:
+        raise ValueError(f"不支持的资源类型: {resource_type}")
+
+
+# ─── 容器环境变量 ───
+
+async def get_container_env(name: str) -> list[str]:
+    """获取容器的环境变量列表（过滤敏感值）"""
+    _validate_name(name)
+    raw = await run_cmd(
+        ["docker", "inspect", "--format", "{{json .Config.Env}}", name],
+        timeout=15,
+    )
+    try:
+        envs = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+    # 过滤敏感环境变量的值
+    sensitive_patterns = ("KEY", "SECRET", "TOKEN", "PASSWORD", "PASS")
+    filtered = []
+    for env in (envs or []):
+        key = env.split("=", 1)[0] if "=" in env else env
+        if any(p in key.upper() for p in sensitive_patterns):
+            filtered.append(f"{key}=***")
+        else:
+            filtered.append(env)
+    return filtered

@@ -133,3 +133,83 @@ async def service_journal(name: str, lines: int = 100) -> str:
         timeout=15,
     )
     return output
+
+
+# ─── 自启动管理 ───
+
+async def service_enable_disable(name: str, action: str) -> str:
+    """启用或禁用服务自启动
+
+    Args:
+        name: 服务名（必须在受管列表中）
+        action: enable / disable
+    """
+    _validate_service(name)
+    if action not in {"enable", "disable"}:
+        raise ValueError(f"不支持的操作: {action}")
+
+    _, output = await _run(
+        ["sudo", "systemctl", action, name],
+        timeout=15,
+    )
+    return output
+
+
+async def service_reload(name: str) -> str:
+    """重新加载服务配置（不重启）"""
+    _validate_service(name)
+    _, output = await _run(
+        ["sudo", "systemctl", "reload", name],
+        timeout=15,
+    )
+    return output
+
+
+# ─── 资源使用 ───
+
+async def service_resource_usage(name: str) -> dict:
+    """获取服务的资源使用情况"""
+    _validate_service(name)
+    _, output = await _run(
+        ["systemctl", "show", name,
+         "-p", "MemoryCurrent,CPUUsageNSec,MainPID,Tasks"],
+        check=False, timeout=10,
+    )
+    result = {}
+    for line in output.splitlines():
+        if "=" in line:
+            key, val = line.split("=", 1)
+            result[key] = val.strip()
+
+    # 转换内存为人类可读
+    mem = result.get("MemoryCurrent", "[not set]")
+    if mem.isdigit():
+        mem_mb = round(int(mem) / 1024 / 1024, 1)
+        result["MemoryMB"] = mem_mb
+
+    # 转换 CPU 时间
+    cpu_ns = result.get("CPUUsageNSec", "0")
+    if cpu_ns.isdigit():
+        cpu_sec = round(int(cpu_ns) / 1_000_000_000, 2)
+        result["CPUSeconds"] = cpu_sec
+
+    return result
+
+
+# ─── 依赖关系 ───
+
+async def service_dependencies(name: str) -> dict:
+    """获取服务的依赖关系"""
+    _validate_service(name)
+    _, output = await _run(
+        ["systemctl", "list-dependencies", name, "--no-pager"],
+        check=False, timeout=10,
+    )
+    # 解析缩进树形结构
+    deps = []
+    for line in output.splitlines():
+        stripped = line.lstrip("│ ├└─●")
+        stripped = stripped.strip()
+        if stripped and stripped != name:
+            deps.append(stripped)
+    return {"service": name, "dependencies": deps, "raw": output}
