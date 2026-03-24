@@ -67,7 +67,7 @@
       <template x-if="sendResults">
         <div class="mt-3">
           <div class="text-xs text-muted mb-2">发送结果:</div>
-          <template x-for="r in sendResults.results" :key="r.channel">
+          <template x-for="r in sendResults.results" :key="r.channel_id || r.channel">
             <div class="result-item">
               <span class="channel-badge" :class="'cb-'+(r.channel||'')" x-text="r.display_name || r.channel"></span>
               <span x-show="r.success" class="badge badge-ok">成功</span>
