@@ -5,6 +5,8 @@
 {% block content %}
 <link rel="stylesheet" href="/static/css/xterm.min.css">
 <style>
+[x-cloak] { display: none !important; }
+.mb-1 { margin-bottom: 4px; }
 /* 主布局：减去顶栏 56px + content padding 40px + tabs 高度 42px */
 .agent-layout { display: flex; flex-direction: column; height: calc(100vh - var(--header-h) - 82px); min-height: 500px; }
 .agent-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; flex-shrink: 0; }
@@ -341,7 +343,7 @@
               <div>
                 <template x-for="p in patrols" :key="'pli-'+p.id">
                   <div class="patrol-list-item" :class="activePatrol===p.id?'active':''" @click="activePatrol=p.id">
-                    <div class="p-dot" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
+                    <div class="p-dot" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':p.last_status==='ok'?'green':'text3')+')'"></div>
                     <div class="p-info">
                       <div class="p-name" x-text="p.display_name"></div>
                       <div class="p-meta" x-text="p.enabled ? nextRunText(p) : '已禁用'"></div>
@@ -662,7 +664,7 @@
         <template x-for="(sa,idx) in adminData.subagents" :key="sa.name+idx">
           <div class="subagent-card" :class="adminData.editingSubagent===idx?'editing':''" @click="adminData.editingSubagent = adminData.editingSubagent===idx ? -1 : idx">
             <div class="subagent-name" x-text="sa.name"></div>
-            <div class="subagent-desc" x-text="sa.description.slice(0,60)+'...'"></div>
+            <div class="subagent-desc" x-text="sa.description.length>60?sa.description.slice(0,60)+'...':sa.description"></div>
             <div class="subagent-tools">
               <template x-for="t in (sa.tools.length ? sa.tools : ['继承全部'])" :key="t">
                 <span class="badge badge-info" x-text="t"></span>
@@ -844,6 +846,7 @@ function agentApp() {
       setInterval(() => this.loadPatrols(), 30000);
       // 恢复标签页后加载对应数据
       if (this.tab === 'admin') this.loadAdmin();
+      if (this.tab === 'patrol' && this.patrolView !== 'tasks') this.switchPatrolView(this.patrolView);
     },
 
     switchTab(t) {
@@ -944,7 +947,10 @@ function agentApp() {
     },
     async loadPatrols() {
       try {
+        const oldEditState = {};
+        this.patrols.forEach(p => { if (p._editOpen) oldEditState[p.id] = true; });
         this.patrols = await (await fetch('/api/agents/patrols')).json();
+        this.patrols.forEach(p => { p._editOpen = oldEditState[p.id] || false; });
         if (!this.activePatrol && this.patrols.length) this.activePatrol = this.patrols[0].id;
       } catch(e) {}
     },
@@ -991,22 +997,24 @@ function agentApp() {
         case 'message': this.messages.push({role:'assistant',content:data.content}); break;
         case 'tool_call': this.messages.push({role:'tool_call',tool:data.tool,args:data.input}); break;
         case 'tool_result': this.messages.push({role:'tool_result',tool:data.tool||'',content:data.content}); break;
-        case 'todo_update':
+        case 'todo_update': {
           // 检测刚完成的项目，添加动画标记
           const oldTodos = this.todos;
           const newTodos = data.map(t => {
             const old = oldTodos.find(o => o.content === t.content);
+            const item = {...t, _justCompleted: false};
             if (old && old.status !== 'completed' && t.status === 'completed') {
-              setTimeout(() => { t._justCompleted = false; }, 700);
-              return {...t, _justCompleted: true};
+              item._justCompleted = true;
+              setTimeout(() => { item._justCompleted = false; }, 700);
             }
-            return {...t, _justCompleted: false};
+            return item;
           });
           this.todos = newTodos;
           this.todoCollapsed = false;
           break;
+        }
         case 'approval_request':
-          this.messages.push({role:'approval',approval_id:data.approval_id,actions:data.actions,description:data.description||'需要确认操作'});
+          this.messages.push({role:'approval',approval_id:data.approval_id,actions:data.actions,description:data.description||(data.actions?data.actions.map(a=>a.name).join(', '):'需要确认操作')});
           break;
         case 'done': if(data.conversation_id) this.currentConvId = data.conversation_id; break;
         case 'error': this.messages.push({role:'assistant',content:'错误: '+(data.error||'未知')}); break;
@@ -1029,7 +1037,6 @@ function agentApp() {
       return text.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre><code>$2</code></pre>')
         .replace(/`([^`]+)`/g,'<code>$1</code>')
         .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-        .replace(/\|(.+)\|/g, (m) => { return m; }) // preserve tables
         .replace(/## (.+)/g,'<h4>$1</h4>')
         .replace(/\n/g,'<br>');
     },

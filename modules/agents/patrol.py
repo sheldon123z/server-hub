@@ -236,6 +236,9 @@ async def seed_default_patrols():
     await seed_baseline_rules()
 
 
+_running_patrols: set[str] = set()
+
+
 async def execute_patrol(task: dict):
     """执行单个巡检任务（通过 agent graph）"""
     start_time = time.time()
@@ -243,6 +246,12 @@ async def execute_patrol(task: dict):
     display_name = task.get("display_name", task_id) if isinstance(task, dict) else task[1]
     description = task.get("description", "") if isinstance(task, dict) else task[2]
     prompt_text = task.get("prompt", "") if isinstance(task, dict) else task[5]
+
+    # 防止同一任务并发执行
+    if task_id in _running_patrols:
+        logger.info(f"巡检 {display_name} 正在运行，跳过本次调度")
+        return "skipped", ""
+    _running_patrols.add(task_id)
 
     try:
         from modules.agents.deep_agent import build_agent
@@ -345,6 +354,9 @@ async def execute_patrol(task: dict):
         )
         await db.commit()
         return "error", str(e)
+
+    finally:
+        _running_patrols.discard(task_id)
 
 
 # ─── 调度器 ───
