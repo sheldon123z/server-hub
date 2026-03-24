@@ -219,27 +219,56 @@
     </div>
 
     <!-- 巡检 -->
-    <div class="right-panel" :class="tab==='patrol'?'active':''" style="overflow-y:auto;padding:4px">
-      <div style="display:grid;grid-template-columns:1fr;gap:10px">
-        <template x-for="p in patrols" :key="p.id">
-          <div class="patrol-card">
-            <div class="flex items-center justify-between mb-2">
-              <div>
-                <span class="patrol-status-dot" :class="'patrol-'+(p.last_status||'ok')"></span>
-                <strong x-text="p.display_name" style="font-size:13px"></strong>
+    <div class="right-panel" :class="tab==='patrol'?'active':''" style="padding:0;overflow:hidden">
+      <div style="display:flex;flex-direction:column;height:100%">
+        <!-- 巡检任务 Tab 栏 -->
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto">
+          <template x-for="(p,i) in patrols" :key="'ptab-'+p.id">
+            <div style="padding:8px 14px;cursor:pointer;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent;transition:all 0.15s"
+                 :style="activePatrol===p.id ? 'color:var(--accent);border-bottom-color:var(--accent)' : 'color:var(--text2)'"
+                 @click="activePatrol=p.id">
+              <span class="patrol-status-dot" :class="'patrol-'+(p.last_status||'ok')"></span>
+              <span x-text="p.display_name"></span>
+            </div>
+          </template>
+        </div>
+
+        <!-- 选中任务的详情 -->
+        <template x-for="p in patrols" :key="'pdetail-'+p.id">
+          <div x-show="activePatrol===p.id" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px">
+
+            <!-- 状态栏 -->
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="patrol-status-dot" style="width:10px;height:10px" :class="'patrol-'+(p.last_status||'ok')"></span>
+                <strong style="font-size:15px" x-text="p.display_name"></strong>
+                <span class="badge" :class="p.last_status==='ok'?'badge-ok':p.last_status==='warning'?'badge-warn':'badge-crit'" x-text="p.last_status||'未运行'"></span>
               </div>
-              <span class="text-xs text-muted" x-text="p.interval_minutes+'min'"></span>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span class="text-xs text-muted" x-text="'间隔 '+p.interval_minutes+' 分钟'"></span>
+                <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
+                <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+              </div>
             </div>
-            <div class="text-xs text-muted mb-2" x-text="p.description"></div>
-            <div class="text-xs mb-2" x-show="p.last_run">
-              上次: <span x-text="p.last_run" class="font-mono"></span>
-              <span class="badge" :class="p.last_status==='ok'?'badge-ok':p.last_status==='warning'?'badge-warn':'badge-crit'" x-text="p.last_status||'未运行'"></span>
+
+            <!-- 描述 -->
+            <div class="text-xs text-muted" x-text="p.description"></div>
+
+            <!-- 上次运行 -->
+            <div class="text-xs" x-show="p.last_run" style="color:var(--text3)">
+              上次运行: <span class="font-mono" x-text="p.last_run"></span>
             </div>
-            <div class="flex gap-2">
-              <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
-              <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+
+            <!-- 报告 (Markdown 渲染) -->
+            <div x-show="p.last_report" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;overflow-y:auto;font-size:13px;line-height:1.7"
+                 x-html="renderMd(p.last_report||'')">
             </div>
-            <div class="text-xs text-muted mt-2" x-show="p.last_report" style="max-height:80px;overflow-y:auto;white-space:pre-wrap" x-text="p.last_report"></div>
+
+            <!-- 无报告占位 -->
+            <div x-show="!p.last_report" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px">
+              尚无巡检报告，点击「立即运行」执行巡检
+            </div>
+
           </div>
         </template>
       </div>
@@ -360,7 +389,7 @@
 <script>
 function agentApp() {
   return {
-    tab: 'terminal', messages: [], conversations: [], patrols: [], todos: [],
+    tab: 'terminal', messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
@@ -443,7 +472,10 @@ function agentApp() {
       try { this.conversations = await (await fetch('/api/agents/conversations')).json(); } catch(e) {}
     },
     async loadPatrols() {
-      try { this.patrols = await (await fetch('/api/agents/patrols')).json(); } catch(e) {}
+      try {
+        this.patrols = await (await fetch('/api/agents/patrols')).json();
+        if (!this.activePatrol && this.patrols.length) this.activePatrol = this.patrols[0].id;
+      } catch(e) {}
     },
     newConversation() { this.currentConvId = null; this.currentTitle = '新对话'; this.messages = []; this.todos = []; },
     async loadConversation(id) {
