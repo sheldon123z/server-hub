@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r '.file_path // .path // empty' 2>/dev/null); [ -n \"$FILE\" ] && [[ \"$FILE\" == *.py ]] && python3 -m py_compile \"$FILE\" 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

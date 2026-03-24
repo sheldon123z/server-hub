@@ -39,6 +39,7 @@ modules/agents/graph.py
 
 # Worktrees
 .worktrees/
+.claude/worktrees/
 
 # Node (if any)
 node_modules/
