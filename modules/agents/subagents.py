@@ -8,11 +8,14 @@
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Literal
 
 from langchain_core.tools import tool
+
+logger = logging.getLogger(__name__)
 
 
 # ─── SubAgent 专属工具 ───
@@ -250,12 +253,10 @@ def _build_subagents_from_config(configs: list[dict]) -> list[dict]:
             "description": cfg["description"],
             "system_prompt": cfg["system_prompt"],
         }
-        # 映射工具名称到实际对象
+        # 映射工具名称到实际对象（从 server_tools + TOOL_REGISTRY 中查找）
         tool_names = cfg.get("tools", [])
         if tool_names:
-            tools = [TOOL_REGISTRY[t] for t in tool_names if t in TOOL_REGISTRY]
-            if tools:
-                agent_def["tools"] = tools
+            agent_def["tools"] = _get_tools_by_names(tool_names)
         # 不指定 tools 则继承主 agent 全部工具
         if cfg.get("model"):
             agent_def["model"] = cfg["model"]
@@ -271,8 +272,8 @@ def load_subagents() -> list[dict]:
         try:
             configs = json.loads(custom_path.read_text(encoding="utf-8"))
             return _build_subagents_from_config(configs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"自定义 SubAgent 配置加载失败，使用默认: {e}")
     return get_subagents()
 
 
