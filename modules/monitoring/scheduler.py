@@ -18,7 +18,7 @@ _scheduler_task: asyncio.Task | None = None
 
 
 async def _collect_and_store():
-    """采集一次指标并写入数据库"""
+    """采集一次指标并写入数据库，然后检查基线偏离"""
     try:
         snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
         db = await get_db()
@@ -27,6 +27,14 @@ async def _collect_and_store():
             ("all", json.dumps(snapshot, ensure_ascii=False)),
         )
         await db.commit()
+
+        # 基线偏离检测（不阻塞采集流程）
+        try:
+            from modules.agents.alert_engine import check_baseline_deviation
+            await check_baseline_deviation(snapshot)
+        except Exception as e:
+            logger.debug(f"基线检测跳过: {e}")
+
     except Exception as e:
         logger.error(f"指标采集失败: {e}")
 

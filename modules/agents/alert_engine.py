@@ -163,7 +163,7 @@ async def evaluate_rules(metrics: dict) -> list[dict]:
 
     db = await get_db()
     cursor = await db.execute(
-        "SELECT id, name, metric, operator, warning_threshold, critical_threshold, cooldown_minutes, notify "
+        "SELECT id, name, metric, operator, warning_threshold, critical_threshold, cooldown_minutes, notify, rule_type "
         "FROM alert_rules WHERE enabled = 1"
     )
     rules = await cursor.fetchall()
@@ -174,7 +174,12 @@ async def evaluate_rules(metrics: dict) -> list[dict]:
             "id": row[0], "name": row[1], "metric": row[2], "operator": row[3],
             "warning_threshold": row[4], "critical_threshold": row[5],
             "cooldown_minutes": row[6], "notify": bool(row[7]),
+            "rule_type": row[8] if len(row) > 8 else "threshold",
         }
+
+        # 跳过基线规则（由 check_baseline_deviation 单独处理）
+        if rule.get("rule_type") == "baseline":
+            continue
 
         value = metrics.get(rule["metric"])
         if value is None:
@@ -221,3 +226,185 @@ def extract_metrics_from_report(report_json: dict | None) -> dict:
                 pass
 
     return metrics
+
+
+# ─── 异常基线检测 ───
+
+# 内存缓存：{metric: {"mean": float, "stddev": float, "computed_at": float}}
+_baseline_cache: dict[str, dict] = {}
+_CACHE_TTL_SECONDS = 3600  # 每小时刷新一次
+
+
+def _extract_metric_from_snapshot(snapshot: dict, metric_key: str) -> float | None:
+    """从 collect_all() 的嵌套结构中提取指定指标值"""
+    mapping = {
+        "cpu_percent": lambda d: d.get("cpu", {}).get("overall_percent"),
+        "memory_percent": lambda d: d.get("memory", {}).get("ram", {}).get("percent"),
+        "swap_percent": lambda d: d.get("memory", {}).get("swap", {}).get("percent"),
+        "gpu_util": lambda d: d.get("gpu", {}).get("util") if d.get("gpu", {}).get("available") else None,
+        "gpu_temperature": lambda d: d.get("gpu", {}).get("temp") if d.get("gpu", {}).get("available") else None,
+    }
+    extractor = mapping.get(metric_key)
+    if extractor:
+        val = extractor(snapshot)
+        return float(val) if val is not None else None
+    return None
+
+
+async def _compute_baseline(metric_key: str, window_hours: int = 168) -> dict | None:
+    """计算 μ±σ 基线（7 天滑动窗口），带 1 小时缓存"""
+    import time
+
+    # 检查缓存
+    cached = _baseline_cache.get(metric_key)
+    if cached and (time.time() - cached.get("computed_at", 0)) < _CACHE_TTL_SECONDS:
+        return cached
+
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT value_json FROM metrics WHERE metric_type = 'all' AND timestamp > datetime('now', ?)",
+        (f"-{window_hours} hours",),
+    )
+    rows = await cursor.fetchall()
+
+    if len(rows) < 50:
+        return None  # 数据量不足以建立可靠基线
+
+    values = []
+    for row in rows:
+        try:
+            data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            val = _extract_metric_from_snapshot(data, metric_key)
+            if val is not None:
+                values.append(val)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    if len(values) < 50:
+        return None
+
+    n = len(values)
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / n
+    stddev = variance ** 0.5
+
+    result = {"mean": mean, "stddev": stddev, "sample_count": n, "computed_at": time.time()}
+    _baseline_cache[metric_key] = result
+    return result
+
+
+# 连续偏离计数：{metric: count}
+_deviation_counts: dict[str, int] = {}
+_CONSECUTIVE_THRESHOLD = 3  # 连续 3 次偏离才告警
+
+
+async def check_baseline_deviation(snapshot: dict):
+    """
+    检查当前采集快照中的指标是否偏离基线。
+    由 scheduler.py 每 60s 调用一次。连续 N 次偏离触发告警。
+    """
+    db = await get_db()
+
+    # 查询所有启用的基线规则
+    try:
+        cursor = await db.execute(
+            "SELECT id, name, metric, cooldown_minutes, notify, baseline_window_hours, stddev_multiplier "
+            "FROM alert_rules WHERE enabled = 1 AND rule_type = 'baseline'"
+        )
+        rules = await cursor.fetchall()
+    except Exception:
+        return  # rule_type 列可能还不存在
+
+    for row in rules:
+        rule_id, name, metric_key, cooldown, notify, window_hours, multiplier = row
+        window_hours = window_hours or 168
+        multiplier = multiplier or 3.0
+
+        # 提取当前值
+        current = _extract_metric_from_snapshot(snapshot, metric_key)
+        if current is None:
+            continue
+
+        # 获取基线
+        baseline = await _compute_baseline(metric_key, window_hours)
+        if not baseline:
+            continue
+
+        mean = baseline["mean"]
+        stddev = baseline["stddev"]
+        if stddev < 0.1:
+            continue  # 标准差太小，不做偏离检测（指标几乎恒定）
+
+        upper = mean + multiplier * stddev
+        lower = mean - multiplier * stddev
+        is_deviation = current > upper or current < lower
+
+        if is_deviation:
+            _deviation_counts[metric_key] = _deviation_counts.get(metric_key, 0) + 1
+        else:
+            _deviation_counts[metric_key] = 0
+
+        if _deviation_counts.get(metric_key, 0) >= _CONSECUTIVE_THRESHOLD:
+            # 连续 N 次偏离，触发告警
+            if await _should_alert(rule_id, cooldown or 60):
+                direction = "偏高" if current > upper else "偏低"
+                rule = {
+                    "id": rule_id, "name": name, "notify": bool(notify),
+                    "warning_threshold": f"μ±{multiplier}σ",
+                }
+                await fire_alert(rule, "warning", current)
+                logger.warning(
+                    f"基线偏离告警: {name} 当前={current:.1f}, 基线={mean:.1f}±{stddev:.1f}, {direction}, 连续{_deviation_counts[metric_key]}次"
+                )
+            _deviation_counts[metric_key] = 0  # 告警后重置计数
+
+
+# ─── 默认基线规则 ───
+
+DEFAULT_BASELINE_RULES = [
+    {
+        "id": "baseline_cpu",
+        "name": "CPU 使用率偏离基线",
+        "metric": "cpu_percent",
+        "rule_type": "baseline",
+        "cooldown_minutes": 120,
+        "baseline_window_hours": 168,
+        "stddev_multiplier": 3.0,
+    },
+    {
+        "id": "baseline_memory",
+        "name": "内存使用率偏离基线",
+        "metric": "memory_percent",
+        "rule_type": "baseline",
+        "cooldown_minutes": 120,
+        "baseline_window_hours": 168,
+        "stddev_multiplier": 3.0,
+    },
+    {
+        "id": "baseline_gpu",
+        "name": "GPU 利用率偏离基线",
+        "metric": "gpu_util",
+        "rule_type": "baseline",
+        "cooldown_minutes": 120,
+        "baseline_window_hours": 168,
+        "stddev_multiplier": 3.0,
+    },
+]
+
+
+async def seed_baseline_rules():
+    """初始化默认基线告警规则"""
+    db = await get_db()
+    for rule in DEFAULT_BASELINE_RULES:
+        existing = await db.execute("SELECT id FROM alert_rules WHERE id = ?", (rule["id"],))
+        if not await existing.fetchone():
+            try:
+                await db.execute(
+                    "INSERT INTO alert_rules (id, name, metric, operator, cooldown_minutes, rule_type, baseline_window_hours, stddev_multiplier) "
+                    "VALUES (?, ?, ?, '>', ?, ?, ?, ?)",
+                    (rule["id"], rule["name"], rule["metric"], rule["cooldown_minutes"],
+                     rule["rule_type"], rule["baseline_window_hours"], rule["stddev_multiplier"]),
+                )
+            except Exception as e:
+                logger.debug(f"基线规则 {rule['id']} 创建失败（可能列不存在）: {e}")
+    await db.commit()
