@@ -145,9 +145,9 @@
 
   <!-- 标签页 -->
   <div class="agent-tabs">
-    <div class="agent-tab" :class="tab==='chat'?'active':''" @click="tab='chat'">AI 对话</div>
-    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab='patrol'">巡检</div>
-    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab='admin'; loadAdmin()">管理</div>
+    <div class="agent-tab" :class="tab==='chat'?'active':''" @click="switchTab('chat')">AI 对话</div>
+    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="switchTab('patrol')">巡检</div>
+    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="switchTab('admin')">管理</div>
   </div>
 
   <!-- 三栏: 侧边栏 | 聊天(始终) | 右栏(按标签切换) -->
@@ -403,7 +403,7 @@
 <script>
 function agentApp() {
   return {
-    tab: 'chat', showTerminal: false, messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
+    tab: localStorage.getItem('agent-tab') || 'chat', showTerminal: false, messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
@@ -429,6 +429,14 @@ function agentApp() {
       await this.loadConversations();
       await this.loadPatrols();
       setInterval(() => this.loadPatrols(), 30000);
+      // 恢复标签页后加载对应数据
+      if (this.tab === 'admin') this.loadAdmin();
+    },
+
+    switchTab(t) {
+      this.tab = t;
+      localStorage.setItem('agent-tab', t);
+      if (t === 'admin') this.loadAdmin();
     },
 
     // AI巡检 vs Cron脚本 对照（功能相似但实现不同：AI用LLM分析，Cron是Bash脚本）
