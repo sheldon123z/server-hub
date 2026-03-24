@@ -1,19 +1,14 @@
 """Deep Agent 工厂 — 基于 deepagents 框架构建运维智能体
 
-使用 create_deep_agent 获得的内置能力:
-- 持久化 Shell 会话 (execute) — SafeLocalShellBackend
-- 文件系统操作 (read_file/write_file/edit_file/ls/glob/grep)
-- 任务规划 (write_todos) — TodoListMiddleware
-- 子智能体委派 (task) — SubAgentMiddleware
-- 人工审批 (interrupt_on) — HumanInTheLoopMiddleware
-- 上下文压缩 (summarization) — SummarizationMiddleware
+Middleware 栈 (12 个):
+  框架自动注入: TodoList, Filesystem, SubAgent, Summarization, PatchToolCalls,
+                AnthropicPromptCaching, HumanInTheLoop, Memory
+  手动注入:     ModelRetry, ToolRetry, ModelCallLimit, ContextEditing, [ModelFallback]
 
-额外注入的 middleware:
-- ModelRetryMiddleware — LLM 调用失败自动重试
-- ToolRetryMiddleware — 工具调用失败自动重试
-- ModelCallLimitMiddleware — 防止无限循环消耗 token
-- ContextEditingMiddleware — 对话过长时清理旧工具输出
-- ModelFallbackMiddleware — 主模型失败时切换备用模型（仅 chat）
+记忆系统:
+  短期: AsyncSqliteSaver checkpoint（per-conversation state 持久化）
+  长期: AGENTS.md（MemoryMiddleware 注入系统提示词，agent 通过 edit_file 更新）
+  存储: AsyncSqliteStore（namespace+key-value 结构化数据）
 """
 
 import logging
@@ -31,8 +26,9 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.middleware.context_editing import ClearToolUsesEdit
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.store.sqlite import AsyncSqliteStore
 
-from config import settings
+from config import settings, BASE_DIR
 from modules.agents.llm import get_chat_model
 from modules.agents.tools import get_server_tools
 from modules.agents.safety import build_interrupt_config
@@ -44,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 # 单例
 _agent_cache: dict = {}
+_store: AsyncSqliteStore | None = None
 
 
 def _create_backend() -> SafeLocalShellBackend:
@@ -60,52 +57,57 @@ def _create_backend() -> SafeLocalShellBackend:
 def _build_extra_middleware(purpose: str = "chat") -> list:
     """构建额外的 middleware 栈
 
-    这些 middleware 通过 create_deep_agent(middleware=...) 参数注入，
-    会被插入到框架自动注入的 middleware 之后、Anthropic 缓存之前。
+    通过 create_deep_agent(middleware=...) 注入，插入到框架 base stack 之后、
+    AnthropicPromptCaching 和 MemoryMiddleware 之前。
 
-    框架已自动注入: TodoList, Filesystem, SubAgent, Summarization, PatchToolCalls
-    我们额外添加: ModelRetry, ToolRetry, ModelCallLimit, ContextEditing, ModelFallback
+    框架自动注入: TodoList, Filesystem, SubAgent, Summarization, PatchToolCalls
+    我们额外添加: ModelRetry, ToolRetry, ModelCallLimit, ContextEditing, [ModelFallback]
     """
     extra = []
 
-    # 1. 模型调用重试 — 网络抖动、API 限流时自动重试
-    extra.append(ModelRetryMiddleware(
-        max_retries=3,
-        backoff_factor=1.0,  # 1s → 2s → 4s 指数退避
-    ))
+    # 1. 模型调用重试 — 网络抖动、API 限流时自动重试（3 次，1s → 2s → 4s）
+    extra.append(ModelRetryMiddleware(max_retries=3, backoff_factor=1.0))
 
-    # 2. 工具调用重试 — 工具偶发失败时自动重试
-    extra.append(ToolRetryMiddleware(
-        max_retries=2,
-        backoff_factor=0.5,
-    ))
+    # 2. 工具调用重试 — 工具偶发失败时自动重试（2 次，1s → 2s）
+    extra.append(ToolRetryMiddleware(max_retries=2, backoff_factor=1.0))
 
-    # 3. 模型调用次数限制 — 防止 agent 陷入无限循环
-    extra.append(ModelCallLimitMiddleware(
-        run_limit=50,  # 单次对话最多 50 轮 LLM 调用
-    ))
+    # 3. 模型调用次数限制 — 防止 agent 无限循环
+    #    chat: 50 轮（交互式对话足够）
+    #    patrol: 100 轮（巡检需要调多个工具 + 分析）
+    run_limit = 100 if purpose == "patrol" else 50
+    extra.append(ModelCallLimitMiddleware(run_limit=run_limit))
 
-    # 4. 上下文编辑 — 对话过长时清理旧的工具输出，保留最近 5 个
+    # 4. 上下文编辑 — 超 60K token 时清理旧工具输出（保留最近 5 个）
+    #    与 SummarizationMiddleware 互补：ContextEditing 清理工具输出，
+    #    Summarization 压缩消息历史，先清理减轻 Summarization 压力
     extra.append(ContextEditingMiddleware(
-        edits=[ClearToolUsesEdit(
-            trigger=80_000,  # 超过 80K token 时触发清理
-            keep=5,          # 保留最近 5 个工具结果
-        )],
+        edits=[ClearToolUsesEdit(trigger=60_000, keep=5)],
     ))
 
-    # 5. 模型降级 — 仅 chat 模式，主模型失败时尝试备用模型
+    # 5. 模型降级 — chat 模式且主备不同时，失败自动切换备用模型
     if purpose == "chat":
-        fallback_model = settings.agent_patrol_model  # 用巡检模型作为备用
+        fallback_model = settings.agent_patrol_model
         if fallback_model != settings.agent_default_model:
             try:
-                from modules.agents.llm import get_chat_model as _get_model
-                fallback = _get_model("patrol")
+                fallback = get_chat_model("patrol")
                 extra.append(ModelFallbackMiddleware(fallback))
-                logger.info(f"ModelFallback 已配置: 备用模型 {fallback_model}")
+                logger.info(f"ModelFallback: 备用模型 {fallback_model}")
             except Exception as e:
                 logger.warning(f"ModelFallback 配置失败: {e}")
 
     return extra
+
+
+async def _get_store() -> AsyncSqliteStore:
+    """获取或创建 AsyncSqliteStore 单例 — 结构化长期存储"""
+    global _store
+    if _store is None:
+        store_path = str(Path(settings.db_path).parent / "agent-store.db")
+        Path(store_path).parent.mkdir(parents=True, exist_ok=True)
+        conn = await aiosqlite.connect(store_path)
+        _store = AsyncSqliteStore(conn)
+        logger.info(f"AsyncSqliteStore 已创建: {store_path}")
+    return _store
 
 
 async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
@@ -125,13 +127,18 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
     backend = _create_backend()
     subagents = get_subagents()
     extra_middleware = _build_extra_middleware(purpose)
+    store = await _get_store()
 
-    # Checkpoint 持久化
+    # Checkpoint — 短期记忆（per-conversation state 持久化）
     checkpoint_path = settings.agent_checkpoint_db
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     checkpointer = AsyncSqliteSaver(
         await aiosqlite.connect(checkpoint_path)
     )
+
+    # Memory — 长期记忆（AGENTS.md 文件，agent 通过 edit_file 更新）
+    memory_file = str(BASE_DIR / "AGENTS.md")
+    memory_paths = [memory_file] if Path(memory_file).exists() else []
 
     system_prompt = SYSTEM_PROMPT.format(safety_mode=safety_mode)
 
@@ -144,11 +151,16 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
         backend=backend,
         subagents=subagents,
         middleware=extra_middleware,
+        memory=memory_paths if memory_paths else None,
+        store=store,
     )
 
     mw_names = [type(m).__name__ for m in extra_middleware]
     _agent_cache[cache_key] = agent
-    logger.info(f"Deep Agent 已创建: mode={safety_mode}, purpose={purpose}, middleware={mw_names}")
+    logger.info(
+        f"Deep Agent 已创建: mode={safety_mode}, purpose={purpose}, "
+        f"middleware={mw_names}, memory={'AGENTS.md' if memory_paths else 'None'}, store=AsyncSqliteStore"
+    )
     return agent
 
 

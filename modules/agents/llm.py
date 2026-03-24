@@ -136,7 +136,6 @@ def get_chat_model(purpose: str = "chat") -> ChatOpenAI:
     model_map = {
         "chat": settings.agent_default_model,
         "patrol": settings.agent_patrol_model,
-        "complex": settings.agent_default_model,
     }
     full_model_id = model_map.get(purpose, model_map["chat"])
     provider_key, model_name = parse_model_id(full_model_id)
@@ -148,7 +147,7 @@ def get_chat_model(purpose: str = "chat") -> ChatOpenAI:
 
     # 获取 API Key
     api_key_env = provider.get("api_key_env", "")
-    api_key = os.getenv(api_key_env, "") if api_key_env else "ollama"
+    api_key = os.getenv(api_key_env, "") if api_key_env else "not-needed"
 
     if not api_key and provider_key != "ollama":
         logger.warning(f"Provider {provider_key} has no API key ({api_key_env}), may fail")

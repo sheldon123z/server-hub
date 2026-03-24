@@ -110,3 +110,4 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - **框架优先**: 在实现新功能前，必须先查阅 Deep Agents 框架已有的实现方式（查看 `deepagents` 包源码或用 Context7 查文档），优先使用框架提供的机制，而非自己从零实现。例如：代码执行应通过框架的 Backend 架构（`write_file` + `execute`），而非自造 `run_code` 工具
 - **继承扩展**: 需要定制框架行为时，优先继承框架的类并 override 具体方法（如 `SafeLocalShellBackend` 继承 `LocalShellBackend`），而非绕过框架
 - **提示词引导**: 对于行为规范（如代码应写入哪个目录），优先通过系统提示词引导 agent 行为，而非硬编码到工具中
+- **AGENTS.md 是 agent 记忆**: `AGENTS.md` 是 AI 运维助手的长期记忆文件，由 Deep Agents MemoryMiddleware 加载到系统提示词。Agent 通过 `edit_file()` 自动更新。不要手动编辑除非初始化服务器信息。与 `CLAUDE.md`（开发者指引）用途不同
