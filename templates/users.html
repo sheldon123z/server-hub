@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}用户管理{% endblock %}
+{% block page_title %}用户管理{% endblock %}
+
+{% block content %}
+<div x-data="{ tab: 'users', quotaData: {{ quotas|tojson }} }">
+
+<!-- 标签页 -->
+<div class="flex gap-2 mb-4">
+  <button class="btn btn-sm" :class="tab==='users' ? 'btn-primary' : ''" @click="tab='users'">用户资源</button>
+  <button class="btn btn-sm" :class="tab==='quotas' ? 'btn-primary' : ''" @click="tab='quotas'">配额管理</button>
+</div>
+
+<!-- 用户资源 -->
+<div x-show="tab==='users'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>活跃用户</h3>
+      <button class="btn btn-sm" hx-get="/users" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>用户</th><th>内存</th><th>配额</th><th>进程</th><th>GPU 显存</th><th>状态</th><th>Top 进程</th>
+        {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr>
+      </thead>
+      <tbody>
+      {% for u in users %}
+        {% set q = get_user_quota(u.name, u.groups, quotas) %}
+        {% set qmem = q.mem_gb if q else 0 %}
+        {% set mem_pct = (u.mem_gb / qmem * 100)|round|int if qmem else 0 %}
+        <tr>
+          <td>
+            <strong>{{ u.name }}</strong>
+            <div class="text-xs text-muted">{{ u.groups }}</div>
+          </td>
+          <td><strong>{{ u.mem_gb }} GB</strong></td>
+          <td>
+            {% if q %}
+              {{ q.mem_gb }} GB <span class="text-muted">({{ mem_pct }}%)</span>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+          <td>{{ u.proc_count }}{% if q %} <span class="text-muted">/ {{ q.proc_limit }}</span>{% endif %}</td>
+          <td>{% if u.gpu_mem_mb > 0 %}{{ u.gpu_mem_mb }} MiB{% else %}<span class="text-muted">-</span>{% endif %}</td>
+          <td>
+            {% if not q %}<span class="badge badge-idle">无配额</span>
+            {% elif mem_pct >= 100 %}<span class="badge badge-crit">超限</span>
+            {% elif mem_pct >= 75 %}<span class="badge badge-warn">警告</span>
+            {% elif u.mem_gb < 0.1 %}<span class="badge badge-idle">空闲</span>
+            {% else %}<span class="badge badge-ok">正常</span>
+            {% endif %}
+          </td>
+          <td>
+            {% for p in u.top_procs[:3] %}
+              <div class="text-xs"><span class="text-accent">{{ p.name }}</span> {{ p.mem_mb }}MB (PID:{{ p.pid }})</div>
+            {% endfor %}
+            {% if not u.top_procs %}<span class="text-muted">-</span>{% endif %}
+          </td>
+          {% if user.role == 'admin' %}
+          <td>
+            {% if u.proc_count > 0 %}
+            <button class="btn btn-danger btn-xs"
+                    hx-post="/api/users/{{ u.name }}/kill"
+                    hx-confirm="确定终止用户 {{ u.name }} 的所有进程?"
+                    hx-swap="none"
+                    @htmx:after-request="showToast('已终止 {{ u.name }} 的进程', 'ok'); setTimeout(()=>htmx.ajax('GET','/users',{target:'#main-content'}), 2000)">
+              终止全部
+            </button>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="empty-state">无活跃用户</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 配额管理 -->
+<div x-show="tab==='quotas'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>资源配额</h3>
+    </div>
+    <table>
+      <thead><tr><th>标识</th><th>内存上限 (GB)</th><th>进程上限</th><th>备注</th>
+      {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for q in quotas %}
+        <tr>
+          <td><strong>{{ q.key }}</strong></td>
+          {% if user.role == 'admin' %}
+          <td><input type="number" class="form-input" style="width:80px" value="{{ q.mem_gb }}" data-idx="{{ loop.index0 }}" data-field="mem_gb"></td>
+          <td><input type="number" class="form-input" style="width:80px" value="{{ q.proc_limit }}" data-idx="{{ loop.index0 }}" data-field="proc_limit"></td>
+          <td><input type="text" class="form-input" style="width:160px" value="{{ q.comment }}" data-idx="{{ loop.index0 }}" data-field="comment"></td>
+          <td>
+            {% if q.key != 'default' %}
+            <button class="btn btn-danger btn-xs"
+                    hx-delete="/api/users/quotas/{{ q.key }}"
+                    hx-confirm="确定删除 {{ q.key }} 的配额?"
+                    hx-swap="none"
+                    @htmx:after-request="showToast('已删除', 'ok'); htmx.ajax('GET','/users',{target:'#main-content'})">
+              删除
+            </button>
+            {% endif %}
+          </td>
+          {% else %}
+          <td>{{ q.mem_gb }}</td>
+          <td>{{ q.proc_limit }}</td>
+          <td class="text-muted">{{ q.comment }}</td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    {% if user.role == 'admin' %}
+    <div style="padding:14px 18px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--border)">
+      <input id="new-key" class="form-input" placeholder="用户名或@组名" style="width:140px">
+      <input id="new-mem" class="form-input" type="number" placeholder="内存(GB)" style="width:100px">
+      <input id="new-proc" class="form-input" type="number" placeholder="进程数" style="width:100px">
+      <input id="new-comment" class="form-input" placeholder="备注" style="width:160px">
+      <button class="btn btn-primary btn-sm" onclick="addQuota()">添加</button>
+      <button class="btn btn-sm" onclick="saveQuotas()">保存全部</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+</div>
+
+{% if user.role == 'admin' %}
+<script>
+async function saveQuotas() {
+  const rows = document.querySelectorAll('input[data-idx]');
+  const quotas = {{ quotas|tojson }};
+  rows.forEach(input => {
+    const idx = parseInt(input.dataset.idx);
+    const field = input.dataset.field;
+    if (field === 'comment') quotas[idx][field] = input.value;
+    else quotas[idx][field] = parseInt(input.value) || 0;
+  });
+  try {
+    await apiCall('/api/users/quotas', 'PUT', quotas);
+    showToast('配额已保存', 'ok');
+  } catch(e) { showToast('保存失败: ' + e.message, 'err'); }
+}
+
+async function addQuota() {
+  const key = document.getElementById('new-key').value.trim();
+  const mem = parseInt(document.getElementById('new-mem').value);
+  const proc = parseInt(document.getElementById('new-proc').value);
+  const comment = document.getElementById('new-comment').value.trim();
+  if (!key || !mem || !proc) { showToast('请填写完整', 'err'); return; }
+  try {
+    await apiCall('/api/users/quotas', 'POST', {key, mem_gb: mem, proc_limit: proc, comment});
+    showToast('已添加 ' + key, 'ok');
+    htmx.ajax('GET', '/users', {target: '#main-content'});
+  } catch(e) { showToast('添加失败: ' + e.message, 'err'); }
+}
+</script>
+{% endif %}
+{% endblock %}

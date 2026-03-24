@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block title %}AI 助手{% endblock %}
+{% block page_title %}AI 运维助手{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="/static/css/xterm.min.css">
+<style>
+/* 主布局：减去顶栏 56px + content padding 40px + tabs 高度 42px */
+.agent-layout { display: flex; flex-direction: column; height: calc(100vh - var(--header-h) - 82px); min-height: 500px; }
+.agent-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; flex-shrink: 0; }
+.agent-tab { padding: 10px 20px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: var(--text2); transition: all 0.15s; }
+.agent-tab:hover { color: var(--text); }
+.agent-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.agent-panel { flex: 1; overflow: hidden; display: none; min-height: 0; }
+.agent-panel.active { display: flex; }
+.agent-panel.active.chat-layout { display: grid; }
+
+/* 对话布局 */
+.chat-layout { display: grid; grid-template-columns: 200px 1fr; gap: 10px; height: 100%; overflow: hidden; }
+.chat-sidebar { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+.chat-main { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; min-height: 0; }
+.chat-header { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.chat-input-area { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+.chat-input-area textarea { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 14px; font-size: 13px; resize: vertical; min-height: 44px; max-height: 150px; font-family: inherit; line-height: 1.5; }
+.chat-input-area textarea:focus { outline: none; border-color: var(--accent); }
+
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+.msg-user { align-self: flex-end; background: var(--accent); color: #0f172a; border-bottom-right-radius: 2px; }
+.msg-assistant { align-self: flex-start; background: var(--bg2); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+.msg-assistant pre { background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; overflow-x: auto; margin: 6px 0; font-size: 12px; }
+.msg-assistant table { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+.msg-assistant th, .msg-assistant td { border: 1px solid var(--border); padding: 4px 8px; }
+
+.tool-card { align-self: flex-start; background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.2); border-radius: 8px; padding: 8px 12px; font-size: 12px; max-width: 85%; }
+.tool-card .tool-name { color: var(--accent); font-weight: 600; }
+.tool-card .tool-output { color: var(--text2); margin-top: 4px; white-space: pre-wrap; max-height: 120px; overflow-y: auto; font-family: monospace; font-size: 11px; }
+
+.approval-card { background: rgba(251,191,36,0.1); border: 1px solid var(--yellow); border-radius: 8px; padding: 12px; margin: 8px 0; }
+.approval-card h4 { color: var(--yellow); margin-bottom: 6px; font-size: 13px; }
+.approval-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+.safety-toggle { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.safety-toggle button { padding: 4px 12px; font-size: 11px; border: none; background: transparent; color: var(--text2); cursor: pointer; }
+.safety-toggle button.active { background: var(--accent-dim); color: var(--accent); }
+
+.conv-item { padding: 7px 10px; cursor: pointer; border-radius: 6px; font-size: 12px; transition: background 0.15s; }
+.conv-item:hover { background: rgba(56,189,248,0.05); }
+.conv-item.active { background: var(--accent-dim); color: var(--accent); }
+.conv-title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-time { color: var(--text3); font-size: 10px; }
+
+.patrol-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.patrol-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.patrol-ok { background: var(--green); }
+.patrol-warning { background: var(--yellow); }
+.patrol-critical { background: var(--red); }
+
+.typing-indicator { align-self: flex-start; color: var(--text3); font-size: 12px; padding: 4px 8px; }
+.typing-indicator::after { content: '...'; animation: dots 1.5s infinite; }
+@keyframes dots { 0%,20% { content: '.'; } 40% { content: '..'; } 60%,100% { content: '...'; } }
+
+/* Todo 面板 */
+.todo-panel { border-top: 1px solid var(--border); padding: 10px 14px; flex-shrink: 0; max-height: 200px; overflow-y: auto; transition: max-height 0.2s; }
+.todo-panel.collapsed { max-height: 36px; overflow: hidden; }
+.todo-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; cursor: pointer; }
+.todo-header h4 { font-size: 12px; color: var(--text2); margin: 0; }
+.todo-count { font-size: 11px; color: var(--text3); }
+.todo-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+.todo-icon { width: 16px; text-align: center; flex-shrink: 0; }
+.todo-text { flex: 1; line-height: 1.4; }
+.todo-text.completed { text-decoration: line-through; color: var(--text3); }
+.todo-text.in-progress { color: var(--accent); }
+
+/* 终端 */
+.terminal-container { flex: 1; background: #0a0e17; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; padding: 4px; min-height: 0; }
+
+/* 消息气泡宽度和代码块优化 */
+.msg { max-width: 95%; word-break: break-word; }
+.msg-assistant { max-width: 95%; }
+.msg-assistant pre { max-height: 300px; overflow: auto; }
+.tool-card { max-width: 90%; }
+.tool-card .tool-output { max-height: 200px; }
+</style>
+
+<div class="agent-layout" x-data="agentApp()" x-init="init()">
+
+  <!-- 标签页 -->
+  <div class="agent-tabs">
+    <div class="agent-tab" :class="tab==='chat'?'active':''" @click="tab='chat'">AI 对话</div>
+    <div class="agent-tab" :class="tab==='terminal'?'active':''" @click="tab='terminal'; initTerminal()">终端</div>
+    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab='patrol'">巡检</div>
+  </div>
+
+  <!-- ═══ AI 对话 ═══ -->
+  <div class="agent-panel chat-layout" :class="tab==='chat'?'active':''">
+    <div class="chat-sidebar">
+      <button class="btn btn-primary" style="width:100%" @click="newConversation()">+ 新对话</button>
+      <template x-for="conv in conversations" :key="conv.id">
+        <div class="conv-item" :class="currentConvId===conv.id?'active':''" @click="loadConversation(conv.id)">
+          <div class="conv-title" x-text="conv.title"></div>
+          <div class="conv-time" x-text="conv.updated_at"></div>
+        </div>
+      </template>
+    </div>
+
+    <div class="chat-main">
+      <div class="chat-header">
+        <span style="font-weight:600;font-size:14px" x-text="currentTitle||'新对话'"></span>
+        <div class="safety-toggle">
+          <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
+          <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="chat-messages">
+        <template x-for="(msg,idx) in messages" :key="idx">
+          <div>
+            <template x-if="msg.role==='user'"><div class="msg msg-user" x-text="msg.content"></div></template>
+            <template x-if="msg.role==='assistant'"><div class="msg msg-assistant" x-html="renderMd(msg.content)"></div></template>
+            <template x-if="msg.role==='tool_call'">
+              <div class="tool-card"><span class="tool-name" x-text="'🔧 '+msg.tool"></span><div class="tool-output" x-text="JSON.stringify(msg.args,null,2)"></div></div>
+            </template>
+            <template x-if="msg.role==='tool_result'">
+              <div class="tool-card"><span class="tool-name" x-text="'📋 '+(msg.tool||'结果')"></span><div class="tool-output" x-text="msg.content"></div></div>
+            </template>
+            <template x-if="msg.role==='approval'">
+              <div class="approval-card">
+                <h4>⚠️ 需要审批</h4>
+                <div class="text-sm" x-text="msg.description||JSON.stringify(msg.actions||{})"></div>
+                <div class="approval-actions">
+                  <button class="btn btn-sm" style="background:var(--green);color:#000;border-color:var(--green)" @click="resolveApproval(msg.approval_id,'approve')">批准</button>
+                  <button class="btn btn-danger btn-sm" @click="resolveApproval(msg.approval_id,'reject')">拒绝</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+        <div class="typing-indicator" x-show="isTyping">思考中</div>
+      </div>
+
+      <!-- Todo 规划面板 -->
+      <div class="todo-panel" :class="todoCollapsed?'collapsed':''" x-show="todos.length > 0">
+        <div class="todo-header" @click="todoCollapsed=!todoCollapsed">
+          <h4>
+            <span x-text="todoCollapsed?'▶':'▼'" style="font-size:10px;margin-right:4px"></span>
+            任务规划
+          </h4>
+          <span class="todo-count" x-text="todos.filter(t=>t.status==='completed').length+'/'+todos.length+' 完成'"></span>
+        </div>
+        <template x-for="(t,i) in todos" :key="i">
+          <div class="todo-item">
+            <span class="todo-icon" x-text="t.status==='completed'?'✅':t.status==='in_progress'?'🔄':'⬜'"></span>
+            <span class="todo-text" :class="t.status" x-text="t.content"></span>
+          </div>
+        </template>
+      </div>
+
+      <div class="chat-input-area">
+        <textarea x-model="inputText" placeholder="输入消息... (Enter 发送)" @keydown.enter.prevent="if(!$event.shiftKey)sendMessage()" :disabled="isTyping"></textarea>
+        <button class="btn btn-primary" @click="sendMessage()" :disabled="isTyping||!inputText.trim()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 终端 ═══ -->
+  <div class="agent-panel" :class="tab==='terminal'?'active':''" style="flex-direction:column">
+    <div class="terminal-container" id="xterm-container"></div>
+  </div>
+
+  <!-- ═══ 巡检 ═══ -->
+  <div class="agent-panel" :class="tab==='patrol'?'active':''" style="flex-direction:column;overflow-y:auto;padding-right:4px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+      <template x-for="p in patrols" :key="p.id">
+        <div class="patrol-card">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <span class="patrol-status-dot" :class="'patrol-'+(p.last_status||'ok')"></span>
+              <strong x-text="p.display_name" style="font-size:14px"></strong>
+            </div>
+            <span class="text-xs text-muted" x-text="p.interval_minutes+'min'"></span>
+          </div>
+          <div class="text-xs text-muted mb-2" x-text="p.description"></div>
+          <div class="text-xs mb-2" x-show="p.last_run">
+            上次: <span x-text="p.last_run" class="font-mono"></span>
+            <span class="badge" :class="p.last_status==='ok'?'badge-ok':p.last_status==='warning'?'badge-warn':'badge-crit'" x-text="p.last_status||'未运行'"></span>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
+            <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+          </div>
+          <div class="text-xs text-muted mt-2" x-show="p.last_report" style="max-height:80px;overflow-y:auto;white-space:pre-wrap" x-text="p.last_report"></div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/js/xterm.min.js"></script>
+<script src="/static/js/xterm-addon-fit.min.js"></script>
+<script>
+function agentApp() {
+  return {
+    tab: 'chat', messages: [], conversations: [], patrols: [], todos: [],
+    currentConvId: null, currentTitle: '新对话', inputText: '',
+    isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
+    _term: null, _ws: null, _termInitialized: false,
+
+    async init() {
+      await this.loadConversations();
+      await this.loadPatrols();
+      setInterval(() => this.loadPatrols(), 30000);
+    },
+
+    // ─── 对话 ───
+    async loadConversations() {
+      try { this.conversations = await (await fetch('/api/agents/conversations')).json(); } catch(e) {}
+    },
+    async loadPatrols() {
+      try { this.patrols = await (await fetch('/api/agents/patrols')).json(); } catch(e) {}
+    },
+    newConversation() { this.currentConvId = null; this.currentTitle = '新对话'; this.messages = []; this.todos = []; },
+    async loadConversation(id) {
+      this.currentConvId = id;
+      const conv = this.conversations.find(c => c.id === id);
+      this.currentTitle = conv ? conv.title : '对话';
+      try {
+        const d = await (await fetch(`/api/agents/conversations/${id}`)).json();
+        this.messages = d.messages || [];
+        this.todos = d.todos || [];
+        this.scrollBottom();
+      } catch(e) {}
+    },
+
+    async sendMessage() {
+      const text = this.inputText.trim();
+      if (!text || this.isTyping) return;
+      this.inputText = ''; this.messages.push({role:'user',content:text});
+      this.isTyping = true; this.scrollBottom();
+      try {
+        const resp = await fetch('/api/agents/chat', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({message:text, conversation_id:this.currentConvId, safety_mode:this.safetyMode}),
+        });
+        const reader = resp.body.getReader(); const decoder = new TextDecoder();
+        let buffer = '', currentEvent = '';
+        while (true) {
+          const {done,value} = await reader.read(); if (done) break;
+          buffer += decoder.decode(value, {stream:true});
+          const lines = buffer.split('\n'); buffer = lines.pop()||'';
+          for (const line of lines) {
+            if (line.startsWith('event:')) currentEvent = line.slice(6).trim();
+            else if (line.startsWith('data:')) { try { this.handleSSE(currentEvent, JSON.parse(line.slice(5).trim())); } catch(e) {} }
+          }
+        }
+      } catch(e) { this.messages.push({role:'assistant',content:'连接错误: '+e.message}); }
+      this.isTyping = false; this.loadConversations(); this.scrollBottom();
+    },
+
+    handleSSE(event, data) {
+      switch(event) {
+        case 'message': this.messages.push({role:'assistant',content:data.content}); break;
+        case 'tool_call': this.messages.push({role:'tool_call',tool:data.tool,args:data.input}); break;
+        case 'tool_result': this.messages.push({role:'tool_result',tool:data.tool||'',content:data.content}); break;
+        case 'todo_update': this.todos = data; this.todoCollapsed = false; break;
+        case 'approval_request':
+          this.messages.push({role:'approval',approval_id:data.approval_id,actions:data.actions,description:data.description||'需要确认操作'});
+          break;
+        case 'done': if(data.conversation_id) this.currentConvId = data.conversation_id; break;
+        case 'error': this.messages.push({role:'assistant',content:'错误: '+(data.error||'未知')}); break;
+      }
+      this.scrollBottom();
+    },
+
+    async resolveApproval(approvalId, action) {
+      try {
+        const d = await (await fetch(`/api/agents/approvals/${approvalId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,reason:''})})).json();
+        this.messages = this.messages.filter(m=>m.approval_id!==approvalId);
+        if(d.ok && action==='approve' && d.result) this.messages.push({role:'assistant',content:d.result});
+        else if(action==='reject') this.messages.push({role:'assistant',content:'操作已被拒绝。'});
+      } catch(e) { showToast('审批处理失败','err'); }
+      this.scrollBottom();
+    },
+
+    renderMd(text) {
+      if(!text) return '';
+      return text.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre><code>$2</code></pre>')
+        .replace(/`([^`]+)`/g,'<code>$1</code>')
+        .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+        .replace(/\|(.+)\|/g, (m) => { return m; }) // preserve tables
+        .replace(/## (.+)/g,'<h4>$1</h4>')
+        .replace(/\n/g,'<br>');
+    },
+    scrollBottom() { this.$nextTick(()=>{ const el=document.getElementById('chat-messages'); if(el) el.scrollTop=el.scrollHeight; }); },
+
+    // ─── 终端 ───
+    initTerminal() {
+      if (this._termInitialized) return;
+      this._termInitialized = true;
+      this.$nextTick(() => {
+        const container = document.getElementById('xterm-container');
+        if (!container || !window.Terminal) return;
+
+        const term = new Terminal({
+          theme: { background: '#0a0e17', foreground: '#e2e8f0', cursor: '#38bdf8',
+                   selectionBackground: 'rgba(56,189,248,0.3)' },
+          fontFamily: "'JetBrains Mono','Fira Code','Cascadia Code',monospace",
+          fontSize: 13, cursorBlink: true,
+        });
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(container);
+        fitAddon.fit();
+
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${location.host}/api/agents/ws/terminal`);
+        ws.onopen = () => { term.write('\r\n\x1b[32m连接成功\x1b[0m\r\n'); };
+        ws.onmessage = (e) => { term.write(e.data); };
+        ws.onclose = () => { term.write('\r\n\x1b[31m连接断开\x1b[0m\r\n'); };
+        term.onData((data) => { if(ws.readyState === WebSocket.OPEN) ws.send(data); });
+
+        window.addEventListener('resize', () => {
+          fitAddon.fit();
+          if(ws.readyState === WebSocket.OPEN) {
+            ws.send(`\x1b[resize:${term.cols},${term.rows}]`);
+          }
+        });
+
+        this._term = term; this._ws = ws;
+      });
+    },
+
+    // ─── 巡检 ───
+    async triggerPatrol(id) {
+      try { await fetch(`/api/agents/patrols/${id}/run`,{method:'POST'}); showToast('巡检已触发','ok'); setTimeout(()=>this.loadPatrols(),5000); } catch(e) { showToast('触发失败','err'); }
+    },
+    async togglePatrol(id, enabled) {
+      try { await fetch(`/api/agents/patrols/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})}); this.loadPatrols(); } catch(e) {}
+    },
+  };
+}
+</script>
+{% endblock %}

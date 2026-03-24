@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Docker 管理{% endblock %}
+{% block page_title %}Docker 管理{% endblock %}
+
+{% block content %}
+<div x-data="{ tab: 'containers', logContainer: '', logContent: '' }">
+
+<div class="flex gap-2 mb-4">
+  <button class="btn btn-sm" :class="tab==='containers'?'btn-primary':''" @click="tab='containers'">容器</button>
+  <button class="btn btn-sm" :class="tab==='stacks'?'btn-primary':''" @click="tab='stacks'">Compose 堆栈</button>
+  <button class="btn btn-sm" :class="tab==='images'?'btn-primary':''" @click="tab='images'">镜像</button>
+</div>
+
+<!-- 容器列表 -->
+<div x-show="tab==='containers'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>容器列表</h3>
+      <button class="btn btn-sm" hx-get="/docker" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+    </div>
+    <table>
+      <thead><tr><th>名称</th><th>镜像</th><th>状态</th><th>端口</th>
+      {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for c in containers %}
+        <tr>
+          <td><strong>{{ c.Names if c.Names else c.name }}</strong></td>
+          <td class="text-xs text-muted font-mono">{{ (c.Image if c.Image else c.image)|truncate(40) }}</td>
+          <td>
+            {% set st = c.State if c.State else c.status|lower %}
+            {% if st == 'running' or 'up' in (c.Status if c.Status else c.status)|lower %}
+              <span class="badge badge-ok">运行中</span>
+            {% elif 'restarting' in (c.Status if c.Status else c.status)|lower %}
+              <span class="badge badge-crit">重启中</span>
+            {% else %}
+              <span class="badge badge-idle">已停止</span>
+            {% endif %}
+            <span class="text-xs text-muted">{{ c.Status if c.Status else c.status }}</span>
+          </td>
+          <td class="text-xs font-mono">{{ (c.Ports if c.Ports else c.ports)|truncate(50) }}</td>
+          {% if user.role == 'admin' %}
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-xs" @click="logContainer='{{ c.Names if c.Names else c.name }}'; loadLogs()">日志</button>
+              {% set name = c.Names if c.Names else c.name %}
+              <button class="btn btn-xs" hx-post="/api/docker/containers/{{ name }}/restart" hx-confirm="确定重启 {{ name }}?" hx-swap="none" @htmx:after-request="showToast('已重启', 'ok')">重启</button>
+              {% if st == 'running' or 'up' in (c.Status if c.Status else c.status)|lower %}
+              <button class="btn btn-danger btn-xs" hx-post="/api/docker/containers/{{ name }}/stop" hx-confirm="确定停止 {{ name }}?" hx-swap="none" @htmx:after-request="showToast('已停止', 'ok')">停止</button>
+              {% else %}
+              <button class="btn btn-xs" hx-post="/api/docker/containers/{{ name }}/start" hx-swap="none" @htmx:after-request="showToast('已启动', 'ok')">启动</button>
+              {% endif %}
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="empty-state">无容器</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 日志弹窗 -->
+  <template x-if="logContainer">
+    <div class="modal-overlay" @click.self="logContainer=''">
+      <div class="modal" style="width:800px;max-width:90vw">
+        <div class="flex items-center justify-between mb-4">
+          <h3 x-text="logContainer + ' 日志'"></h3>
+          <button class="btn btn-xs" @click="logContainer=''">关闭</button>
+        </div>
+        <div class="log-viewer" x-text="logContent" style="max-height:60vh"></div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- Compose 堆栈 -->
+<div x-show="tab==='stacks'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>Compose 堆栈</h3></div>
+    <table>
+      <thead><tr><th>名称</th><th>路径</th><th>容器数</th><th>运行中</th>
+      {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for s in stacks %}
+        <tr>
+          <td><strong>{{ s.display_name }}</strong></td>
+          <td class="text-xs text-muted font-mono">{{ s.path }}</td>
+          <td>{{ s.total }}</td>
+          <td>
+            {% if s.running == s.total and s.total > 0 %}
+              <span class="badge badge-ok">{{ s.running }}</span>
+            {% elif s.running > 0 %}
+              <span class="badge badge-warn">{{ s.running }}</span>
+            {% else %}
+              <span class="badge badge-idle">0</span>
+            {% endif %}
+          </td>
+          {% if user.role == 'admin' %}
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-xs" hx-post="/api/docker/stacks/{{ s.name }}/restart" hx-confirm="确定重启堆栈 {{ s.display_name }}?" hx-swap="none" @htmx:after-request="showToast('重启中...', 'info')">重启</button>
+              <button class="btn btn-xs" hx-post="/api/docker/stacks/{{ s.name }}/pull" hx-swap="none" @htmx:after-request="showToast('拉取更新中...', 'info')">更新</button>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="empty-state">无堆栈</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 镜像 -->
+<div x-show="tab==='images'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>镜像列表</h3></div>
+    <table>
+      <thead><tr><th>仓库</th><th>标签</th><th>大小</th><th>创建时间</th></tr></thead>
+      <tbody>
+      {% for img in images %}
+        <tr>
+          <td class="font-mono text-sm">{{ img.Repository if img.Repository else img.repository }}</td>
+          <td><span class="badge badge-info">{{ img.Tag if img.Tag else img.tag }}</span></td>
+          <td>{{ img.Size if img.Size else img.size }}</td>
+          <td class="text-muted text-xs">{{ img.CreatedSince if img.CreatedSince else img.created }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="empty-state">无镜像</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script>
+async function loadLogs() {
+  const name = document.querySelector('[x-data]')?._x_dataStack?.[0]?.logContainer;
+  if (!name) return;
+  try {
+    const resp = await fetch(`/api/docker/containers/${encodeURIComponent(name)}/logs?tail=200`);
+    const data = await resp.json();
+    const el = document.querySelector('[x-data]')?._x_dataStack?.[0];
+    if (el) el.logContent = data.logs || data;
+  } catch(e) { showToast('获取日志失败', 'err'); }
+}
+</script>
+{% endblock %}

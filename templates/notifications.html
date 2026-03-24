@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}通知管理{% endblock %}
+{% block page_title %}通知管理{% endblock %}
+
+{% block content %}
+<div x-data="{ message: '' }">
+
+<!-- 发送通知 -->
+<div class="data-table-wrapper mb-4">
+  <div class="data-table-header"><h3>发送 Telegram 通知</h3></div>
+  <div style="padding:16px">
+    <div class="form-group">
+      <label class="form-label">消息内容</label>
+      <textarea x-model="message" class="form-input" rows="3" placeholder="输入通知消息..."></textarea>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-primary btn-sm" @click="
+        if(!message.trim()){showToast('请输入消息','err');return}
+        apiCall('/api/notifications/send','POST',{message:message}).then(()=>{showToast('发送成功','ok');message='';htmx.ajax('GET','/notifications',{target:'#main-content'})}).catch(e=>showToast('发送失败: '+e.message,'err'))
+      ">发送</button>
+      <button class="btn btn-sm" @click="
+        apiCall('/api/notifications/test','POST').then(()=>showToast('测试消息已发送','ok')).catch(e=>showToast('失败: '+e.message,'err'))
+      ">发送测试</button>
+    </div>
+  </div>
+</div>
+
+<!-- 发送历史 -->
+<div class="data-table-wrapper">
+  <div class="data-table-header"><h3>发送历史</h3></div>
+  <table>
+    <thead><tr><th>时间</th><th>渠道</th><th>消息</th><th>状态</th></tr></thead>
+    <tbody>
+    {% for n in history %}
+      <tr>
+        <td class="text-xs text-muted">{{ n.timestamp }}</td>
+        <td><span class="badge badge-info">{{ n.channel }}</span></td>
+        <td class="text-sm" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.message }}</td>
+        <td>
+          {% if n.success %}<span class="badge badge-ok">成功</span>
+          {% else %}<span class="badge badge-crit">失败</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="empty-state">暂无记录</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+</div>
+{% endblock %}

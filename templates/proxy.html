@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}代理管理{% endblock %}
+{% block page_title %}代理管理{% endblock %}
+
+{% block content %}
+<div x-data="proxyManager()" x-init="loadGroups()">
+
+<!-- 状态卡片 -->
+<div class="grid grid-3 mb-4">
+  <div class="stat-card">
+    <div class="stat-label">Clash 状态</div>
+    <div class="stat-value">
+      {% if status.running %}
+        <span class="badge badge-ok">运行中</span>
+      {% else %}
+        <span class="badge badge-crit">已停止</span>
+      {% endif %}
+    </div>
+    <div class="text-xs text-muted mt-1">{{ status.version }}{% if status.premium %} (Premium){% endif %}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">当前配置</div>
+    <div class="stat-value text-accent">{{ status.current_config_name }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">代理端口</div>
+    <div class="stat-value font-mono">7890</div>
+    <div class="text-xs text-muted mt-1">mixed-port (HTTP/SOCKS5)</div>
+  </div>
+</div>
+
+<!-- 操作区 -->
+<div class="data-table-wrapper mb-4">
+  <div class="data-table-header">
+    <h3>配置切换</h3>
+  </div>
+  <div style="padding:16px">
+    <div class="flex gap-2 flex-wrap">
+      {% for key, cfg in status.configs.items() %}
+      <button class="btn {% if status.current_config == key %}btn-primary{% endif %}"
+              @click="switchConfig('{{ key }}')"
+              :disabled="loading">
+        {{ cfg.name }}
+        {% if status.current_config == key %} (当前){% endif %}
+      </button>
+      {% endfor %}
+
+      <span style="border-left:1px solid var(--border);margin:0 8px"></span>
+
+      <button class="btn" @click="updateSub()" :disabled="loading">
+        更新 FastFly 订阅
+      </button>
+      <button class="btn" @click="updateAndSwitch()" :disabled="loading">
+        更新并切换 FastFly
+      </button>
+      <button class="btn" @click="restartClash()" :disabled="loading">
+        重启 Clash
+      </button>
+    </div>
+    <div x-show="message" x-text="message"
+         class="mt-2 text-sm" :class="messageOk ? 'text-accent' : 'text-danger'"
+         x-transition></div>
+  </div>
+</div>
+
+<!-- 代理组 & 节点切换 -->
+<div class="data-table-wrapper">
+  <div class="data-table-header">
+    <h3>代理组节点</h3>
+    <div class="flex gap-2">
+      <button class="btn btn-sm" @click="loadGroups()" :disabled="loading">刷新</button>
+    </div>
+  </div>
+
+  <template x-if="groups.length === 0 && !loading">
+    <div class="empty-state" style="padding:40px;text-align:center">
+      <div class="text-muted">暂无代理组数据</div>
+    </div>
+  </template>
+
+  <template x-for="group in groups" :key="group.name">
+    <div style="border-bottom:1px solid var(--border)">
+      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer"
+           @click="group._open = !group._open">
+        <div>
+          <strong x-text="group.name"></strong>
+          <span class="badge badge-ok ml-2" x-text="group.type" style="font-size:10px"></span>
+          <span class="text-muted text-sm ml-2">当前: <span class="text-accent" x-text="group.now"></span></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-muted" x-text="group.all.length + ' 个节点'"></span>
+          <span x-text="group._open ? '▲' : '▼'" class="text-muted text-xs"></span>
+        </div>
+      </div>
+
+      <div x-show="group._open" x-transition style="padding:0 16px 12px">
+        <div class="flex gap-2 mb-2">
+          <button class="btn btn-xs" @click="testDelays(group)">测速全部</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px">
+          <template x-for="node in group.all" :key="node">
+            <div style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;transition:all .15s"
+                 :style="node === group.now ? 'border-color:var(--accent);background:rgba(99,179,237,.08)' : ''"
+                 @click="switchNode(group, node)">
+              <span x-text="node" :class="node === group.now ? 'text-accent' : ''"></span>
+              <span x-show="group._delays && group._delays[node]"
+                    class="text-xs"
+                    :class="(group._delays[node] || 0) < 300 ? 'text-accent' : (group._delays[node] || 0) < 800 ? 'text-warning' : 'text-danger'"
+                    x-text="group._delays && group._delays[node] ? group._delays[node] + 'ms' : ''"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<!-- Loading overlay -->
+<div x-show="loading" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;z-index:999" x-transition>
+  <div style="background:var(--card-bg);padding:24px 40px;border-radius:8px;text-align:center">
+    <div class="text-sm" x-text="loadingMsg || '处理中...'"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function proxyManager() {
+  return {
+    groups: [],
+    loading: false,
+    loadingMsg: '',
+    message: '',
+    messageOk: true,
+
+    async loadGroups() {
+      try {
+        const resp = await fetch('/api/proxy/groups');
+        const data = await resp.json();
+        this.groups = (data || []).map(g => ({...g, _open: false, _delays: {}}));
+      } catch(e) {
+        console.error('加载代理组失败', e);
+      }
+    },
+
+    async switchNode(group, node) {
+      this.loading = true;
+      this.loadingMsg = '切换节点...';
+      try {
+        const resp = await fetch('/api/proxy/switch-node', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({group: group.name, node: node})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          group.now = node;
+          this.showMsg(true, data.msg);
+        } else {
+          this.showMsg(false, data.msg);
+        }
+      } catch(e) {
+        this.showMsg(false, '请求失败');
+      }
+      this.loading = false;
+    },
+
+    async switchConfig(key) {
+      this.loading = true;
+      this.loadingMsg = '切换配置中，Clash 将重启...';
+      try {
+        const resp = await fetch('/api/proxy/switch-config', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({config: key})
+        });
+        const data = await resp.json();
+        this.showMsg(data.ok, data.msg);
+        if (data.ok) {
+          setTimeout(() => location.reload(), 1500);
+        }
+      } catch(e) {
+        this.showMsg(false, '请求失败');
+      }
+      this.loading = false;
+    },
+
+    async updateSub() {
+      this.loading = true;
+      this.loadingMsg = '更新订阅中...';
+      try {
+        const resp = await fetch('/api/proxy/update-subscription', {method: 'POST'});
+        const data = await resp.json();
+        this.showMsg(data.ok, data.msg);
+      } catch(e) {
+        this.showMsg(false, '请求失败');
+      }
+      this.loading = false;
+    },
+
+    async updateAndSwitch() {
+      await this.updateSub();
+      if (this.messageOk) {
+        await this.switchConfig('fastfly');
+      }
+    },
+
+    async restartClash() {
+      this.loading = true;
+      this.loadingMsg = '重启 Clash 中...';
+      try {
+        const resp = await fetch('/api/proxy/restart', {method: 'POST'});
+        const data = await resp.json();
+        this.showMsg(data.ok, data.msg);
+        if (data.ok) {
+          setTimeout(() => location.reload(), 1500);
+        }
+      } catch(e) {
+        this.showMsg(false, '请求失败');
+      }
+      this.loading = false;
+    },
+
+    async testDelays(group) {
+      this.loading = true;
+      this.loadingMsg = '测速中...';
+      try {
+        const resp = await fetch(`/api/proxy/test-delays/${encodeURIComponent(group.name)}`);
+        const data = await resp.json();
+        group._delays = data;
+      } catch(e) {
+        this.showMsg(false, '测速失败');
+      }
+      this.loading = false;
+    },
+
+    showMsg(ok, msg) {
+      this.messageOk = ok;
+      this.message = msg;
+      setTimeout(() => { this.message = ''; }, 4000);
+    }
+  }
+}
+</script>
+{% endblock %}

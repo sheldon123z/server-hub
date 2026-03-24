@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}服务管理{% endblock %}
+{% block page_title %}服务管理{% endblock %}
+
+{% block content %}
+<div x-data="{ journalService: '', journalContent: '' }">
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>Systemd 服务</h3>
+      <button class="btn btn-sm" hx-get="/services" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+    </div>
+    <table>
+      <thead><tr><th>服务名</th><th>状态</th><th>启用</th>
+      {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for s in services %}
+        <tr>
+          <td><strong>{{ s.name }}</strong></td>
+          <td>
+            {% if s.active %}
+              <span class="badge badge-ok">运行中</span>
+            {% else %}
+              <span class="badge badge-idle">已停止</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.enabled %}
+              <span class="text-green text-xs">已启用</span>
+            {% else %}
+              <span class="text-muted text-xs">未启用</span>
+            {% endif %}
+          </td>
+          {% if user.role == 'admin' %}
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-xs" @click="journalService='{{ s.name }}'; loadJournal()">日志</button>
+              {% if s.active %}
+              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/restart" hx-swap="none" hx-confirm="确定重启 {{ s.name }}?" @htmx:after-request="showToast('已重启', 'ok')">重启</button>
+              <button class="btn btn-danger btn-xs" hx-post="/api/services/{{ s.name }}/stop" hx-swap="none" hx-confirm="确定停止 {{ s.name }}?" @htmx:after-request="showToast('已停止', 'ok')">停止</button>
+              {% else %}
+              <button class="btn btn-xs" hx-post="/api/services/{{ s.name }}/start" hx-swap="none" @htmx:after-request="showToast('已启动', 'ok')">启动</button>
+              {% endif %}
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <template x-if="journalService">
+    <div class="modal-overlay" @click.self="journalService=''">
+      <div class="modal" style="width:800px;max-width:90vw">
+        <div class="flex items-center justify-between mb-4">
+          <h3 x-text="journalService + ' 日志'"></h3>
+          <button class="btn btn-xs" @click="journalService=''">关闭</button>
+        </div>
+        <div class="log-viewer" x-text="journalContent" style="max-height:60vh"></div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script>
+async function loadJournal() {
+  const name = document.querySelector('[x-data]')?._x_dataStack?.[0]?.journalService;
+  if (!name) return;
+  try {
+    const resp = await fetch(`/api/services/${name}/journal?lines=100`);
+    const data = await resp.json();
+    document.querySelector('[x-data]')._x_dataStack[0].journalContent = data.journal || '';
+  } catch(e) { showToast('获取日志失败', 'err'); }
+}
+</script>
+{% endblock %}

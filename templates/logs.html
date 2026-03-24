@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}日志查看{% endblock %}
+{% block page_title %}日志查看{% endblock %}
+
+{% block content %}
+<div x-data="{ selectedFile: '', logContent: '', searchQ: '' }">
+
+<div style="display:grid;grid-template-columns:280px 1fr;gap:16px">
+  <!-- 文件列表 -->
+  <div class="data-table-wrapper" style="max-height:70vh;overflow-y:auto">
+    <div class="data-table-header"><h3>日志文件</h3></div>
+    {% for f in files %}
+    <div class="nav-item" style="border-left:none;padding:8px 14px"
+         :class="selectedFile==='{{ f.path }}'?'active':''"
+         @click="selectedFile='{{ f.path }}'; loadLog()">
+      <div>
+        <div class="text-sm">{{ f.name }}</div>
+        <div class="text-xs text-muted">{{ f.size_human }} | {{ f.modified }}</div>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty-state text-sm">无日志文件</div>
+    {% endfor %}
+  </div>
+
+  <!-- 日志内容 -->
+  <div>
+    <div class="flex gap-2 mb-2">
+      <input class="form-input" x-model="searchQ" placeholder="搜索..." style="width:300px" @keyup.enter="searchLog()">
+      <button class="btn btn-sm" @click="searchLog()">搜索</button>
+      <button class="btn btn-sm" @click="loadLog()">刷新</button>
+    </div>
+    <div class="log-viewer" style="max-height:65vh" x-text="logContent || '选择左侧文件查看日志'"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+async function loadLog() {
+  const path = document.querySelector('[x-data]')?._x_dataStack?.[0]?.selectedFile;
+  if (!path) return;
+  try {
+    const resp = await fetch(`/api/logs/tail?path=${encodeURIComponent(path)}&lines=300`);
+    const data = await resp.json();
+    document.querySelector('[x-data]')._x_dataStack[0].logContent = data.content || '';
+  } catch(e) { showToast('读取失败', 'err'); }
+}
+
+async function searchLog() {
+  const ds = document.querySelector('[x-data]')?._x_dataStack?.[0];
+  if (!ds?.selectedFile || !ds?.searchQ) return;
+  try {
+    const resp = await fetch(`/api/logs/search?path=${encodeURIComponent(ds.selectedFile)}&q=${encodeURIComponent(ds.searchQ)}`);
+    const data = await resp.json();
+    ds.logContent = data.content || '无匹配结果';
+  } catch(e) { showToast('搜索失败', 'err'); }
+}
+</script>
+{% endblock %}

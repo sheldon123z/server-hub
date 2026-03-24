@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - ServerHub</title>
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="login-page" x-data="{ error: '', loading: false }">
+<div class="login-card">
+  <h1>ServerHub</h1>
+  <p class="subtitle">NF5468M6 服务器管理系统</p>
+
+  <template x-if="error">
+    <div class="login-error" x-text="error"></div>
+  </template>
+
+  <form @submit.prevent="
+    loading = true; error = '';
+    fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: $refs.username.value, password: $refs.password.value})
+    }).then(r => r.json().then(d => ({ok: r.ok, data: d}))).then(({ok, data}) => {
+      loading = false;
+      if (ok) { window.location.href = '/'; }
+      else { error = data.detail || '登录失败'; }
+    }).catch(() => { loading = false; error = '网络错误'; })
+  ">
+    <input x-ref="username" type="text" class="form-input" placeholder="用户名" autocomplete="username" required autofocus>
+    <input x-ref="password" type="password" class="form-input" placeholder="密码" autocomplete="current-password" required>
+    <button type="submit" class="btn btn-primary" :disabled="loading">
+      <template x-if="loading"><span class="spinner"></span></template>
+      <span x-text="loading ? '登录中...' : '登 录'"></span>
+    </button>
+  </form>
+</div>
+<script src="/static/js/alpine.min.js" defer></script>
+</body>
+</html>

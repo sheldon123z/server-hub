@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}系统设置{% endblock %}
+{% block page_title %}系统设置{% endblock %}
+
+{% block content %}
+<div x-data="aiSettings()" x-init="load()">
+
+  <!-- AI 模型配置 — 两级联动：服务商 → 模型 -->
+  <div class="data-table-wrapper mb-4">
+    <div class="data-table-header"><h3>AI 助手 - 模型选择</h3></div>
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+
+        <!-- 对话模型 -->
+        <div class="model-selector">
+          <label class="form-label" style="font-size:13px;font-weight:600;margin-bottom:8px">对话模型（交互式运维）</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label class="form-label">服务商</label>
+              <select class="form-input" x-model="chatProvider" @change="onChatProviderChange()">
+                <template x-for="p in providers" :key="p.id">
+                  <option :value="p.id" x-text="p.name + (p.has_key ? '' : ' (未配置)')" :disabled="!p.has_key && p.id !== 'ollama'"></option>
+                </template>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">模型</label>
+              <select class="form-input" x-model="chatModelName" @change="saveModels()">
+                <template x-for="m in chatProviderModels" :key="m.id">
+                  <option :value="m.id" x-text="m.name"></option>
+                </template>
+              </select>
+            </div>
+          </div>
+          <div class="text-xs text-muted mt-2">
+            当前: <span class="text-accent font-mono" x-text="chatProvider + ':' + chatModelName"></span>
+          </div>
+        </div>
+
+        <!-- 巡检模型 -->
+        <div class="model-selector">
+          <label class="form-label" style="font-size:13px;font-weight:600;margin-bottom:8px">巡检模型（自动巡检任务）</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label class="form-label">服务商</label>
+              <select class="form-input" x-model="patrolProvider" @change="onPatrolProviderChange()">
+                <template x-for="p in providers" :key="p.id">
+                  <option :value="p.id" x-text="p.name + (p.has_key ? '' : ' (未配置)')" :disabled="!p.has_key && p.id !== 'ollama'"></option>
+                </template>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">模型</label>
+              <select class="form-input" x-model="patrolModelName" @change="saveModels()">
+                <template x-for="m in patrolProviderModels" :key="m.id">
+                  <option :value="m.id" x-text="m.name"></option>
+                </template>
+              </select>
+            </div>
+          </div>
+          <div class="text-xs text-muted mt-2">
+            当前: <span class="text-accent font-mono" x-text="patrolProvider + ':' + patrolModelName"></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 服务商管理 -->
+  <div class="data-table-wrapper mb-4">
+    <div class="data-table-header"><h3>AI 服务商</h3></div>
+    <table>
+      <thead>
+        <tr><th>服务商</th><th>说明</th><th>API Key</th><th>状态</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        <template x-for="p in providers" :key="p.id">
+          <tr>
+            <td><strong x-text="p.name"></strong></td>
+            <td class="text-xs text-muted" x-text="p.description"></td>
+            <td>
+              <template x-if="p.api_key_env">
+                <div class="flex gap-2 items-center">
+                  <code class="text-xs" x-text="p.api_key_env"></code>
+                  <template x-if="!p.editing">
+                    <button class="btn btn-xs" @click="p.editing = true; p.newKey = ''">设置</button>
+                  </template>
+                  <template x-if="p.editing">
+                    <div class="flex gap-2">
+                      <input type="password" class="form-input" style="width:200px;font-size:11px" placeholder="输入 API Key..." x-model="p.newKey">
+                      <button class="btn btn-xs btn-primary" @click="saveApiKey(p)">保存</button>
+                      <button class="btn btn-xs" @click="p.editing = false">取消</button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <template x-if="!p.api_key_env">
+                <span class="text-xs text-muted">无需</span>
+              </template>
+            </td>
+            <td>
+              <template x-if="p.has_key">
+                <span class="badge badge-ok">已配置</span>
+              </template>
+              <template x-if="!p.has_key && p.api_key_env">
+                <span class="badge badge-idle">未配置</span>
+              </template>
+              <template x-if="!p.api_key_env">
+                <span class="badge badge-info">本地</span>
+              </template>
+            </td>
+            <td>
+              <div class="flex gap-2">
+                <template x-if="p.id === 'openrouter' || p.id === 'ollama'">
+                  <button class="btn btn-xs" @click="refreshModels(p)" :disabled="p.refreshing">
+                    <span x-text="p.refreshing ? '刷新中...' : '刷新模型'"></span>
+                  </button>
+                </template>
+                <span class="text-xs text-muted" x-text="p.models.length + ' 个模型'"></span>
+              </div>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 监控配置 -->
+  <div class="data-table-wrapper mb-4">
+    <div class="data-table-header"><h3>监控配置</h3></div>
+    <table>
+      <tbody>
+        <tr><td style="width:200px" class="text-muted">指标采集间隔</td><td>{{ config.metrics_interval_seconds }} 秒</td></tr>
+        <tr><td class="text-muted">指标保留天数</td><td>{{ config.metrics_retention_days }} 天</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="data-table-wrapper mb-4">
+    <div class="data-table-header"><h3>管理的 Systemd 服务</h3></div>
+    <div style="padding:14px 18px">
+      {% for svc in config.managed_services %}
+      <span class="badge badge-info" style="margin:2px">{{ svc }}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="data-table-wrapper mb-4">
+    <div class="data-table-header"><h3>Docker Compose 堆栈</h3></div>
+    <table>
+      <thead><tr><th>名称</th><th>显示名</th><th>路径</th></tr></thead>
+      <tbody>
+      {% for name, stack in config.compose_stacks.items() %}
+        <tr>
+          <td><strong>{{ name }}</strong></td>
+          <td>{{ stack.display_name }}</td>
+          <td class="font-mono text-xs text-muted">{{ stack.path }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>日志目录白名单</h3></div>
+    <div style="padding:14px 18px">
+      {% for d in config.log_dirs %}
+      <div class="font-mono text-sm mb-2">{{ d }}</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="data-table-wrapper mt-4">
+    <div class="data-table-header"><h3>修改密码</h3></div>
+    <div style="padding:16px" x-data="{ oldPw: '', newPw: '' }">
+      <div class="flex gap-2 items-center">
+        <input x-model="oldPw" type="password" class="form-input" placeholder="当前密码" style="width:200px">
+        <input x-model="newPw" type="password" class="form-input" placeholder="新密码" style="width:200px">
+        <button class="btn btn-sm" @click="
+          apiCall('/api/auth/change-password', 'POST', {old_password: oldPw, new_password: newPw})
+            .then(() => { showToast('密码已修改', 'ok'); oldPw=''; newPw=''; })
+            .catch(e => showToast(e.message, 'err'))
+        ">修改密码</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function aiSettings() {
+  return {
+    // 两级联动状态
+    chatProvider: '', chatModelName: '',
+    patrolProvider: '', patrolModelName: '',
+    providers: [],
+
+    // 计算属性：当前服务商的模型列表
+    get chatProviderModels() {
+      const p = this.providers.find(x => x.id === this.chatProvider);
+      return p ? p.models : [];
+    },
+    get patrolProviderModels() {
+      const p = this.providers.find(x => x.id === this.patrolProvider);
+      return p ? p.models : [];
+    },
+
+    // 切换服务商时，自动选第一个模型
+    onChatProviderChange() {
+      const models = this.chatProviderModels;
+      this.chatModelName = models.length ? models[0].id : '';
+      this.saveModels();
+    },
+    onPatrolProviderChange() {
+      const models = this.patrolProviderModels;
+      this.patrolModelName = models.length ? models[0].id : '';
+      this.saveModels();
+    },
+
+    // 从 "provider:model" 拆分
+    _parse(fullId) {
+      if (!fullId) return ['openrouter', ''];
+      const idx = fullId.indexOf(':');
+      if (idx > 0 && this.providers.some(p => p.id === fullId.substring(0, idx))) {
+        return [fullId.substring(0, idx), fullId.substring(idx + 1)];
+      }
+      return ['openrouter', fullId];
+    },
+
+    async load() {
+      try {
+        const resp = await fetch('/api/agents/settings');
+        const data = await resp.json();
+        this.providers = (data.providers || []).map(p => ({...p, editing: false, newKey: '', refreshing: false}));
+        // 拆分 provider:model
+        const [cp, cm] = this._parse(data.default_model);
+        this.chatProvider = cp; this.chatModelName = cm;
+        const [pp, pm] = this._parse(data.patrol_model);
+        this.patrolProvider = pp; this.patrolModelName = pm;
+      } catch(e) {}
+    },
+
+    async saveModels() {
+      const chatFull = this.chatProvider + ':' + this.chatModelName;
+      const patrolFull = this.patrolProvider + ':' + this.patrolModelName;
+      try {
+        const resp = await fetch('/api/agents/settings', {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({default_model: chatFull, patrol_model: patrolFull}),
+        });
+        const data = await resp.json();
+        if (data.ok) showToast('模型已切换: ' + chatFull, 'ok');
+      } catch(e) { showToast('保存失败', 'err'); }
+    },
+
+    async saveApiKey(provider) {
+      if (!provider.newKey.trim()) { showToast('请输入 API Key', 'err'); return; }
+      try {
+        const resp = await fetch(`/api/agents/settings/api-key/${provider.id}`, {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({api_key: provider.newKey}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          showToast(`${provider.name} API Key 已保存`, 'ok');
+          provider.has_key = true;
+          provider.editing = false;
+          provider.newKey = '';
+        }
+      } catch(e) { showToast('保存失败: ' + e.message, 'err'); }
+    },
+
+    async refreshModels(provider) {
+      provider.refreshing = true;
+      try {
+        const resp = await fetch(`/api/agents/settings/refresh-models/${provider.id}`, {method: 'POST'});
+        const data = await resp.json();
+        if (data.ok) {
+          showToast(`已刷新 ${data.count} 个模型`, 'ok');
+          await this.load();  // 重新加载全部数据
+        } else {
+          showToast(data.detail || '刷新失败', 'err');
+        }
+      } catch(e) { showToast('刷新失败: ' + e.message, 'err'); }
+      provider.refreshing = false;
+    },
+  };
+}
+</script>
+{% endblock %}

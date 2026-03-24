@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}仪表盘{% endblock %}
+{% block page_title %}仪表盘{% endblock %}
+
+{% block top_actions %}
+<button class="btn btn-sm" onclick="refreshDashboard(); showToast('已刷新', 'ok')">刷新</button>
+{% endblock %}
+
+{% block content %}
+<div id="dashboard-page">
+
+<!-- 系统指标卡片 -->
+<div class="stats-grid" hx-get="/partials/dashboard/cards" hx-trigger="every 15s" hx-swap="innerHTML">
+  {% include "partials/_metrics_cards.html" %}
+</div>
+
+<!-- CPU 历史图表 -->
+<div class="chart-container">
+  <div class="flex items-center justify-between mb-2">
+    <h3 style="font-size:14px;font-weight:600">CPU 使用率趋势 (6h)</h3>
+  </div>
+  <div style="height:200px">
+    <canvas id="metrics-chart"></canvas>
+  </div>
+</div>
+
+<!-- 快速概览表格 -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+  <!-- Docker 状态 -->
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>Docker 容器</h3>
+      <a href="/docker" class="btn btn-xs">详情</a>
+    </div>
+    <table>
+      <thead><tr><th>容器</th><th>状态</th></tr></thead>
+      <tbody hx-get="/partials/dashboard/docker-brief" hx-trigger="every 30s" hx-swap="innerHTML">
+        {% for c in docker_containers[:8] %}
+        <tr>
+          <td>{{ c.name }}</td>
+          <td>
+            {% if 'Up' in c.status %}
+              <span class="badge badge-ok">运行中</span>
+            {% elif 'Restarting' in c.status %}
+              <span class="badge badge-crit">重启中</span>
+            {% else %}
+              <span class="badge badge-idle">已停止</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 用户资源 -->
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>用户资源</h3>
+      <a href="/users" class="btn btn-xs">详情</a>
+    </div>
+    <table>
+      <thead><tr><th>用户</th><th>内存</th><th>进程</th></tr></thead>
+      <tbody hx-get="/partials/dashboard/users-brief" hx-trigger="every 30s" hx-swap="innerHTML">
+        {% for u in users[:6] %}
+        <tr>
+          <td><strong>{{ u.name }}</strong></td>
+          <td>{{ u.mem_gb }} GB</td>
+          <td>{{ u.proc_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  refreshDashboard();
+  initDashboardCharts();
+  setInterval(refreshDashboard, 15000);
+});
+</script>
+{% endblock %}

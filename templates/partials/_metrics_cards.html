@@ -1,0 +1,44 @@
+<!-- 系统指标卡片 -->
+<div class="stat-card">
+  <div class="label">内存</div>
+  <div class="value" id="mem-value">{{ sys.mem_percent|round|int }}%</div>
+  <div class="sub" id="mem-sub">{{ "%.1f"|format(sys.mem_used / 1073741824) }} GB / {{ "%.1f"|format(sys.mem_total / 1073741824) }} GB</div>
+  <div class="bar-bg"><div class="bar-fill" id="mem-bar" style="width:{{ sys.mem_percent }}%;background:{% if sys.mem_percent >= 85 %}var(--red){% elif sys.mem_percent >= 60 %}var(--yellow){% else %}var(--green){% endif %}"></div></div>
+</div>
+
+<div class="stat-card">
+  <div class="label">Swap</div>
+  <div class="value" id="swap-value">{{ sys.swap_percent|round|int }}%</div>
+  <div class="sub" id="swap-sub">{{ "%.1f"|format(sys.swap_used / 1073741824) }} GB / {{ "%.1f"|format(sys.swap_total / 1073741824) }} GB</div>
+  <div class="bar-bg"><div class="bar-fill" id="swap-bar" style="width:{{ sys.swap_percent }}%;background:{% if sys.swap_percent >= 85 %}var(--red){% elif sys.swap_percent >= 60 %}var(--yellow){% else %}var(--green){% endif %}"></div></div>
+</div>
+
+<div class="stat-card">
+  <div class="label">CPU</div>
+  <div class="value" id="cpu-value">{{ sys.cpu_percent|round|int }}%</div>
+  <div class="sub" id="cpu-sub">负载 {{ sys.load|join(' / ') }} ({{ sys.cpu_count }} 核)</div>
+  <div class="bar-bg"><div class="bar-fill" id="cpu-bar" style="width:{{ sys.cpu_percent }}%;background:{% if sys.cpu_percent >= 85 %}var(--red){% elif sys.cpu_percent >= 60 %}var(--yellow){% else %}var(--green){% endif %}"></div></div>
+</div>
+
+<div class="stat-card">
+  <div class="label">系统盘</div>
+  <div class="value" id="disk-value">{{ sys.disk_percent|round|int }}%</div>
+  <div class="sub" id="disk-sub">{{ "%.1f"|format(sys.disk_used / 1073741824) }} GB / {{ "%.1f"|format(sys.disk_total / 1073741824) }} GB</div>
+  <div class="bar-bg"><div class="bar-fill" id="disk-bar" style="width:{{ sys.disk_percent }}%;background:{% if sys.disk_percent >= 85 %}var(--red){% elif sys.disk_percent >= 60 %}var(--yellow){% else %}var(--green){% endif %}"></div></div>
+</div>
+
+{% if sys.gpu and sys.gpu.mem_total %}
+<div class="stat-card">
+  <div class="label">GPU (A800)</div>
+  <div class="value" id="gpu-value">{{ sys.gpu.util }}%</div>
+  {% set gp = (sys.gpu.mem_used / sys.gpu.mem_total * 100)|round|int %}
+  <div class="sub" id="gpu-sub">显存 {{ sys.gpu.mem_used }}/{{ sys.gpu.mem_total }} MiB | {{ sys.gpu.temp }}°C</div>
+  <div class="bar-bg"><div class="bar-fill" id="gpu-bar" style="width:{{ gp }}%;background:{% if gp >= 85 %}var(--red){% elif gp >= 60 %}var(--yellow){% else %}var(--green){% endif %}"></div></div>
+</div>
+{% endif %}
+
+<div class="stat-card">
+  <div class="label">运行时间</div>
+  <div class="value" id="uptime-value" style="font-size:18px">{{ sys.uptime }}</div>
+  <div class="sub">{{ sys.hostname }}</div>
+</div>

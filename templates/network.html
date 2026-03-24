@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}网络管理{% endblock %}
+{% block page_title %}网络管理{% endblock %}
+
+{% block content %}
+<div x-data="{ tab: 'ports' }">
+
+<div class="flex gap-2 mb-4">
+  <button class="btn btn-sm" :class="tab==='ports'?'btn-primary':''" @click="tab='ports'">端口监听</button>
+  <button class="btn btn-sm" :class="tab==='proxy'?'btn-primary':''" @click="tab='proxy'">代理</button>
+  <button class="btn btn-sm" :class="tab==='connections'?'btn-primary':''" @click="tab='connections'">连接统计</button>
+</div>
+
+<div x-show="tab==='ports'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header">
+      <h3>端口监听</h3>
+      <button class="btn btn-sm" hx-get="/network" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+    </div>
+    <table>
+      <thead><tr><th>端口</th><th>地址</th><th>进程</th><th>PID</th></tr></thead>
+      <tbody>
+      {% for p in ports %}
+        <tr>
+          <td><strong class="text-accent">{{ p.port }}</strong></td>
+          <td class="font-mono text-xs">{{ p.local_addr }}</td>
+          <td>{{ p.process }}</td>
+          <td class="text-muted">{{ p.pid }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="empty-state">无数据</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div x-show="tab==='proxy'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>代理状态</h3></div>
+    <div style="padding:20px">
+      <div class="flex items-center gap-3 mb-4">
+        <span>Clash 进程:</span>
+        {% if proxy.clash_running %}
+          <span class="badge badge-ok">运行中</span>
+        {% else %}
+          <span class="badge badge-idle">未运行</span>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-3 mb-4">
+        <span>HTTP 代理:</span>
+        <span class="font-mono text-sm">{{ proxy.http_proxy or '未设置' }}</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span>HTTPS 代理:</span>
+        <span class="font-mono text-sm">{{ proxy.https_proxy or '未设置' }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div x-show="tab==='connections'">
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>连接统计</h3></div>
+    <div class="log-viewer" style="padding:16px">{{ connections }}</div>
+  </div>
+</div>
+
+</div>
+{% endblock %}

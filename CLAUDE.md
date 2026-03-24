@@ -1,0 +1,106 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目概述
+
+ServerHub 是一个基于 FastAPI 的 Linux 服务器全功能 Web 管理系统，集成了 AI 运维智能体。面向实验室/团队场景，提供系统监控、Docker/服务管理、用户资源控制、AI 自动巡检等能力。
+
+**技术栈**: FastAPI + Jinja2 + HTMX + Alpine.js + SQLite(aiosqlite) + Deep Agents(LangGraph) + xterm.js
+
+## 运行与开发
+
+```bash
+# 环境: 必须使用 serverhub conda 环境 (Python 3.11)，deepagents 不兼容 3.10
+conda activate serverhub
+
+# 开发模式 (自动重载)
+python main.py
+# 或
+uvicorn main:app --host 0.0.0.0 --port 9900 --reload --workers 1
+
+# 生产部署 (systemd)
+sudo cp server-hub.service /etc/systemd/system/
+sudo systemctl enable --now server-hub
+```
+
+**workers 必须为 1** — SQLite 不支持多进程写入，且 agent checkpoint 需要单进程内存一致性。
+
+## 核心架构
+
+### 模块自发现机制
+
+`modules/__init__.py` 在启动时扫描 `modules/*/` 子目录，每个模块通过 `__init__.py` 导出：
+
+```python
+from modules.xxx.routes import router  # FastAPI APIRouter
+
+MODULE_INFO = {
+    "name": "xxx",              # 路由前缀标识
+    "display_name": "模块名",    # 侧边栏显示
+    "icon": "icon-name",        # Tabler Icons 名称
+    "category": "分类",          # 侧边栏分组
+    "required_role": "admin",   # "admin" 或 "user"
+    "order": 10,                # 侧边栏排序
+}
+```
+
+`main.py` 的 `lifespan` 中调用 `discover_modules()` 自动注册所有 router。新增模块只需创建 `modules/新模块/` 目录并导出 `MODULE_INFO` + `router`。
+
+### 页面渲染模式
+
+页面路由在 `main.py` 中直接定义（非模块 router）。每个页面使用 `_page_context()` 构建渲染上下文，包含 `user`、`sidebar_items`、`active_module`。
+
+模板继承链: `base.html` → 各页面。`base.html` 包含侧边栏、顶栏、暗色主题 CSS 变量。交互模式：
+- **HTMX**: 局部刷新（仪表盘卡片、Docker 状态）
+- **Alpine.js**: 客户端交互逻辑（对话、Cron 编辑、设置页面）
+
+### AI 智能体架构 (modules/agents/)
+
+基于 **Deep Agents 框架** (`deepagents 0.5.0`)，通过 `create_deep_agent()` 构建：
+
+```
+deep_agent.py   → 工厂函数，组装 model + tools + backend + interrupt_on
+llm.py          → 8 家 LLM 服务商注册表，parse_model_id("provider:model")
+tools.py        → 15 个 @tool 服务器管理工具（只读 + 操作 + 危险三级）
+safety.py       → build_interrupt_config() 生成审批规则 + Shell 黑名单
+prompts.py      → 中文系统提示词 + 巡检提示词模板
+patrol.py       → 6 个内置巡检任务 + asyncio 调度循环
+routes.py       → SSE 对话流 + 审批 + 巡检 + 设置 + WebSocket 终端
+terminal.py     → pty.fork() WebTerminal 类
+```
+
+**Backend**: `LocalShellBackend(root_dir=~, inherit_env=True)` — 赋予 agent Shell 执行 + 文件系统能力。
+
+**内置工具** (由 Deep Agents middleware 注入): `execute`(Shell), `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`, `write_todos`(Planning), `task`(子智能体)。
+
+**SSE 事件类型**: `message`, `tool_call`, `tool_result`, `todo_update`, `approval_request`, `done`, `error`。
+
+**模型 ID 格式**: `provider:model_name`，如 `openrouter:deepseek/deepseek-chat`。所有服务商通过 OpenAI 兼容 API 统一接入 `ChatOpenAI`。
+
+### 认证系统 (auth/)
+
+JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admin`(完全控制) / `user`(只读监控)。
+
+依赖注入: `get_current_user` (验证登录), `require_role("admin")` (验证角色)。
+
+### 脚本桥接 (scripts_bridge/)
+
+`registry.py` 白名单注册可执行的运维脚本，`executor.py` 提供沙箱化执行。AI agent 的 `execute_ops_script` 工具通过此桥接调用预定义脚本。
+
+### 数据库
+
+两个 SQLite 数据库:
+- `data/server-hub.db` — 应用数据（用户、审计、指标、通知、agent 对话/审批/巡检）
+- `data/agent-checkpoints.db` — LangGraph checkpoint（agent 会话状态持久化）
+
+表结构在 `database.py:init_tables()` 中定义，应用启动时自动创建。
+
+## 关键约定
+
+- **敏感文件禁读**: `.env`, `~/.api_keys`, `~/.telegram_config`, `~/config.yaml`
+- **环境变量前缀**: `SERVERHUB_*`（应用配置），各服务商 API Key 用各自的 env var（见 `llm.py` PROVIDERS）
+- **API 路由前缀**: 每个模块 `APIRouter(prefix="/api/模块名")`
+- **审计中间件**: 所有 POST/PUT/DELETE `/api/*` 请求自动记录到 `audit_log` 表
+- **Agent 安全层**: `supervised` 模式下危险操作触发 `interrupt_on` 审批；`autonomous` 模式（巡检用）不中断但仍有 Shell 黑名单底线防护
+- **Cron 服务**: Python 3.11 的 f-string 不支持反斜杠，匹配正则时先提取 match 对象再在 f-string 中引用

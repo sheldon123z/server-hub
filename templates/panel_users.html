@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}面板用户{% endblock %}
+{% block page_title %}面板用户{% endblock %}
+
+{% block content %}
+<div x-data="{ showCreate: false, newUser: {username:'', password:'', display_name:'', role:'user'} }">
+
+<div class="data-table-wrapper">
+  <div class="data-table-header">
+    <h3>面板用户管理</h3>
+    <button class="btn btn-primary btn-sm" @click="showCreate=true">新建用户</button>
+  </div>
+  <table>
+    <thead><tr><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>最后登录</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for u in panel_users %}
+      <tr>
+        <td><strong>{{ u.username }}</strong></td>
+        <td>{{ u.display_name }}</td>
+        <td><span class="badge {% if u.role == 'admin' %}badge-crit{% else %}badge-info{% endif %}">{{ u.role }}</span></td>
+        <td>
+          {% if u.disabled %}<span class="badge badge-idle">已禁用</span>
+          {% else %}<span class="badge badge-ok">正常</span>{% endif %}
+        </td>
+        <td class="text-xs text-muted">{{ u.last_login or '从未' }}</td>
+        <td>
+          <div class="flex gap-2">
+            {% if u.username != user.username %}
+            <button class="btn btn-xs"
+                    hx-put="/api/panel-users/{{ u.id }}"
+                    hx-vals='{"disabled": {{ 0 if u.disabled else 1 }}}'
+                    hx-swap="none"
+                    @htmx:after-request="showToast('已更新', 'ok'); htmx.ajax('GET','/panel_users',{target:'#main-content'})">
+              {{ '启用' if u.disabled else '禁用' }}
+            </button>
+            <button class="btn btn-danger btn-xs"
+                    hx-delete="/api/panel-users/{{ u.id }}"
+                    hx-confirm="确定删除用户 {{ u.username }}?"
+                    hx-swap="none"
+                    @htmx:after-request="showToast('已删除', 'ok'); htmx.ajax('GET','/panel_users',{target:'#main-content'})">
+              删除
+            </button>
+            {% else %}
+            <span class="text-xs text-muted">当前用户</span>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 创建用户弹窗 -->
+<template x-if="showCreate">
+  <div class="modal-overlay" @click.self="showCreate=false">
+    <div class="modal">
+      <h3>新建面板用户</h3>
+      <div class="form-group">
+        <label class="form-label">用户名</label>
+        <input x-model="newUser.username" class="form-input" placeholder="username">
+      </div>
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input x-model="newUser.password" class="form-input" type="password" placeholder="password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">显示名</label>
+        <input x-model="newUser.display_name" class="form-input" placeholder="显示名称">
+      </div>
+      <div class="form-group">
+        <label class="form-label">角色</label>
+        <select x-model="newUser.role" class="form-input">
+          <option value="user">普通用户 (只读)</option>
+          <option value="admin">管理员</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" @click="showCreate=false">取消</button>
+        <button class="btn btn-primary" @click="
+          apiCall('/api/panel-users/', 'POST', newUser)
+            .then(() => { showToast('用户已创建', 'ok'); showCreate=false; htmx.ajax('GET','/panel_users',{target:'#main-content'}) })
+            .catch(e => showToast('创建失败: ' + e.message, 'err'))
+        ">创建</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+</div>
+{% endblock %}
