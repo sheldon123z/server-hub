@@ -14,7 +14,7 @@ import aiosqlite
 from pathlib import Path
 
 from deepagents import create_deep_agent
-from deepagents.backends.local_shell import LocalShellBackend
+from modules.agents.sandbox import SafeLocalShellBackend, SANDBOX_DIR
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from config import settings
@@ -30,15 +30,15 @@ logger = logging.getLogger(__name__)
 _agent_cache: dict = {}
 
 
-def _create_backend() -> LocalShellBackend:
-    """创建 LocalShellBackend — 赋予智能体 Shell 执行 + 文件系统能力
+def _create_backend() -> SafeLocalShellBackend:
+    """创建 SafeLocalShellBackend — 安全增强的 Shell 执行 + 文件系统能力
 
-    类似 Claude Code 的本地命令行能力：
-    - execute: 在服务器上执行任意 Shell 命令（受 interrupt_on 审批控制）
-    - read_file/write_file/edit_file: 直接操作服务器文件系统
-    - ls/glob/grep: 文件搜索和浏览
+    基于 Deep Agents 的 LocalShellBackend，增加：
+    - 敏感环境变量剥离（API Key 不泄露到 execute 子进程）
+    - 沙箱代码执行时自动 ulimit 资源限制
+    - 固定临时代码目录 /tmp/serverhub-sandbox/
     """
-    return LocalShellBackend(
+    return SafeLocalShellBackend(
         root_dir=os.path.expanduser("~"),  # 以用户主目录为工作根目录
         virtual_mode=False,  # 允许访问任意路径（通过 interrupt_on 控制安全）
         timeout=120,  # Shell 命令超时 120 秒

@@ -104,3 +104,9 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - **审计中间件**: 所有 POST/PUT/DELETE `/api/*` 请求自动记录到 `audit_log` 表
 - **Agent 安全层**: `supervised` 模式下危险操作触发 `interrupt_on` 审批；`autonomous` 模式（巡检用）不中断但仍有 Shell 黑名单底线防护
 - **Cron 服务**: Python 3.11 的 f-string 不支持反斜杠，匹配正则时先提取 match 对象再在 f-string 中引用
+
+## 开发原则
+
+- **框架优先**: 在实现新功能前，必须先查阅 Deep Agents 框架已有的实现方式（查看 `deepagents` 包源码或用 Context7 查文档），优先使用框架提供的机制，而非自己从零实现。例如：代码执行应通过框架的 Backend 架构（`write_file` + `execute`），而非自造 `run_code` 工具
+- **继承扩展**: 需要定制框架行为时，优先继承框架的类并 override 具体方法（如 `SafeLocalShellBackend` 继承 `LocalShellBackend`），而非绕过框架
+- **提示词引导**: 对于行为规范（如代码应写入哪个目录），优先通过系统提示词引导 agent 行为，而非硬编码到工具中
