@@ -32,6 +32,7 @@ TOOL_RISK_MAP = {
     "save_fault_case": RiskLevel.SAFE,
     "get_asset_inventory": RiskLevel.SAFE,
     "get_asset_topology": RiskLevel.SAFE,
+    "auto_fix_compliance": RiskLevel.DANGER,
     "update_user_quotas": RiskLevel.MODERATE,
     "docker_container_action": RiskLevel.MODERATE,
     "docker_compose_action": RiskLevel.MODERATE,
@@ -66,6 +67,7 @@ def build_interrupt_config(safety_mode: str) -> dict:
     return {
         # 自定义危险工具 — 始终审批
         "kill_user_processes": True,
+        "auto_fix_compliance": True,
         "execute_ops_script": True,
         # Docker/服务管理 — stop/down 操作需审批
         "docker_container_action": {"allowed_decisions": ["approve", "reject"]},
