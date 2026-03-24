@@ -142,7 +142,11 @@ async def fire_alert(rule: dict, severity: str, value: float):
             from modules.notifications.services import send_telegram
             emoji = "🚨" if severity == "critical" else "⚠️"
             await send_telegram(f"{emoji} 告警: {rule['name']}\n当前值: {value}\n级别: {severity}")
-            await db.execute("UPDATE alert_history SET notified = 1 WHERE rule_id = ? AND message = ? ORDER BY created_at DESC LIMIT 1", (rule["id"], message))
+            await db.execute(
+                "UPDATE alert_history SET notified = 1 WHERE rowid = ("
+                "SELECT rowid FROM alert_history WHERE rule_id = ? AND message = ? ORDER BY created_at DESC LIMIT 1"
+                ")", (rule["id"], message),
+            )
             await db.commit()
         except Exception as e:
             logger.error(f"告警通知发送失败: {e}")

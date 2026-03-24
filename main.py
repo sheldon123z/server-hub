@@ -3,10 +3,13 @@ ServerHub — NF5468M6 服务器管理系统
 FastAPI + Jinja2/HTMX + SQLite
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
@@ -108,8 +111,8 @@ class AuditMiddlewareWrapper(BaseHTTPMiddleware):
                     ip=request.client.host if request.client else "unknown",
                     success=response.status_code < 400,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"审计日志写入失败: {e}")
         return response
 
 app.add_middleware(AuditMiddlewareWrapper)

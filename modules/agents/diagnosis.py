@@ -165,8 +165,8 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
             else:
                 summary = f"🔍 故障诊断完成 (来源: {source})\n{report_text[:400]}"
             await send_telegram(summary[:1000])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"诊断报告通知发送失败: {e}")
 
         logger.info(f"故障诊断完成: {report_id}")
         return report_id
@@ -181,6 +181,6 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
                 (report_id, source, severity, f"诊断执行失败: {e}"),
             )
             await db.commit()
-        except Exception:
-            pass
+        except Exception as e2:
+            logger.error(f"故障报告存储也失败: {e2}")
         return None

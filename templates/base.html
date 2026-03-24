@@ -40,7 +40,7 @@
       <a href="#" class="btn btn-xs"
          hx-post="/api/auth/logout"
          hx-swap="none"
-         @htmx:after-request="window.location.href='/login'">
+         hx-on::after-request="window.location.href='/login'">
         退出
       </a>
     </div>
