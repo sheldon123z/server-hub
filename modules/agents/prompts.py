@@ -1,5 +1,6 @@
 """系统提示词"""
 
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -51,11 +52,33 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务�
 - 用 Markdown 格式化（表格、代码块等）
 
 当前安全模式: {safety_mode}
-"""
+当前用户角色: {user_role}
+{role_instruction}"""
 
 
-def get_system_prompt(safety_mode: str) -> str:
-    """获取系统提示词 — 优先读取自定义文件，不存在则用默认"""
+ROLE_INSTRUCTIONS = {
+    "admin": "",
+    "user": (
+        "\n## 角色限制（严格遵守）\n"
+        "当前用户为 **普通用户**，你只能执行 **只读查询** 操作：\n"
+        "- 查看系统状态、Docker 容器、服务、用户资源、磁盘信息\n"
+        "- 查看日志、合规检查结果、资源趋势、故障案例\n"
+        "- 不能执行修改、重启、停止、删除、创建等操作\n"
+        "- 不能执行 Shell 命令\n"
+        "- 不能写入或编辑文件\n"
+        "- 不能委派子智能体\n"
+        "如用户要求执行修改操作，请礼貌告知：「该操作需要管理员权限，请联系管理员执行。」\n"
+    ),
+}
+
+
+def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
+    """获取系统提示词 — 优先读取自定义文件，不存在则用默认
+
+    Args:
+        safety_mode: "supervised" 或 "autonomous"
+        user_role: "admin" 或 "user"
+    """
     from config import settings
     custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
     if custom_path.exists():
@@ -65,7 +88,15 @@ def get_system_prompt(safety_mode: str) -> str:
             template = SYSTEM_PROMPT
     else:
         template = SYSTEM_PROMPT
-    return template.format(safety_mode=safety_mode)
+
+    role_instruction = ROLE_INSTRUCTIONS.get(user_role, ROLE_INSTRUCTIONS["user"])
+    # defaultdict 兼容旧 custom_prompt.txt（可能缺少新占位符）
+    return template.format_map(defaultdict(
+        str,
+        safety_mode=safety_mode,
+        user_role=user_role,
+        role_instruction=role_instruction,
+    ))
 
 
 PATROL_PROMPT = """你是 ServerHub 自动巡检助手。请执行以下巡检任务，调用相应工具收集数据并分析。

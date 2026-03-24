@@ -262,8 +262,11 @@ def kill_user_processes(username: str) -> str:
 
 # ─── 工具注册表 ───
 
-def get_server_tools() -> list:
-    """返回所有服务器管理工具（15 个）
+def get_server_tools(user_role: str = "admin") -> list:
+    """返回服务器管理工具列表
+
+    Args:
+        user_role: "admin" 返回全部工具，"user" 只返回只读安全工具
 
     Deep Agents 还会自动注入内置工具:
     - execute (持久化 Shell)
@@ -272,7 +275,7 @@ def get_server_tools() -> list:
     - write_todos (任务规划)
     - task (子智能体)
     """
-    return [
+    all_tools = [
         get_system_overview,
         get_disk_info,
         get_user_resources,
@@ -288,6 +291,18 @@ def get_server_tools() -> list:
         update_user_quotas,
         execute_ops_script,
         kill_user_processes,
+    ]
+
+    if user_role == "admin":
+        return all_tools
+
+    # 普通用户：只返回 SAFE 级别工具，排除 send_notification 和 save_fault_case
+    from modules.agents.safety import TOOL_RISK_MAP, RiskLevel
+    excluded = {"send_notification", "save_fault_case"}
+    return [
+        t for t in all_tools
+        if TOOL_RISK_MAP.get(t.name, RiskLevel.DANGER) == RiskLevel.SAFE
+        and t.name not in excluded
     ]
 
 
