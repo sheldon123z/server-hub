@@ -37,6 +37,18 @@
 - API 路由前缀遵循 `/api/<module>`
 - 敏感文件默认禁读: `.env`, `~/.api_keys`, `~/.telegram_config`, `~/config.yaml`
 
+## 开发规范同步
+
+- 提交实现前必须遵循 [docs/CONTRIBUTING.md](/home/zhengxiaodong/scripts/server-hub/docs/CONTRIBUTING.md)；若本文件与其冲突，以 `docs/CONTRIBUTING.md` 为准
+- Python 遵循 PEP 8、4 空格缩进、单行不超过 120 字符；导入顺序为标准库、第三方、本地模块；模块顶层优先定义 `logger = logging.getLogger(__name__)`
+- 命名遵循：函数/变量 `snake_case`、类 `PascalCase`、常量 `UPPER_CASE`、模块目录小写 `snake_case`
+- API 约定：路径段使用 kebab-case，查询参数和路径参数使用 snake_case；写操作返回 `{"ok": true, ...}`，查询接口直接返回数据；错误统一用 `HTTPException`
+- 认证与鉴权必须通过依赖注入完成，优先使用 `get_current_user` 和 `require_role("admin")`，不要在 handler 内自行解析 token
+- 数据库访问统一走 `get_db()`；SQL 必须参数化，禁止字符串拼接；写操作优先 `commit` 后再执行通知等副作用
+- 模块开发遵循 `routes.py` 薄层、`services.py` 厚层原则；新增表统一放在 `database.py:init_tables()` 中
+- 前端交互遵循 Alpine.js `init()` 初始化约定；HTMX 与 Alpine.js 不处理同一交互；页面模板统一继承 `base.html`
+- Git 提交信息遵循 `feat|fix|docs|refactor|perf|test|chore|style: 中文描述` 格式；涉及功能/API/Agent 工具变更时，同步更新对应 `docs/` 文档
+
 ## 运行与验证
 
 - 开发启动: `python main.py`
