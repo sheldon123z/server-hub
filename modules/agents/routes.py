@@ -79,6 +79,17 @@ async def chat(request: Request, body: ChatRequest, user=Depends(require_role("a
                                     "input": tc["args"],
                                 }, ensure_ascii=False),
                             }
+                            # 记录工具调用事件
+                            try:
+                                from modules.agents.safety import TOOL_RISK_MAP
+                                await db.execute(
+                                    "INSERT INTO agent_events (conversation_id, event_type, tool_name, tool_input, risk_level, username) "
+                                    "VALUES (?, 'tool_call', ?, ?, ?, ?)",
+                                    (conversation_id, tc["name"], json.dumps(tc["args"], ensure_ascii=False)[:1000],
+                                     TOOL_RISK_MAP.get(tc["name"], "safe"), user["username"]),
+                                )
+                            except Exception:
+                                pass
                     elif last.content:
                         yield {
                             "event": "message",
@@ -96,6 +107,16 @@ async def chat(request: Request, body: ChatRequest, user=Depends(require_role("a
                             "content": last.content[:1500] if last.content else "",
                         }, ensure_ascii=False),
                     }
+                    # 记录工具结果事件
+                    try:
+                        await db.execute(
+                            "INSERT INTO agent_events (conversation_id, event_type, tool_name, tool_output, username) "
+                            "VALUES (?, 'tool_result', ?, ?, ?)",
+                            (conversation_id, getattr(last, "name", ""),
+                             (last.content[:500] if last.content else ""), user["username"]),
+                        )
+                    except Exception:
+                        pass
 
             # 检查 interrupt（审批请求）
             snapshot = await agent.aget_state(config)
@@ -110,12 +131,15 @@ async def chat(request: Request, body: ChatRequest, user=Depends(require_role("a
                     review_configs = interrupt_value.get("review_configs", [])
 
                     if action_requests:
+                        approval_ids = []
                         for action in action_requests:
+                            aid = str(uuid.uuid4())
+                            approval_ids.append(aid)
                             await db.execute(
                                 "INSERT INTO agent_approvals (id, conversation_id, tool_name, tool_input, risk_level, description) "
                                 "VALUES (?, ?, ?, ?, ?, ?)",
                                 (
-                                    approval_id, conversation_id,
+                                    aid, conversation_id,
                                     action.get("name", ""),
                                     json.dumps(action.get("args", {}), ensure_ascii=False),
                                     "danger",
@@ -127,7 +151,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(require_role("a
                         yield {
                             "event": "approval_request",
                             "data": json.dumps({
-                                "approval_id": approval_id,
+                                "approval_id": approval_ids[0],
                                 "conversation_id": conversation_id,
                                 "actions": action_requests,
                                 "review_configs": review_configs,
@@ -789,8 +813,8 @@ async def update_agent_settings(request: Request, user=Depends(require_role("adm
                 if not found:
                     lines.append(kv)
             env_path.write_text("\n".join(lines) + "\n")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f".env 写入失败，设置未持久化: {e}")
 
         from modules.agents.deep_agent import reset_agent_cache
         reset_agent_cache()

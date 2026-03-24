@@ -1,21 +1,26 @@
 """SQLite 数据库管理"""
 
+import asyncio
 import aiosqlite
 import os
 from config import settings
 
 _db: aiosqlite.Connection | None = None
+_db_lock = asyncio.Lock()
 
 
 async def get_db() -> aiosqlite.Connection:
     global _db
-    if _db is None:
-        os.makedirs(os.path.dirname(settings.db_path), exist_ok=True)
-        _db = await aiosqlite.connect(settings.db_path)
-        _db.row_factory = aiosqlite.Row
-        await _db.execute("PRAGMA journal_mode=WAL")
-        await _db.execute("PRAGMA foreign_keys=ON")
-        await init_tables(_db)
+    if _db is not None:
+        return _db
+    async with _db_lock:
+        if _db is None:
+            os.makedirs(os.path.dirname(settings.db_path), exist_ok=True)
+            _db = await aiosqlite.connect(settings.db_path)
+            _db.row_factory = aiosqlite.Row
+            await _db.execute("PRAGMA journal_mode=WAL")
+            await _db.execute("PRAGMA foreign_keys=ON")
+            await init_tables(_db)
     return _db
 
 

@@ -88,6 +88,14 @@ async def discover_all() -> dict:
     try:
         from modules.network.services import get_listening_ports
         ports = await get_listening_ports()
+        # 预加载服务名列表，避免在循环中重复调用
+        service_names = []
+        if stats["service"] > 0:
+            try:
+                from modules.services.services import list_services as _ls
+                service_names = [s["name"] for s in await _ls()]
+            except Exception:
+                pass
         for p in ports:
             port_str = f"{p['port']}/{p['proto']}"
             aid = f"port:{port_str}"
@@ -96,12 +104,11 @@ async def discover_all() -> dict:
                 "pid": p.get("pid", 0),
                 "process": p.get("process", ""),
             }, ensure_ascii=False)
-            # 推断端口所属容器或服务
+            # 推断端口所属服务
             deps = []
             proc = p.get("process", "")
-            if proc:
-                # 尝试匹配容器或服务
-                for s_name in [s["name"] for s in (await list_services() if stats["service"] else [])]:
+            if proc and service_names:
+                for s_name in service_names:
                     if s_name in proc:
                         deps.append(f"service:{s_name}")
                         break
