@@ -172,8 +172,8 @@
           <button class="btn btn-xs" :style="showTerminal?'background:var(--accent-dim);color:var(--accent);border-color:var(--accent)':''"
                   @click="showTerminal=!showTerminal; if(showTerminal) initTerminal()">&#9638; 终端</button>
           <div class="safety-toggle">
-            <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
-            <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
+            <button :class="safetyMode==='supervised'?'active':''" @click="setSafetyMode('supervised')">监督</button>
+            <button :class="safetyMode==='autonomous'?'active':''" @click="setSafetyMode('autonomous')">自主</button>
           </div>
         </div>
       </div>
@@ -437,6 +437,13 @@ function agentApp() {
       this.tab = t;
       localStorage.setItem('agent-tab', t);
       if (t === 'admin') this.loadAdmin();
+    },
+
+    setSafetyMode(mode) {
+      if (mode === 'autonomous' && this.safetyMode !== 'autonomous') {
+        if (!confirm('切换到自主模式后，AI 将直接执行所有操作（包括危险命令），不再弹出审批确认。\n\n确定要切换吗？')) return;
+      }
+      this.safetyMode = mode;
     },
 
     // AI巡检 vs Cron脚本 对照（功能相似但实现不同：AI用LLM分析，Cron是Bash脚本）
