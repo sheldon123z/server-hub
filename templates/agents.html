@@ -345,22 +345,29 @@
               <label class="text-xs text-muted">名称</label>
               <input class="form-input" style="font-size:12px" x-model="adminData.subagents[adminData.editingSubagent].name">
             </div>
-            <div>
-              <label class="text-xs text-muted">模型覆盖 (留空继承主模型)</label>
-              <div style="display:flex;gap:4px">
-                <select class="form-input" style="font-size:11px;flex:1"
-                        @change="onSubagentProviderChange(adminData.editingSubagent, $event.target.value)"
-                        :value="(adminData.subagents[adminData.editingSubagent].model||'').split(':')[0]||''">
+            <div x-data="{
+              get sa() { return $data.adminData.subagents[$data.adminData.editingSubagent] },
+              get provKey() { return (this.sa.model||'').split(':')[0] || '' },
+              get provModels() { const p = $data.adminData.providers.find(x=>x.id===this.provKey); return p ? p.models : []; },
+              pickProvider(pid) {
+                if (!pid) { this.sa.model = null; return; }
+                const p = $data.adminData.providers.find(x=>x.id===pid);
+                this.sa.model = pid + ':' + (p && p.models.length ? p.models[0].id : '');
+              },
+              pickModel(mid) { this.sa.model = this.provKey + ':' + mid; }
+            }">
+              <label class="text-xs text-muted">模型覆盖</label>
+              <div style="display:flex;gap:4px;margin-top:2px">
+                <select class="form-input" style="font-size:11px;flex:1" @change="pickProvider($event.target.value)" :value="provKey">
                   <option value="">继承主模型</option>
-                  <template x-for="prov in adminData.providers" :key="prov.id">
+                  <template x-for="prov in adminData.providers" :key="'mp-'+prov.id">
                     <option :value="prov.id" x-text="prov.name" :disabled="!prov.has_key && prov.id!=='ollama'"></option>
                   </template>
                 </select>
-                <select class="form-input" style="font-size:11px;flex:1"
-                        x-show="(adminData.subagents[adminData.editingSubagent].model||'').includes(':')"
-                        x-model="adminData.subagents[adminData.editingSubagent].model">
-                  <template x-for="m in getProviderModels(adminData.editingSubagent)" :key="m.id">
-                    <option :value="getSelectedProvider(adminData.editingSubagent)+':'+m.id" x-text="m.name"></option>
+                <select class="form-input" style="font-size:11px;flex:1" x-show="provKey"
+                        @change="pickModel($event.target.value)" :value="(sa.model||'').split(':').slice(1).join(':')">
+                  <template x-for="m in provModels" :key="'mm-'+m.id">
+                    <option :value="m.id" x-text="m.name"></option>
                   </template>
                 </select>
               </div>
@@ -745,25 +752,6 @@ function agentApp() {
         const d = await r.json();
         if(d.ok) { showToast('已重置','ok'); await this.loadAdmin(); }
       } catch(e) {}
-    },
-
-    getSelectedProvider(idx) {
-      const model = this.adminData.subagents[idx]?.model || '';
-      return model.split(':')[0] || '';
-    },
-    getProviderModels(idx) {
-      const provId = this.getSelectedProvider(idx);
-      const prov = this.adminData.providers.find(p => p.id === provId);
-      return prov ? prov.models : [];
-    },
-    onSubagentProviderChange(idx, provId) {
-      if (!provId) {
-        this.adminData.subagents[idx].model = null;
-        return;
-      }
-      const prov = this.adminData.providers.find(p => p.id === provId);
-      const firstModel = prov && prov.models.length ? prov.models[0].id : '';
-      this.adminData.subagents[idx].model = provId + ':' + firstModel;
     },
 
     addSubagent() {
