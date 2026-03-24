@@ -1,6 +1,6 @@
 """
 后台指标采集调度器
-定时采集系统指标并存入数据库，同时清理过期数据
+双频采集: 60s 全量快照存DB + 5s 轻量指标 WebSocket 推送
 """
 
 import asyncio
@@ -10,15 +10,16 @@ from datetime import datetime, timedelta
 
 from config import settings
 from database import get_db
-from modules.monitoring.collectors import collect_all
+from modules.monitoring.collectors import collect_all, collect_realtime_fast
 
 logger = logging.getLogger(__name__)
 
 _scheduler_task: asyncio.Task | None = None
+_ws_task: asyncio.Task | None = None
 
 
 async def _collect_and_store():
-    """采集一次指标并写入数据库，然后检查基线偏离"""
+    """采集一次完整指标并写入数据库，同时通过 WS 广播"""
     try:
         snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
         db = await get_db()
@@ -34,6 +35,13 @@ async def _collect_and_store():
             await check_baseline_deviation(snapshot)
         except Exception as e:
             logger.debug(f"基线检测跳过: {e}")
+
+        # 全量数据也通过 WS 广播
+        try:
+            from modules.monitoring.routes import ws_manager
+            await ws_manager.broadcast({"type": "metrics_full", "data": snapshot})
+        except Exception as e:
+            logger.debug(f"WS全量广播跳过: {e}")
 
     except Exception as e:
         logger.error(f"指标采集失败: {e}")
@@ -51,7 +59,7 @@ async def _cleanup_old_metrics():
 
 
 async def _scheduler_loop():
-    """调度器主循环"""
+    """调度器主循环 - 60s 全量采集存库"""
     logger.info(
         f"指标采集调度器已启动 (间隔: {settings.metrics_interval_seconds}s, "
         f"保留: {settings.metrics_retention_days}天)"
@@ -62,20 +70,44 @@ async def _scheduler_loop():
         await asyncio.sleep(settings.metrics_interval_seconds)
 
 
+async def _ws_broadcast_loop():
+    """5秒快速采集并广播到 WebSocket 客户端"""
+    from modules.monitoring.routes import ws_manager
+
+    logger.info(f"WebSocket 广播循环已启动 (间隔: {settings.ws_metrics_interval}s)")
+    while True:
+        if ws_manager.connections:
+            try:
+                snapshot = await asyncio.get_event_loop().run_in_executor(
+                    None, collect_realtime_fast
+                )
+                await ws_manager.broadcast({"type": "metrics", "data": snapshot})
+            except Exception as e:
+                logger.error(f"WS广播失败: {e}")
+        await asyncio.sleep(settings.ws_metrics_interval)
+
+
 async def start_scheduler():
-    """启动后台指标采集任务"""
-    global _scheduler_task
+    """启动后台指标采集任务（双频: DB存储 + WS推送）"""
+    global _scheduler_task, _ws_task
+
     if _scheduler_task is not None and not _scheduler_task.done():
         logger.warning("调度器已在运行中")
         return
+
     _scheduler_task = asyncio.create_task(_scheduler_loop())
-    logger.info("指标采集调度器任务已创建")
+    _ws_task = asyncio.create_task(_ws_broadcast_loop())
+    logger.info("指标采集调度器任务已创建 (DB存储 + WS推送)")
 
 
 async def stop_scheduler():
     """停止后台指标采集任务"""
-    global _scheduler_task
-    if _scheduler_task is not None and not _scheduler_task.done():
-        _scheduler_task.cancel()
-        logger.info("指标采集调度器已停止")
+    global _scheduler_task, _ws_task
+
+    for task, name in [(_scheduler_task, "DB采集"), (_ws_task, "WS广播")]:
+        if task is not None and not task.done():
+            task.cancel()
+            logger.info(f"{name}循环已停止")
+
     _scheduler_task = None
+    _ws_task = None

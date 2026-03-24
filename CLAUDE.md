@@ -160,3 +160,16 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - **运行时 agent 记忆位于 `data/agent-memory.md`**: 该文件是 AI 运维助手的长期记忆，由 Deep Agents MemoryMiddleware 加载到系统提示词。Agent 通过 `edit_file()` 自动更新。仓库根目录 `AGENTS.md` 留给外部编码助手/仓库协作说明使用
 - **SubAgent 规范**: 创建新 SubAgent 必须使用 `/create-subagent` skill，遵循 LangChain 官方 SubAgent 规范（4 个 Required 字段 + 最小工具集 + 500 词输出限制）。详见 `~/.claude/skills/create-subagent/`
 - **配置持久化**: 自定义配置存 `data/` 目录（.gitignore 已排除），不修改源码文件。优先读自定义文件，不存在则用源码默认值
+
+## 必须遵循的开发规范
+
+所有开发工作都必须遵循 [docs/CONTRIBUTING.md](/home/zhengxiaodong/scripts/server-hub/docs/CONTRIBUTING.md)；以下规则是协作时必须直接执行的摘要：
+
+- **编码风格**: Python 遵循 PEP 8、4 空格缩进、单行不超过 120 字符；文件头使用三引号说明模块功能；导入顺序为标准库、第三方库、本地模块；模块顶层优先定义 `logger = logging.getLogger(__name__)`
+- **命名规范**: 函数和变量使用 `snake_case`，类使用 `PascalCase`，常量使用 `UPPER_CASE`，模块目录保持小写 `snake_case`
+- **API 规范**: APIRouter 前缀统一为 `/api/<module>`；路径段用 kebab-case，查询参数和路径参数用 snake_case；POST/PUT/DELETE 返回 `{"ok": true, ...}`；GET 直接返回数据；错误统一使用 `HTTPException`
+- **认证与审计**: 认证和鉴权必须通过依赖注入声明，优先使用 `get_current_user`、`require_role("admin")`；不要在 handler 内手动解析 token；写操作由审计中间件自动记录，不要重复造日志逻辑
+- **数据库规范**: 统一通过 `get_db()` 访问主库；新增表写入 `database.py:init_tables()`；SQL 必须参数化；写操作先 `commit` 再执行通知等副作用
+- **模块结构**: `routes.py` 只处理 HTTP 层，业务逻辑放入 `services.py`；新增模块需导出 `MODULE_INFO` 和 `router`
+- **前端规范**: Alpine.js 组件统一通过 `init()` 初始化；HTMX 和 Alpine.js 不要同时接管同一交互；模板必须继承 `base.html`；Modal 放在主 Grid 布局外侧避免被裁剪
+- **提交与文档**: Git 提交消息遵循 `feat|fix|docs|refactor|perf|test|chore|style: 中文描述`；新增 API、Agent 工具、模块或架构变化时，必须同步更新 `docs/` 中对应文档

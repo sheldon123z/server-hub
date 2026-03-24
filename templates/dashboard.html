@@ -1,86 +1,581 @@
 {% extends "base.html" %}
 {% block title %}仪表盘{% endblock %}
-{% block page_title %}仪表盘{% endblock %}
+{% block page_title %}监控大屏{% endblock %}
 
 {% block top_actions %}
-<button class="btn btn-sm" onclick="refreshDashboard(); showToast('已刷新', 'ok')">刷新</button>
+<button class="btn btn-sm" @click="openLocate('alerts')">告警历史</button>
+<button class="btn btn-sm" @click="openLocate('processes', {sort:'cpu'})">进程排行</button>
 {% endblock %}
 
 {% block content %}
-<div id="dashboard-page">
+<div id="dashboard-page" x-data="dashboardState()" x-init="init()">
 
-<!-- 系统指标卡片 -->
-<div class="stats-grid" hx-get="/partials/dashboard/cards" hx-trigger="every 15s" hx-swap="innerHTML">
-  {% include "partials/_metrics_cards.html" %}
-</div>
-
-<!-- CPU 历史图表 -->
-<div class="chart-container">
-  <div class="flex items-center justify-between mb-2">
-    <h3 style="font-size:14px;font-weight:600">CPU 使用率趋势 (6h)</h3>
+<!-- ═══════════════════ Layer 1: 总览层 ═══════════════════ -->
+<template x-if="!drillTarget">
+<div>
+  <!-- 告警摘要条 -->
+  <div class="alert-bar">
+    <span class="alert-badge alert-badge-critical" x-show="alerts.critical > 0">
+      严重 <span x-text="alerts.critical"></span>
+    </span>
+    <span class="alert-badge alert-badge-warning" x-show="alerts.warning > 0">
+      警告 <span x-text="alerts.warning"></span>
+    </span>
+    <span class="alert-badge alert-badge-ok" x-show="alerts.critical === 0 && alerts.warning === 0">
+      系统正常
+    </span>
+    <span class="ws-indicator" :class="wsConnected ? 'connected' : 'disconnected'">
+      <span class="ws-dot"></span>
+      <span x-text="wsConnected ? '实时' : '断连'" style="font-size:12px"></span>
+    </span>
   </div>
-  <div style="height:200px">
-    <canvas id="metrics-chart"></canvas>
-  </div>
-</div>
 
-<!-- 快速概览表格 -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-  <!-- Docker 状态 -->
-  <div class="data-table-wrapper">
-    <div class="data-table-header">
-      <h3>Docker 容器</h3>
-      <a href="/docker" class="btn btn-xs">详情</a>
+  <!-- 指标卡片网格 -->
+  <div class="stats-grid-enhanced">
+    <!-- 主机状态卡 -->
+    <div class="stat-card-enhanced" @click="drillTo('system')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>主机状态</span>
+      </div>
+      <div class="stat-card-value" style="color: var(--green)">运行中</div>
+      <div class="stat-card-sub" x-text="uptime ? ('运行 ' + uptime) : '加载中...'"></div>
     </div>
-    <table>
-      <thead><tr><th>容器</th><th>状态</th></tr></thead>
-      <tbody hx-get="/partials/dashboard/docker-brief" hx-trigger="every 30s" hx-swap="innerHTML">
-        {% for c in docker_containers[:8] %}
+
+    <!-- CPU 卡 -->
+    <div class="stat-card-enhanced" @click="drillTo('cpu')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        <span>CPU</span>
+      </div>
+      <div class="stat-card-value" :style="{color: statusColor(cpu.overall_percent)}" x-text="formatPercentM(cpu.overall_percent)"></div>
+      <div class="stat-card-sub" x-text="cpu.count + '核 | 负载 ' + (cpu.load_avg ? cpu.load_avg['1min'] : 0)"></div>
+      <div class="sparkline-container" id="sparkCpu"></div>
+    </div>
+
+    <!-- 内存卡 -->
+    <div class="stat-card-enhanced" @click="drillTo('memory')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19v-3"/><path d="M10 19v-3"/><path d="M14 19v-3"/><path d="M18 19v-3"/><path d="M8 11V9"/><path d="M16 11V9"/><path d="M12 11V9"/><path d="M2 15h20"/><path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7z"/></svg>
+        <span>内存</span>
+      </div>
+      <div class="stat-card-value" :style="{color: statusColor(memory.ram ? memory.ram.percent : 0)}" x-text="formatPercentM(memory.ram ? memory.ram.percent : 0)"></div>
+      <div class="stat-card-sub" x-text="(memory.ram ? formatBytesM(memory.ram.used) + ' / ' + formatBytesM(memory.ram.total) : '-')"></div>
+      <div class="sparkline-container" id="sparkMem"></div>
+    </div>
+
+    <!-- Swap 卡 -->
+    <div class="stat-card-enhanced" @click="drillTo('memory')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        <span>Swap</span>
+      </div>
+      <div class="stat-card-value" :style="{color: statusColor(memory.swap ? memory.swap.percent : 0)}" x-text="formatPercentM(memory.swap ? memory.swap.percent : 0)"></div>
+      <div class="stat-card-sub" x-text="(memory.swap ? formatBytesM(memory.swap.used) + ' / ' + formatBytesM(memory.swap.total) : '-')"></div>
+    </div>
+
+    <!-- 磁盘卡 -->
+    <div class="stat-card-enhanced" @click="drillTo('disk')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        <span>磁盘 /</span>
+      </div>
+      <div class="stat-card-value" :style="{color: statusColor(disk.length ? disk[0].percent : 0)}" x-text="disk.length ? formatPercentM(disk[0].percent) : '-'"></div>
+      <div class="stat-card-sub" x-text="disk.length ? (formatBytesM(disk[0].used) + ' / ' + formatBytesM(disk[0].total)) : '-'"></div>
+    </div>
+
+    <!-- 网络卡 -->
+    <div class="stat-card-enhanced" @click="drillTo('network')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        <span>网络</span>
+      </div>
+      <div class="stat-card-value" style="font-size:18px">
+        <span style="color:#38bdf8" x-text="'&#8595; ' + formatRate(network.totals ? network.totals.bytes_recv_rate : 0)"></span>
+      </div>
+      <div class="stat-card-sub">
+        <span x-text="'&#8593; ' + formatRate(network.totals ? network.totals.bytes_sent_rate : 0)"></span>
+        <span x-show="network.tcp_total" x-text="' | TCP ' + network.tcp_total" style="margin-left:6px"></span>
+      </div>
+      <div class="sparkline-container" id="sparkNet"></div>
+    </div>
+
+    <!-- GPU 大卡（span 2列）-->
+    <div class="stat-card-enhanced stat-card-wide" @click="drillTo('gpu')">
+      <div class="stat-card-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4"/><path d="M14 12h4"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/></svg>
+        <span x-text="gpu.name || 'GPU'"></span>
+      </div>
+      <div style="display:flex;gap:24px;align-items:flex-end">
+        <div>
+          <div class="stat-card-label">利用率</div>
+          <div class="stat-card-value" :style="{color: statusColor(gpu.util)}" x-text="gpu.util + '%'"></div>
+        </div>
+        <div>
+          <div class="stat-card-label">显存</div>
+          <div class="stat-card-value" style="font-size:18px" x-text="gpu.mem_used + ' / ' + gpu.mem_total + ' MB'"></div>
+        </div>
+        <div>
+          <div class="stat-card-label">温度</div>
+          <div class="stat-card-value" style="font-size:18px" :style="{color: gpu.temp > 80 ? '#f87171' : gpu.temp > 65 ? '#fbbf24' : '#4ade80'}" x-text="gpu.temp + ' C'"></div>
+        </div>
+      </div>
+      <div class="sparkline-container" id="sparkGpu"></div>
+    </div>
+  </div>
+
+  <!-- 24h 多指标趋势图 -->
+  <div class="chart-card">
+    <div class="chart-card-header">
+      <h3>系统负载趋势 (24h)</h3>
+      <span class="text-xs text-muted">CPU / Memory / GPU</span>
+    </div>
+    <div id="overview-trend" class="chart-box-lg"></div>
+  </div>
+
+  <!-- Docker + 用户 双栏 -->
+  <div class="dashboard-bottom-grid">
+    <!-- Docker 健康度 -->
+    <div class="info-card" @click="drillTo('docker')">
+      <h3>Docker 容器组
+        <span class="badge badge-info" style="margin-left:8px;font-size:11px"
+              x-text="docker.total_running + '/' + docker.total_containers + ' 运行中'"></span>
+      </h3>
+      <template x-for="(info, name) in docker.groups" :key="name">
+        <div class="docker-group-row">
+          <span x-text="name" class="docker-group-name"></span>
+          <span class="docker-group-count" x-text="info.running + '/' + info.count"></span>
+          <span class="docker-group-badge" :class="info.running === info.count ? 'badge-ok' : 'badge-warn'"
+                x-text="info.running === info.count ? '健康' : '异常'"></span>
+        </div>
+      </template>
+      <div x-show="Object.keys(docker.groups).length === 0" class="text-xs text-muted" style="padding:12px 0">
+        等待数据...
+      </div>
+    </div>
+
+    <!-- 用户资源 TOP3 -->
+    <div class="info-card" @click="openLocate('processes', {sort:'mem'})">
+      <h3>资源 TOP 进程</h3>
+      <table class="process-table" style="margin-top:8px">
+        <thead>
+          <tr><th>进程</th><th>用户</th><th>CPU%</th><th>内存%</th></tr>
+        </thead>
+        <tbody>
+          <template x-for="p in (topProcesses.by_cpu || []).slice(0, 5)" :key="p.pid">
+            <tr>
+              <td><span class="font-mono text-xs" x-text="p.name || p.cmd"></span></td>
+              <td x-text="p.user"></td>
+              <td :style="{color: statusColor(p.cpu_percent)}" x-text="p.cpu_percent.toFixed(1) + '%'"></td>
+              <td x-text="p.mem_percent.toFixed(1) + '%'"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div x-show="!topProcesses.by_cpu || topProcesses.by_cpu.length === 0" class="text-xs text-muted" style="padding:12px 0">
+        等待数据...
+      </div>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ═══════════════════ Layer 2: CPU 详情 ═══════════════════ -->
+<template x-if="drillTarget === 'cpu'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>CPU 详情</h2>
+    <span class="text-xs text-muted" x-text="cpu.count + ' 逻辑核心'"></span>
+  </div>
+  <div class="detail-grid">
+    <!-- Gauge -->
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>总体利用率</h3></div>
+      <div id="cpu-detail-gauge" class="chart-box-md"></div>
+      <div style="text-align:center;margin-top:8px">
+        <span class="text-sm text-muted">负载: </span>
+        <span class="font-mono" x-text="cpu.load_avg ? (cpu.load_avg['1min'] + ' / ' + cpu.load_avg['5min'] + ' / ' + cpu.load_avg['15min']) : '-'"></span>
+      </div>
+    </div>
+    <!-- Heatmap -->
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>各核心利用率</h3></div>
+      <div id="cpu-detail-heatmap" class="chart-box-md"></div>
+    </div>
+  </div>
+  <!-- Top CPU 进程 -->
+  <div class="chart-card" style="margin-top:16px">
+    <div class="chart-card-header"><h3>CPU 占用 TOP 10</h3></div>
+    <table class="process-table">
+      <thead><tr><th>PID</th><th>用户</th><th>进程</th><th>CPU%</th><th>内存%</th><th>操作</th></tr></thead>
+      <tbody>
+        <template x-for="p in (topProcesses.by_cpu || []).slice(0, 10)" :key="p.pid">
+          <tr>
+            <td class="font-mono text-xs" x-text="p.pid"></td>
+            <td x-text="p.user"></td>
+            <td x-text="p.name || p.cmd"></td>
+            <td :style="{color: statusColor(p.cpu_percent)}" x-text="p.cpu_percent.toFixed(1) + '%'"></td>
+            <td x-text="p.mem_percent.toFixed(1) + '%'"></td>
+            <td><button class="kill-btn" @click="killProcess(p.pid)">Kill</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+</template>
+
+<!-- ═══════════════════ Layer 2: 内存详情 ═══════════════════ -->
+<template x-if="drillTarget === 'memory'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>内存详情</h2>
+  </div>
+  <div class="detail-grid">
+    <!-- RAM Gauge -->
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>RAM 使用率</h3></div>
+      <div id="mem-detail-gauge" class="chart-box-md"></div>
+      <div style="text-align:center;margin-top:8px">
+        <span class="font-mono" x-text="memory.ram ? (formatBytesM(memory.ram.used) + ' / ' + formatBytesM(memory.ram.total)) : '-'"></span>
+        <div class="text-xs text-muted" x-text="memory.ram ? ('可用: ' + formatBytesM(memory.ram.available)) : ''"></div>
+      </div>
+    </div>
+    <!-- Swap info -->
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>Swap</h3></div>
+      <div style="padding:30px 20px;text-align:center">
+        <div class="stat-card-value" :style="{color: statusColor(memory.swap ? memory.swap.percent : 0)}"
+             x-text="formatPercentM(memory.swap ? memory.swap.percent : 0)" style="font-size:36px"></div>
+        <div class="text-sm text-muted" style="margin-top:8px"
+             x-text="memory.swap ? (formatBytesM(memory.swap.used) + ' / ' + formatBytesM(memory.swap.total)) : '-'"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Top Memory 进程 -->
+  <div class="chart-card" style="margin-top:16px">
+    <div class="chart-card-header"><h3>内存占用 TOP 10</h3></div>
+    <table class="process-table">
+      <thead><tr><th>PID</th><th>用户</th><th>进程</th><th>内存%</th><th>RSS</th><th>操作</th></tr></thead>
+      <tbody>
+        <template x-for="p in (topProcesses.by_mem || []).slice(0, 10)" :key="p.pid">
+          <tr>
+            <td class="font-mono text-xs" x-text="p.pid"></td>
+            <td x-text="p.user"></td>
+            <td x-text="p.name || p.cmd"></td>
+            <td :style="{color: statusColor(p.mem_percent)}" x-text="p.mem_percent.toFixed(1) + '%'"></td>
+            <td class="font-mono" x-text="p.rss ? formatBytesM(p.rss) : '-'"></td>
+            <td><button class="kill-btn" @click="killProcess(p.pid)">Kill</button></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+</template>
+
+<!-- ═══════════════════ Layer 2: 磁盘详情 ═══════════════════ -->
+<template x-if="drillTarget === 'disk'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>磁盘详情</h2>
+  </div>
+  <!-- 分区列表 -->
+  <div class="chart-card">
+    <div class="chart-card-header"><h3>分区使用情况</h3></div>
+    <table class="process-table">
+      <thead><tr><th>挂载点</th><th>设备</th><th>总量</th><th>已用</th><th>可用</th><th>使用率</th></tr></thead>
+      <tbody>
+        <template x-for="d in disk" :key="d.mountpoint">
+          <tr>
+            <td class="font-mono" x-text="d.mountpoint"></td>
+            <td class="text-xs text-muted" x-text="d.device"></td>
+            <td x-text="formatBytesM(d.total)"></td>
+            <td x-text="formatBytesM(d.used)"></td>
+            <td x-text="formatBytesM(d.free || (d.total - d.used))"></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="bar-bg" style="flex:1;height:6px">
+                  <div class="bar-fill" :style="{width: d.percent+'%', background: statusColor(d.percent)}"></div>
+                </div>
+                <span class="font-mono text-xs" :style="{color: statusColor(d.percent)}" x-text="d.percent + '%'"></span>
+              </div>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  <!-- Inode -->
+  <div class="chart-card" style="margin-top:16px" x-show="inode && inode.length">
+    <div class="chart-card-header"><h3>Inode 使用</h3></div>
+    <table class="process-table">
+      <thead><tr><th>挂载点</th><th>总量</th><th>已用</th><th>使用率</th></tr></thead>
+      <tbody>
+        <template x-for="d in inode" :key="d.mountpoint">
+          <tr>
+            <td class="font-mono" x-text="d.mountpoint"></td>
+            <td x-text="d.total ? d.total.toLocaleString() : '-'"></td>
+            <td x-text="d.used ? d.used.toLocaleString() : '-'"></td>
+            <td :style="{color: statusColor(d.percent)}" x-text="d.percent + '%'"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  <!-- Disk IO -->
+  <div class="chart-card" style="margin-top:16px" x-show="diskIo && diskIo.devices && Object.keys(diskIo.devices).length">
+    <div class="chart-card-header"><h3>磁盘 I/O</h3></div>
+    <table class="process-table">
+      <thead><tr><th>设备</th><th>读速率</th><th>写速率</th><th>IOPS 读</th><th>IOPS 写</th></tr></thead>
+      <tbody>
+        <template x-for="(info, dev) in (diskIo.devices || {})" :key="dev">
+          <tr>
+            <td class="font-mono" x-text="dev"></td>
+            <td x-text="formatRate(info.read_bytes_rate || 0)"></td>
+            <td x-text="formatRate(info.write_bytes_rate || 0)"></td>
+            <td x-text="(info.read_iops || 0).toFixed(0)"></td>
+            <td x-text="(info.write_iops || 0).toFixed(0)"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+</template>
+
+<!-- ═══════════════════ Layer 2: GPU 详情 ═══════════════════ -->
+<template x-if="drillTarget === 'gpu'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>GPU 详情</h2>
+        <span class="text-xs text-muted" x-text="gpu.name || '未检测到 GPU'"></span>
+  </div>
+  <!-- GPU 指标 -->
+  <div class="stats-grid-enhanced" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat-card-enhanced">
+      <div class="stat-card-label">利用率</div>
+      <div class="stat-card-value" :style="{color: statusColor(gpu.util)}" x-text="gpu.util + '%'"></div>
+    </div>
+    <div class="stat-card-enhanced">
+      <div class="stat-card-label">显存</div>
+      <div class="stat-card-value" style="font-size:18px" x-text="gpu.mem_used + ' / ' + gpu.mem_total + ' MB'"></div>
+    </div>
+    <div class="stat-card-enhanced">
+      <div class="stat-card-label">温度</div>
+      <div class="stat-card-value" :style="{color: gpu.temp > 80 ? '#f87171' : gpu.temp > 65 ? '#fbbf24' : '#4ade80'}" x-text="gpu.temp + ' C'"></div>
+    </div>
+    <div class="stat-card-enhanced">
+      <div class="stat-card-label">显存使用率</div>
+      <div class="stat-card-value" :style="{color: statusColor(gpu.mem_total ? gpu.mem_used/gpu.mem_total*100 : 0)}"
+           x-text="gpu.mem_total ? (gpu.mem_used/gpu.mem_total*100).toFixed(1) + '%' : '-'"></div>
+    </div>
+  </div>
+  <!-- GPU 进程 -->
+  <div class="chart-card" style="margin-top:16px">
+    <div class="chart-card-header"><h3>GPU 进程</h3></div>
+    <table class="process-table">
+      <thead><tr><th>PID</th><th>用户</th><th>进程</th><th>显存</th></tr></thead>
+      <tbody>
+        <template x-for="p in (gpu.processes || [])" :key="p.pid">
+          <tr>
+            <td class="font-mono text-xs" x-text="p.pid"></td>
+            <td x-text="p.user || '-'"></td>
+            <td x-text="p.name || p.process_name || '-'"></td>
+            <td class="font-mono" x-text="(p.gpu_memory_usage || p.used_memory || 0) + ' MB'"></td>
+          </tr>
+        </template>
+        <template x-if="!gpu.processes || gpu.processes.length === 0">
+          <tr><td colspan="4" class="text-muted text-xs" style="text-align:center;padding:16px">无 GPU 进程</td></tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+</template>
+
+<!-- ═══════════════════ Layer 2: 网络详情 ═══════════════════ -->
+<template x-if="drillTarget === 'network'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>网络详情</h2>
+  </div>
+  <div class="detail-grid">
+    <!-- 流量统计 -->
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>网络流量</h3></div>
+      <div style="padding:20px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div class="stat-card-label">下行速率</div>
+            <div class="stat-card-value" style="color:#38bdf8;font-size:20px" x-text="formatRate(network.totals ? network.totals.bytes_recv_rate : 0)"></div>
+          </div>
+          <div>
+            <div class="stat-card-label">上行速率</div>
+            <div class="stat-card-value" style="color:#4ade80;font-size:20px" x-text="formatRate(network.totals ? network.totals.bytes_sent_rate : 0)"></div>
+          </div>
+          <div>
+            <div class="stat-card-label">丢包 (入)</div>
+            <div class="stat-card-value" style="font-size:18px" x-text="network.totals ? network.totals.drop_in : 0"></div>
+          </div>
+          <div>
+            <div class="stat-card-label">丢包 (出)</div>
+            <div class="stat-card-value" style="font-size:18px" x-text="network.totals ? network.totals.drop_out : 0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- TCP 连接状态 -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h3>TCP 连接状态</h3>
+        <span class="badge badge-info" x-text="'总计 ' + (network.tcp_total || 0)"></span>
+      </div>
+      <div id="tcp-detail-pie" class="chart-box-sm"></div>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ═══════════════════ Layer 2: Docker 详情 ═══════════════════ -->
+<template x-if="drillTarget === 'docker'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>Docker 容器</h2>
+        <span class="badge badge-info" x-text="docker.total_running + '/' + docker.total_containers + ' 运行中'"></span>
+    <a href="/docker" class="btn btn-sm" style="margin-left:auto">完整管理</a>
+  </div>
+  <table class="process-table">
+    <thead><tr><th>容器名</th><th>镜像</th><th>状态</th><th>端口</th></tr></thead>
+    <tbody>
+      <template x-for="c in docker.containers" :key="c.id || c.name">
         <tr>
-          <td>{{ c.name }}</td>
+          <td class="font-mono" x-text="c.name"></td>
+          <td class="text-xs text-muted" x-text="c.image" style="max-width:200px;overflow:hidden;text-overflow:ellipsis"></td>
           <td>
-            {% if 'Up' in c.status %}
-              <span class="badge badge-ok">运行中</span>
-            {% elif 'Restarting' in c.status %}
-              <span class="badge badge-crit">重启中</span>
-            {% else %}
-              <span class="badge badge-idle">已停止</span>
-            {% endif %}
+            <span class="badge"
+                  :class="c.state === 'running' ? 'badge-ok' : c.state === 'restarting' ? 'badge-crit' : 'badge-idle'"
+                  x-text="c.state === 'running' ? '运行中' : c.state === 'restarting' ? '重启中' : c.state || '已停止'"></span>
           </td>
+          <td class="text-xs font-mono" x-text="c.ports || '-'"></td>
         </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      </template>
+    </tbody>
+  </table>
+</div>
+</template>
 
-  <!-- 用户资源 -->
-  <div class="data-table-wrapper">
-    <div class="data-table-header">
-      <h3>用户资源</h3>
-      <a href="/users" class="btn btn-xs">详情</a>
+<!-- ═══════════════════ Layer 2: System 详情 ═══════════════════ -->
+<template x-if="drillTarget === 'system'">
+<div class="detail-panel" x-transition>
+  <div class="detail-header">
+    <button class="back-btn" @click="backToOverview()">← 返回</button>
+    <h2>系统信息</h2>
+  </div>
+  <div class="detail-grid">
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>主机信息</h3></div>
+      <div style="padding:12px 0">
+        <div class="docker-group-row"><span class="text-muted">主机名</span><span x-text="systemInfo.hostname || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">系统</span><span x-text="systemInfo.os || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">内核</span><span x-text="systemInfo.kernel || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">CPU</span><span x-text="systemInfo.cpu_model || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">逻辑核心</span><span x-text="cpu.count + ' 核'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">内存</span><span x-text="memory.ram ? formatBytesM(memory.ram.total) : '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">GPU</span><span x-text="gpu.name || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">运行时间</span><span x-text="uptime || '-'"></span></div>
+      </div>
     </div>
-    <table>
-      <thead><tr><th>用户</th><th>内存</th><th>进程</th></tr></thead>
-      <tbody hx-get="/partials/dashboard/users-brief" hx-trigger="every 30s" hx-swap="innerHTML">
-        {% for u in users[:6] %}
-        <tr>
-          <td><strong>{{ u.name }}</strong></td>
-          <td>{{ u.mem_gb }} GB</td>
-          <td>{{ u.proc_count }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="chart-card">
+      <div class="chart-card-header"><h3>存储布局</h3></div>
+      <table class="process-table">
+        <thead><tr><th>挂载点</th><th>容量</th><th>使用率</th></tr></thead>
+        <tbody>
+          <template x-for="d in disk" :key="d.mountpoint">
+            <tr>
+              <td class="font-mono text-xs" x-text="d.mountpoint"></td>
+              <td x-text="formatBytesM(d.total)"></td>
+              <td :style="{color: statusColor(d.percent)}" x-text="d.percent + '%'"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
+</template>
+
+<!-- ═══════════════════ Layer 3: Modal 弹窗 ═══════════════════ -->
+<template x-if="locateTarget">
+<div class="modal-overlay" @click.self="closeLocate()" x-transition.opacity>
+  <div class="modal-content">
+    <!-- 进程排行 -->
+    <template x-if="locateTarget.type === 'processes'">
+      <div>
+        <div class="modal-header">
+          <h3>进程排行
+            <span class="text-xs text-muted" style="margin-left:8px">
+              按 <button class="btn btn-xs" :class="locateTarget.sort === 'cpu' ? 'btn-primary' : ''" @click="locateTarget.sort='cpu'; _loadProcesses('cpu')">CPU</button>
+              <button class="btn btn-xs" :class="locateTarget.sort === 'mem' ? 'btn-primary' : ''" @click="locateTarget.sort='mem'; _loadProcesses('mem')">内存</button>
+            </span>
+          </h3>
+          <button class="modal-close" @click="closeLocate()">x</button>
+        </div>
+        <table class="process-table">
+          <thead><tr><th>PID</th><th>用户</th><th>进程</th><th>CPU%</th><th>内存%</th><th>操作</th></tr></thead>
+          <tbody>
+            <template x-for="p in (locateTarget.sort === 'mem' ? (topProcesses.by_mem || []) : (topProcesses.by_cpu || [])).slice(0, 20)" :key="p.pid">
+              <tr>
+                <td class="font-mono text-xs" x-text="p.pid"></td>
+                <td x-text="p.user"></td>
+                <td x-text="p.name || p.cmd"></td>
+                <td :style="{color: statusColor(p.cpu_percent)}" x-text="p.cpu_percent.toFixed(1) + '%'"></td>
+                <td x-text="p.mem_percent.toFixed(1) + '%'"></td>
+                <td><button class="kill-btn" @click="killProcess(p.pid)">Kill</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- 告警时间线 -->
+    <template x-if="locateTarget.type === 'alerts'">
+      <div>
+        <div class="modal-header">
+          <h3>告警历史</h3>
+          <button class="modal-close" @click="closeLocate()">x</button>
+        </div>
+        <div class="alert-bar" style="margin-bottom:12px">
+          <span class="alert-badge alert-badge-critical" x-text="'严重 ' + alerts.critical"></span>
+          <span class="alert-badge alert-badge-warning" x-text="'警告 ' + alerts.warning"></span>
+          <span class="alert-badge alert-badge-ok" x-text="'信息 ' + alerts.info"></span>
+        </div>
+        <ul class="alert-timeline">
+          <template x-for="(a, idx) in alerts.recent" :key="idx">
+            <li>
+              <span class="alert-time" x-text="(a.created_at || a.timestamp) ? new Date(a.created_at || a.timestamp).toLocaleString('zh-CN') : '-'"></span>
+              <span class="alert-severity"
+                    :class="a.severity === 'critical' ? 'alert-badge-critical' : a.severity === 'warning' ? 'alert-badge-warning' : 'alert-badge-ok'"
+                    x-text="a.severity || 'info'"></span>
+              <span class="alert-msg" x-text="a.message || a.msg || '-'"></span>
+            </li>
+          </template>
+          <template x-if="alerts.recent.length === 0">
+            <li class="text-muted text-xs" style="padding:20px;text-align:center">暂无告警记录</li>
+          </template>
+        </ul>
+      </div>
+    </template>
+  </div>
+</div>
+</template>
 
 </div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  refreshDashboard();
-  initDashboardCharts();
-  setInterval(refreshDashboard, 15000);
-});
-</script>
 {% endblock %}
