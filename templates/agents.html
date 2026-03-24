@@ -144,9 +144,8 @@
 
 <div class="agent-layout" x-data="agentApp()" x-init="init()">
 
-  <!-- 右栏标签切换（点击打开，再次点击关闭） -->
+  <!-- 右栏标签切换 -->
   <div class="agent-tabs">
-    <div class="agent-tab" :class="tab==='terminal'?'active':''" @click="tab = tab==='terminal'?'none':'terminal'; if(tab==='terminal') initTerminal()">终端</div>
     <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab = tab==='patrol'?'none':'patrol'">巡检</div>
     <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab = tab==='admin'?'none':'admin'; if(tab==='admin') loadAdmin()">管理</div>
   </div>
@@ -169,9 +168,15 @@
     <div class="chat-main">
       <div class="chat-header">
         <span style="font-weight:600;font-size:14px" x-text="currentTitle||'新对话'"></span>
-        <div class="safety-toggle">
-          <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
-          <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-xs" :style="tab==='terminal'?'background:var(--accent-dim);color:var(--accent);border-color:var(--accent)':''"
+                  @click="tab = tab==='terminal'?'none':'terminal'; if(tab==='terminal') initTerminal()">
+            <span style="font-size:11px">&#9638;</span> 终端
+          </button>
+          <div class="safety-toggle">
+            <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
+            <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
+          </div>
         </div>
       </div>
 
@@ -285,20 +290,24 @@
                 </div>
               </div>
               <div class="p-desc" x-text="p.description"></div>
-              <div style="display:flex;align-items:center;gap:14px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
-                <!-- 间隔编辑 -->
+              <div style="display:flex;align-items:center;gap:12px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
+                <!-- 间隔编辑 + 保存按钮 -->
                 <label style="display:flex;align-items:center;gap:4px">
                   间隔
-                  <input type="number" min="1" max="10080" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
-                         :value="p.interval_minutes"
-                         @change="updatePatrolInterval(p.id, $event.target.value)">
+                  <input type="number" min="1" max="10080"
+                         style="width:56px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
+                         x-model.number="p._editInterval"
+                         x-init="p._editInterval = p.interval_minutes"
+                         @focus="p._editInterval = p._editInterval || p.interval_minutes">
                   分钟
                 </label>
+                <button class="btn btn-xs btn-primary" style="padding:2px 8px;font-size:10px"
+                        x-show="p._editInterval && p._editInterval !== p.interval_minutes"
+                        @click="updatePatrolInterval(p.id, p._editInterval)">保存生效</button>
                 <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
                 <span x-show="p.enabled" style="color:var(--accent)" x-text="nextRunText(p)"></span>
                 <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
-                <!-- 对应 Cron 脚本标注 -->
-                <span x-show="patrolCronMap[p.id]" style="color:var(--text3);font-style:italic" x-text="'Cron: '+( patrolCronMap[p.id]||'')"></span>
+                <span x-show="patrolCronMap[p.id]" style="color:var(--text3);font-style:italic" x-text="'Cron: '+(patrolCronMap[p.id]||'')"></span>
               </div>
             </div>
 
