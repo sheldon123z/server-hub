@@ -32,8 +32,8 @@ from config import settings, BASE_DIR
 from modules.agents.llm import get_chat_model
 from modules.agents.tools import get_server_tools
 from modules.agents.safety import build_interrupt_config
-from modules.agents.prompts import SYSTEM_PROMPT
-from modules.agents.subagents import get_subagents
+from modules.agents.prompts import get_system_prompt
+from modules.agents.subagents import load_subagents
 from modules.agents.sandbox import SafeLocalShellBackend
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
     tools = get_server_tools()
     interrupt_config = build_interrupt_config(safety_mode)
     backend = _create_backend()
-    subagents = get_subagents()
+    subagents = load_subagents()
     extra_middleware = _build_extra_middleware(purpose)
     store = await _get_store()
 
@@ -140,7 +140,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat"):
     memory_file = str(BASE_DIR / "AGENTS.md")
     memory_paths = [memory_file] if Path(memory_file).exists() else []
 
-    system_prompt = SYSTEM_PROMPT.format(safety_mode=safety_mode)
+    system_prompt = get_system_prompt(safety_mode)
 
     agent = create_deep_agent(
         model=model,

@@ -294,14 +294,14 @@ async def archive_conversation(conversation_id: str, user=Depends(require_role("
 async def list_patrols(user=Depends(require_role("admin"))):
     db = await get_db()
     cursor = await db.execute(
-        "SELECT id, display_name, description, interval_minutes, enabled, last_run, last_status, last_report "
+        "SELECT id, display_name, description, interval_minutes, enabled, last_run, last_status, last_report, check_tools, prompt "
         "FROM agent_patrol_tasks ORDER BY id"
     )
     rows = await cursor.fetchall()
     return [
         {"id": r[0], "display_name": r[1], "description": r[2], "interval_minutes": r[3],
          "enabled": bool(r[4]), "last_run": r[5], "last_status": r[6],
-         "last_report": (r[7] or "")[:500]}
+         "last_report": (r[7] or "")[:500], "check_tools": r[8] or "", "prompt": r[9] or ""}
         for r in rows
     ]
 
@@ -316,6 +316,12 @@ async def update_patrol(patrol_id: str, body: PatrolUpdate, user=Depends(require
     if body.interval_minutes is not None:
         sets.append("interval_minutes = ?")
         vals.append(body.interval_minutes)
+    if body.prompt is not None:
+        sets.append("prompt = ?")
+        vals.append(body.prompt)
+    if body.check_tools is not None:
+        sets.append("check_tools = ?")
+        vals.append(body.check_tools)
     if not sets:
         raise HTTPException(400, "没有要更新的字段")
     vals.append(patrol_id)
@@ -499,6 +505,91 @@ async def update_provider_api_key(provider_id: str, request: Request, user=Depen
     from modules.agents.deep_agent import reset_agent_cache
     reset_agent_cache()
     return {"ok": True, "provider": provider_id, "env_var": env_var}
+
+
+# ─── Agent 管理 API ───
+
+@router.get("/admin/prompt")
+async def get_prompt(user=Depends(require_role("admin"))):
+    """获取当前系统提示词"""
+    from modules.agents.prompts import SYSTEM_PROMPT
+    from pathlib import Path
+    from config import settings
+    custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
+    is_custom = custom_path.exists()
+    content = custom_path.read_text(encoding="utf-8") if is_custom else SYSTEM_PROMPT
+    return {"content": content, "is_custom": is_custom}
+
+
+@router.put("/admin/prompt")
+async def update_prompt(request: Request, user=Depends(require_role("admin"))):
+    """保存自定义系统提示词"""
+    from pathlib import Path
+    from config import settings
+    body = await request.json()
+    content = body.get("content", "")
+    custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
+    if body.get("reset"):
+        custom_path.unlink(missing_ok=True)
+        from modules.agents.deep_agent import reset_agent_cache
+        reset_agent_cache()
+        return {"ok": True, "message": "已重置为默认提示词"}
+    custom_path.write_text(content, encoding="utf-8")
+    from modules.agents.deep_agent import reset_agent_cache
+    reset_agent_cache()
+    return {"ok": True, "message": "提示词已保存"}
+
+
+@router.get("/admin/subagents")
+async def list_subagents(user=Depends(require_role("admin"))):
+    """获取所有 SubAgent 配置 + 可用工具列表"""
+    from modules.agents.subagents import get_subagents_config, get_available_tools
+    return {
+        "subagents": get_subagents_config(),
+        "available_tools": get_available_tools(),
+    }
+
+
+@router.put("/admin/subagents")
+async def save_subagents(request: Request, user=Depends(require_role("admin"))):
+    """保存全部 SubAgent 配置"""
+    from modules.agents.subagents import save_subagents_config
+    body = await request.json()
+    configs = body.get("subagents", [])
+    if body.get("reset"):
+        from pathlib import Path
+        from config import settings
+        custom_path = Path(settings.db_path).parent / "custom_subagents.json"
+        custom_path.unlink(missing_ok=True)
+        from modules.agents.deep_agent import reset_agent_cache
+        reset_agent_cache()
+        return {"ok": True, "message": "已重置为默认 SubAgent"}
+    save_subagents_config(configs)
+    from modules.agents.deep_agent import reset_agent_cache
+    reset_agent_cache()
+    return {"ok": True, "message": f"已保存 {len(configs)} 个 SubAgent"}
+
+
+@router.get("/admin/memory")
+async def get_memory(user=Depends(require_role("admin"))):
+    """获取 AGENTS.md 记忆文件内容"""
+    from config import BASE_DIR
+    memory_path = BASE_DIR / "AGENTS.md"
+    content = memory_path.read_text(encoding="utf-8") if memory_path.exists() else ""
+    return {"content": content, "path": str(memory_path)}
+
+
+@router.put("/admin/memory")
+async def update_memory(request: Request, user=Depends(require_role("admin"))):
+    """保存 AGENTS.md 记忆文件"""
+    from config import BASE_DIR
+    body = await request.json()
+    content = body.get("content", "")
+    memory_path = BASE_DIR / "AGENTS.md"
+    memory_path.write_text(content, encoding="utf-8")
+    from modules.agents.deep_agent import reset_agent_cache
+    reset_agent_cache()
+    return {"ok": True, "message": "记忆已保存"}
 
 
 # ─── WebSocket 终端 ───

@@ -85,6 +85,25 @@
 .slash-cmd { font-weight: 600; color: var(--accent); font-size: 13px; min-width: 90px; font-family: monospace; }
 .slash-desc { color: var(--text2); font-size: 12px; }
 
+/* 管理面板 */
+.admin-section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+.admin-section h3 { font-size: 14px; margin: 0 0 10px; color: var(--text); display: flex; align-items: center; justify-content: space-between; }
+.admin-textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 10px; font-size: 12px; font-family: 'JetBrains Mono',monospace; resize: vertical; min-height: 120px; line-height: 1.5; }
+.admin-textarea:focus { outline: none; border-color: var(--accent); }
+.admin-actions { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.subagent-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: border-color 0.15s; }
+.subagent-card:hover { border-color: var(--accent); }
+.subagent-card.editing { border-color: var(--accent); background: var(--bg2); }
+.subagent-name { font-weight: 600; font-size: 13px; color: var(--accent); }
+.subagent-desc { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.subagent-tools { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.subagent-tools .badge { font-size: 10px; padding: 2px 6px; }
+.tool-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px; max-height: 200px; overflow-y: auto; margin-top: 6px; }
+.tool-picker label { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+.tool-picker label:hover { background: var(--bg); }
+.patrol-edit { margin-top: 8px; }
+.patrol-edit textarea { min-height: 60px; }
+
 /* 终端 */
 .terminal-container { flex: 1; background: #0a0e17; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; padding: 4px; min-height: 0; }
 
@@ -103,6 +122,7 @@
     <div class="agent-tab" :class="tab==='chat'?'active':''" @click="tab='chat'">AI 对话</div>
     <div class="agent-tab" :class="tab==='terminal'?'active':''" @click="tab='terminal'; initTerminal()">终端</div>
     <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab='patrol'">巡检</div>
+    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab='admin'; loadAdmin()">管理</div>
   </div>
 
   <!-- ═══ AI 对话 ═══ -->
@@ -225,6 +245,112 @@
     </div>
   </div>
 
+  <!-- ═══ 管理 ═══ -->
+  <div class="agent-panel" :class="tab==='admin'?'active':''" style="flex-direction:column;overflow-y:auto;padding-right:4px;gap:0">
+
+    <!-- 系统提示词 -->
+    <div class="admin-section">
+      <h3>系统提示词 <span class="badge badge-info" x-show="adminData.promptCustom" style="font-size:10px">已自定义</span></h3>
+      <textarea class="admin-textarea" style="min-height:200px" x-model="adminData.prompt"></textarea>
+      <div class="admin-actions">
+        <button class="btn btn-xs" @click="resetPrompt()" x-show="adminData.promptCustom">重置为默认</button>
+        <button class="btn btn-xs btn-primary" @click="savePrompt()">保存提示词</button>
+      </div>
+    </div>
+
+    <!-- SubAgent 管理 -->
+    <div class="admin-section">
+      <h3>SubAgent 管理 <button class="btn btn-xs btn-primary" @click="addSubagent()">+ 新增</button></h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">
+        <template x-for="(sa,idx) in adminData.subagents" :key="sa.name+idx">
+          <div class="subagent-card" :class="adminData.editingSubagent===idx?'editing':''" @click="adminData.editingSubagent = adminData.editingSubagent===idx ? -1 : idx">
+            <div class="subagent-name" x-text="sa.name"></div>
+            <div class="subagent-desc" x-text="sa.description.slice(0,60)+'...'"></div>
+            <div class="subagent-tools">
+              <template x-for="t in (sa.tools.length ? sa.tools : ['继承全部'])" :key="t">
+                <span class="badge badge-info" x-text="t"></span>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 编辑区域 -->
+      <template x-if="adminData.editingSubagent >= 0 && adminData.subagents[adminData.editingSubagent]">
+        <div style="margin-top:12px;padding:12px;background:var(--bg2);border-radius:8px" @click.stop>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <label class="text-xs text-muted">名称</label>
+              <input class="form-input" style="font-size:12px" x-model="adminData.subagents[adminData.editingSubagent].name">
+            </div>
+            <div>
+              <label class="text-xs text-muted">模型覆盖 (可选)</label>
+              <input class="form-input" style="font-size:12px" x-model="adminData.subagents[adminData.editingSubagent].model" placeholder="留空继承主模型">
+            </div>
+          </div>
+          <label class="text-xs text-muted">描述</label>
+          <textarea class="admin-textarea" style="min-height:60px" x-model="adminData.subagents[adminData.editingSubagent].description"></textarea>
+          <label class="text-xs text-muted" style="margin-top:6px">系统提示词</label>
+          <textarea class="admin-textarea" style="min-height:100px" x-model="adminData.subagents[adminData.editingSubagent].system_prompt"></textarea>
+          <label class="text-xs text-muted" style="margin-top:6px">工具绑定 (不选则继承主 agent 全部工具)</label>
+          <div class="tool-picker">
+            <template x-for="tool in adminData.availableTools" :key="tool.name">
+              <label>
+                <input type="checkbox" :value="tool.name"
+                  :checked="adminData.subagents[adminData.editingSubagent].tools.includes(tool.name)"
+                  @change="toggleSubagentTool(adminData.editingSubagent, tool.name, $event.target.checked)">
+                <span :class="'badge badge-'+(tool.risk==='safe'?'ok':tool.risk==='moderate'?'warn':'crit')" style="font-size:9px" x-text="tool.risk"></span>
+                <span x-text="tool.name" style="font-size:11px"></span>
+              </label>
+            </template>
+          </div>
+          <div class="admin-actions" style="margin-top:8px">
+            <button class="btn btn-xs btn-danger" @click="deleteSubagent(adminData.editingSubagent)">删除</button>
+          </div>
+        </div>
+      </template>
+
+      <div class="admin-actions">
+        <button class="btn btn-xs" @click="resetSubagents()">重置为默认</button>
+        <button class="btn btn-xs btn-primary" @click="saveSubagents()">保存 SubAgent</button>
+      </div>
+    </div>
+
+    <!-- Agent 记忆 -->
+    <div class="admin-section">
+      <h3>Agent 记忆 (AGENTS.md)</h3>
+      <textarea class="admin-textarea" style="min-height:180px" x-model="adminData.memory"></textarea>
+      <div class="admin-actions">
+        <button class="btn btn-xs btn-primary" @click="saveMemory()">保存记忆</button>
+      </div>
+    </div>
+
+    <!-- 巡检提示词 -->
+    <div class="admin-section">
+      <h3>巡检任务提示词</h3>
+      <template x-for="p in patrols" :key="'admin-'+p.id">
+        <div style="margin-bottom:8px">
+          <div class="flex items-center gap-2 mb-1" style="cursor:pointer" @click="p._editOpen=!p._editOpen">
+            <span x-text="p._editOpen?'▼':'▶'" style="font-size:10px;color:var(--text3)"></span>
+            <strong style="font-size:12px" x-text="p.display_name"></strong>
+            <span class="text-xs text-muted" x-text="p.check_tools"></span>
+          </div>
+          <div x-show="p._editOpen" class="patrol-edit" @click.stop>
+            <textarea class="admin-textarea" style="min-height:80px" x-model="p.prompt"></textarea>
+            <div style="margin-top:4px">
+              <label class="text-xs text-muted">工具 (逗号分隔)</label>
+              <input class="form-input" style="font-size:11px" x-model="p.check_tools">
+            </div>
+            <div class="admin-actions">
+              <button class="btn btn-xs btn-primary" @click="savePatrolPrompt(p)">保存</button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+  </div>
+
 </div>
 
 <script src="/static/js/xterm.min.js"></script>
@@ -236,6 +362,8 @@ function agentApp() {
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
+    // 管理面板
+    adminData: { prompt: '', promptCustom: false, subagents: [], availableTools: [], memory: '', editingSubagent: -1 },
     // 快捷指令
     showSlashMenu: false, slashIdx: 0, filteredCommands: [],
     slashCommands: [
@@ -444,6 +572,86 @@ function agentApp() {
     },
     async togglePatrol(id, enabled) {
       try { await fetch(`/api/agents/patrols/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})}); this.loadPatrols(); } catch(e) {}
+    },
+
+    // ─── 管理面板 ───
+    async loadAdmin() {
+      try {
+        const [promptRes, subRes, memRes] = await Promise.all([
+          fetch('/api/agents/admin/prompt').then(r=>r.json()),
+          fetch('/api/agents/admin/subagents').then(r=>r.json()),
+          fetch('/api/agents/admin/memory').then(r=>r.json()),
+        ]);
+        this.adminData.prompt = promptRes.content || '';
+        this.adminData.promptCustom = promptRes.is_custom || false;
+        this.adminData.subagents = subRes.subagents || [];
+        this.adminData.availableTools = subRes.available_tools || [];
+        this.adminData.memory = memRes.content || '';
+        this.adminData.editingSubagent = -1;
+      } catch(e) { showToast('加载管理数据失败','err'); }
+    },
+
+    async savePrompt() {
+      try {
+        const r = await fetch('/api/agents/admin/prompt',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:this.adminData.prompt})});
+        const d = await r.json();
+        if(d.ok) { showToast('提示词已保存','ok'); this.adminData.promptCustom = true; }
+        else showToast(d.message||'保存失败','err');
+      } catch(e) { showToast('保存失败','err'); }
+    },
+    async resetPrompt() {
+      try {
+        const r = await fetch('/api/agents/admin/prompt',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({reset:true})});
+        const d = await r.json();
+        if(d.ok) { showToast('已重置','ok'); await this.loadAdmin(); }
+      } catch(e) {}
+    },
+
+    addSubagent() {
+      this.adminData.subagents.push({name:'new-agent',description:'新建子智能体',system_prompt:'你是一个专业助手。',tools:[],model:null});
+      this.adminData.editingSubagent = this.adminData.subagents.length - 1;
+    },
+    deleteSubagent(idx) {
+      this.adminData.subagents.splice(idx, 1);
+      this.adminData.editingSubagent = -1;
+    },
+    toggleSubagentTool(idx, toolName, checked) {
+      const sa = this.adminData.subagents[idx];
+      if (checked) { if (!sa.tools.includes(toolName)) sa.tools.push(toolName); }
+      else { sa.tools = sa.tools.filter(t => t !== toolName); }
+    },
+    async saveSubagents() {
+      try {
+        const r = await fetch('/api/agents/admin/subagents',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({subagents:this.adminData.subagents})});
+        const d = await r.json();
+        if(d.ok) showToast(d.message,'ok');
+        else showToast('保存失败','err');
+      } catch(e) { showToast('保存失败','err'); }
+    },
+    async resetSubagents() {
+      try {
+        const r = await fetch('/api/agents/admin/subagents',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({reset:true})});
+        const d = await r.json();
+        if(d.ok) { showToast('已重置','ok'); await this.loadAdmin(); }
+      } catch(e) {}
+    },
+
+    async saveMemory() {
+      try {
+        const r = await fetch('/api/agents/admin/memory',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:this.adminData.memory})});
+        const d = await r.json();
+        if(d.ok) showToast('记忆已保存','ok');
+        else showToast('保存失败','err');
+      } catch(e) { showToast('保存失败','err'); }
+    },
+
+    async savePatrolPrompt(p) {
+      try {
+        const r = await fetch(`/api/agents/patrols/${p.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p.prompt,check_tools:p.check_tools})});
+        const d = await r.json();
+        if(d.ok) showToast('巡检提示词已保存','ok');
+        else showToast('保存失败','err');
+      } catch(e) { showToast('保存失败','err'); }
     },
   };
 }

@@ -1,5 +1,8 @@
 """系统提示词"""
 
+from pathlib import Path
+
+
 SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务器。
 
 ## 服务器信息
@@ -49,6 +52,21 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务�
 
 当前安全模式: {safety_mode}
 """
+
+
+def get_system_prompt(safety_mode: str) -> str:
+    """获取系统提示词 — 优先读取自定义文件，不存在则用默认"""
+    from config import settings
+    custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
+    if custom_path.exists():
+        try:
+            template = custom_path.read_text(encoding="utf-8")
+        except Exception:
+            template = SYSTEM_PROMPT
+    else:
+        template = SYSTEM_PROMPT
+    return template.format(safety_mode=safety_mode)
+
 
 PATROL_PROMPT = """你是 ServerHub 自动巡检助手。请执行以下巡检任务，调用相应工具收集数据并分析。
 

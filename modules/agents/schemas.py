@@ -18,8 +18,22 @@ class ApprovalAction(BaseModel):
 class PatrolUpdate(BaseModel):
     enabled: Optional[bool] = None
     interval_minutes: Optional[int] = None
+    prompt: Optional[str] = None
+    check_tools: Optional[str] = None
 
 
 class AgentSettingsUpdate(BaseModel):
     default_model: Optional[str] = None
     patrol_model: Optional[str] = None
+
+
+class SubAgentConfig(BaseModel):
+    name: str
+    description: str
+    system_prompt: str
+    tools: list[str] = []
+    model: Optional[str] = None
+
+
+class PromptUpdate(BaseModel):
+    content: str

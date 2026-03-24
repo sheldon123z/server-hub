@@ -4,7 +4,9 @@
 每个 SubAgent 运行在隔离的上下文中，完成后将结果返回主 agent。
 """
 
+import json
 import os
+from pathlib import Path
 from langchain_core.tools import tool
 
 
@@ -135,3 +137,115 @@ def get_subagents() -> list[dict]:
             # tools 不指定 — 继承全部工具
         },
     ]
+
+
+# ─── 工具注册表（name → tool 对象映射）───
+
+TOOL_REGISTRY = {
+    "web_search": web_search,
+    "think": think,
+}
+
+
+def _build_subagents_from_config(configs: list[dict]) -> list[dict]:
+    """从 JSON 配置构建 SubAgent 列表，将工具名称映射为实际工具对象"""
+    result = []
+    for cfg in configs:
+        agent_def = {
+            "name": cfg["name"],
+            "description": cfg["description"],
+            "system_prompt": cfg["system_prompt"],
+        }
+        # 映射工具名称到实际对象
+        tool_names = cfg.get("tools", [])
+        if tool_names:
+            tools = [TOOL_REGISTRY[t] for t in tool_names if t in TOOL_REGISTRY]
+            if tools:
+                agent_def["tools"] = tools
+        # 不指定 tools 则继承主 agent 全部工具
+        if cfg.get("model"):
+            agent_def["model"] = cfg["model"]
+        result.append(agent_def)
+    return result
+
+
+def load_subagents() -> list[dict]:
+    """加载 SubAgent 配置 — 优先读取自定义 JSON，不存在则用硬编码默认"""
+    from config import settings
+    custom_path = Path(settings.db_path).parent / "custom_subagents.json"
+    if custom_path.exists():
+        try:
+            configs = json.loads(custom_path.read_text(encoding="utf-8"))
+            return _build_subagents_from_config(configs)
+        except Exception:
+            pass
+    return get_subagents()
+
+
+def save_subagents_config(configs: list[dict]):
+    """保存 SubAgent 配置到 JSON（只存序列化字段，不存工具对象）"""
+    from config import settings
+    custom_path = Path(settings.db_path).parent / "custom_subagents.json"
+    custom_path.parent.mkdir(parents=True, exist_ok=True)
+    # 转换为可序列化格式
+    serializable = []
+    for cfg in configs:
+        serializable.append({
+            "name": cfg["name"],
+            "description": cfg["description"],
+            "system_prompt": cfg["system_prompt"],
+            "tools": cfg.get("tools", []),
+            "model": cfg.get("model"),
+        })
+    custom_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def get_subagents_config() -> list[dict]:
+    """获取 SubAgent 配置（序列化格式，供 API 返回）"""
+    from config import settings
+    custom_path = Path(settings.db_path).parent / "custom_subagents.json"
+    if custom_path.exists():
+        try:
+            return json.loads(custom_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    # 从硬编码默认值生成序列化格式
+    defaults = get_subagents()
+    return [
+        {
+            "name": d["name"],
+            "description": d["description"],
+            "system_prompt": d["system_prompt"],
+            "tools": [t.name for t in d.get("tools", [])],
+            "model": d.get("model"),
+        }
+        for d in defaults
+    ]
+
+
+def get_available_tools() -> list[dict]:
+    """返回所有可用工具的元信息（供前端多选绑定）"""
+    from modules.agents.tools import get_server_tools
+    from modules.agents.safety import TOOL_RISK_MAP
+    tools = []
+    for t in get_server_tools():
+        tools.append({
+            "name": t.name,
+            "description": (t.description or "")[:100],
+            "risk": TOOL_RISK_MAP.get(t.name, "safe"),
+            "source": "custom",
+        })
+    # SubAgent 专属工具
+    for name, t in TOOL_REGISTRY.items():
+        tools.append({
+            "name": name,
+            "description": (t.description or "")[:100],
+            "risk": "safe",
+            "source": "subagent",
+        })
+    # Deep Agents 内置
+    builtins = [("execute","danger"),("read_file","safe"),("write_file","moderate"),
+                ("edit_file","moderate"),("ls","safe"),("glob","safe"),("grep","safe")]
+    for name, risk in builtins:
+        tools.append({"name": name, "description": f"内置: {name}", "risk": risk, "source": "builtin"})
+    return tools
