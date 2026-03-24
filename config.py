@@ -54,6 +54,13 @@ class Settings:
         self.agent_shell_timeout: int = 30
         self.agent_shell_max_output: int = 8000
 
+        # RAG 知识库配置
+        self.rag_embedding_model: str = os.getenv("SERVERHUB_RAG_EMBEDDING_MODEL", "bge-m3")
+        self.rag_ollama_url: str = os.getenv("SERVERHUB_RAG_OLLAMA_URL", "http://localhost:11434")
+        self.rag_chunk_size: int = int(os.getenv("SERVERHUB_RAG_CHUNK_SIZE", "800"))
+        self.rag_chunk_overlap: int = int(os.getenv("SERVERHUB_RAG_CHUNK_OVERLAP", "100"))
+        self.rag_top_k: int = int(os.getenv("SERVERHUB_RAG_TOP_K", "5"))
+
         # Docker compose 堆栈
         self.compose_stacks: dict = {
             "dify": {

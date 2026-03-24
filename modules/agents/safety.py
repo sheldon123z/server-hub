@@ -71,6 +71,9 @@ TOOL_RISK_MAP = {
     # SubAgent 工具
     "web_search": RiskLevel.SAFE,
     "think": RiskLevel.SAFE,
+    # RAG 工具
+    "retrieve_knowledge": RiskLevel.SAFE,
+    "reindex_knowledge_base": RiskLevel.SAFE,
 }
 
 
