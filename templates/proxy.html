@@ -3,243 +3,668 @@
 {% block page_title %}代理管理{% endblock %}
 
 {% block content %}
-<div x-data="proxyManager()" x-init="loadGroups()">
-
-<!-- 状态卡片 -->
-<div class="grid grid-3 mb-4">
-  <div class="stat-card">
-    <div class="stat-label">Clash 状态</div>
-    <div class="stat-value">
-      {% if status.running %}
-        <span class="badge badge-ok">运行中</span>
-      {% else %}
-        <span class="badge badge-crit">已停止</span>
-      {% endif %}
-    </div>
-    <div class="text-xs text-muted mt-1">{{ status.version }}{% if status.premium %} (Premium){% endif %}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">当前配置</div>
-    <div class="stat-value text-accent">{{ status.current_config_name }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">代理端口</div>
-    <div class="stat-value font-mono">7890</div>
-    <div class="text-xs text-muted mt-1">mixed-port (HTTP/SOCKS5)</div>
-  </div>
-</div>
-
-<!-- 操作区 -->
-<div class="data-table-wrapper mb-4">
-  <div class="data-table-header">
-    <h3>配置切换</h3>
-  </div>
-  <div style="padding:16px">
-    <div class="flex gap-2 flex-wrap">
-      {% for key, cfg in status.configs.items() %}
-      <button class="btn {% if status.current_config == key %}btn-primary{% endif %}"
-              @click="switchConfig('{{ key }}')"
-              :disabled="loading">
-        {{ cfg.name }}
-        {% if status.current_config == key %} (当前){% endif %}
-      </button>
-      {% endfor %}
-
-      <span style="border-left:1px solid var(--border);margin:0 8px"></span>
-
-      <button class="btn" @click="updateSub()" :disabled="loading">
-        更新 FastFly 订阅
-      </button>
-      <button class="btn" @click="updateAndSwitch()" :disabled="loading">
-        更新并切换 FastFly
-      </button>
-      <button class="btn" @click="restartClash()" :disabled="loading">
-        重启 Clash
-      </button>
-    </div>
-    <div x-show="message" x-text="message"
-         class="mt-2 text-sm" :class="messageOk ? 'text-accent' : 'text-danger'"
-         x-transition></div>
-  </div>
-</div>
-
-<!-- 代理组 & 节点切换 -->
-<div class="data-table-wrapper">
-  <div class="data-table-header">
-    <h3>代理组节点</h3>
-    <div class="flex gap-2">
-      <button class="btn btn-sm" @click="loadGroups()" :disabled="loading">刷新</button>
-    </div>
-  </div>
-
-  <template x-if="groups.length === 0 && !loading">
-    <div class="empty-state" style="padding:40px;text-align:center">
-      <div class="text-muted">暂无代理组数据</div>
+{% set initial_proxy_instances = proxy_instances | default([], true) %}
+{% set initial_default_proxy_instance_id = default_proxy_instance_id | default('', true) %}
+<div
+  x-data='proxyManager({{ initial_proxy_instances | tojson }}, {{ initial_default_proxy_instance_id | tojson }})'
+  x-init="init()"
+>
+  <template x-if="instances.length === 0 && !loading">
+    <div class="data-table-wrapper">
+      <div class="empty-state" style="padding:48px;text-align:center">
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px">未配置代理实例</div>
+        <div class="text-muted">
+          请在 <span class="font-mono">data/proxy_instances.json</span> 中登记需要管理的代理服务。
+        </div>
+      </div>
     </div>
   </template>
 
-  <template x-for="group in groups" :key="group.name">
-    <div style="border-bottom:1px solid var(--border)">
-      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer"
-           @click="group._open = !group._open">
-        <div>
-          <strong x-text="group.name"></strong>
-          <span class="badge badge-ok ml-2" x-text="group.type" style="font-size:10px"></span>
-          <span class="text-muted text-sm ml-2">当前: <span class="text-accent" x-text="group.now"></span></span>
+  <template x-if="instances.length > 0">
+    <div class="proxy-layout">
+      <div class="data-table-wrapper">
+        <div class="data-table-header">
+          <h3>代理实例</h3>
+          <button class="btn btn-sm" @click="refreshAll()" :disabled="loading">刷新</button>
         </div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-muted" x-text="group.all.length + ' 个节点'"></span>
-          <span x-text="group._open ? '▲' : '▼'" class="text-muted text-xs"></span>
+
+        <div class="proxy-instance-list">
+          <template x-for="instance in instances" :key="instance.id">
+            <button
+              class="proxy-instance-card"
+              :class="selectedId === instance.id ? 'active' : ''"
+              @click="selectInstance(instance.id)"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <div class="proxy-instance-name" x-text="instance.name"></div>
+                  <div class="text-xs text-muted" x-text="instance.type"></div>
+                </div>
+                <span
+                  class="badge"
+                  :class="instance.running ? 'badge-ok' : 'badge-idle'"
+                  x-text="instance.running ? '运行中' : '已停止'"
+                ></span>
+              </div>
+              <div class="proxy-instance-meta">
+                <span class="font-mono" x-text="instance.service_name || 'unmanaged'"></span>
+                <span x-show="instance.current_config_name && instance.current_config_name !== '未知'" x-text="instance.current_config_name"></span>
+              </div>
+            </button>
+          </template>
         </div>
       </div>
 
-      <div x-show="group._open" x-transition style="padding:0 16px 12px">
-        <div class="flex gap-2 mb-2">
-          <button class="btn btn-xs" @click="testDelays(group)">测速全部</button>
+      <div class="proxy-detail-column" x-show="selected">
+        <div class="grid grid-3 mb-4">
+          <div class="stat-card">
+            <div class="stat-label">运行状态</div>
+            <div class="stat-value">
+              <span class="badge" :class="selected && selected.running ? 'badge-ok' : 'badge-crit'" x-text="selected && selected.running ? '运行中' : '已停止'"></span>
+            </div>
+            <div class="text-xs text-muted mt-1" x-text="selected && selected.service_name ? selected.service_name : '未绑定 systemd 服务'"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">当前配置</div>
+            <div class="stat-value text-accent" x-text="selected ? selected.current_config_name : '未知'"></div>
+            <div class="text-xs text-muted mt-1" x-text="selected && selected.current_config !== 'unknown' ? selected.current_config : '未检测到激活配置'"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">实例类型</div>
+            <div class="stat-value" x-text="selected ? selected.type : ''"></div>
+            <div class="text-xs text-muted mt-1" x-text="selected && selected.version ? ('版本 ' + selected.version + (selected.premium ? ' (Premium)' : '')) : '通用代理实例'"></div>
+          </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px">
-          <template x-for="node in group.all" :key="node">
-            <div style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;transition:all .15s"
-                 :style="node === group.now ? 'border-color:var(--accent);background:rgba(99,179,237,.08)' : ''"
-                 @click="switchNode(group, node)">
-              <span x-text="node" :class="node === group.now ? 'text-accent' : ''"></span>
-              <span x-show="group._delays && group._delays[node]"
-                    class="text-xs"
-                    :class="(group._delays[node] || 0) < 300 ? 'text-accent' : (group._delays[node] || 0) < 800 ? 'text-warning' : 'text-danger'"
-                    x-text="group._delays && group._delays[node] ? group._delays[node] + 'ms' : ''"></span>
+
+        <div class="data-table-wrapper mb-4">
+          <div class="data-table-header">
+            <h3>统一控制</h3>
+          </div>
+          <div style="padding:16px">
+            <div class="proxy-info-grid">
+              <div>
+                <div class="text-xs text-muted mb-1">服务</div>
+                <div class="font-mono" x-text="selected ? (selected.service_name || 'unmanaged') : '-'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-muted mb-1">PID</div>
+                <div class="font-mono" x-text="selected && selected.pid ? selected.pid : '-'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-muted mb-1">自启动</div>
+                <div x-text="selected && selected.enabled ? '已启用' : '未启用'"></div>
+              </div>
+              <div>
+                <div class="text-xs text-muted mb-1">管理 API</div>
+                <div class="font-mono text-xs" x-text="selected && selected.admin_api && selected.admin_api.base_url ? selected.admin_api.base_url : '-'"></div>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <div class="text-xs text-muted mb-2">监听端口</div>
+              <div class="flex gap-2 flex-wrap">
+                <template x-if="selected && selected.listen_ports && selected.listen_ports.length === 0">
+                  <span class="text-sm text-muted">未配置</span>
+                </template>
+                <template x-for="port in (selected ? selected.listen_ports : [])" :key="(port.label || '') + '-' + port.port">
+                  <span class="badge badge-idle">
+                    <span x-text="(port.label || 'Port') + ': ' + port.port"></span>
+                    <span x-show="port.description" x-text="' · ' + port.description"></span>
+                  </span>
+                </template>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <div class="text-xs text-muted mb-2">实例动作</div>
+              <div class="flex gap-2 flex-wrap">
+                <button class="btn btn-xs" x-show="supports('start')" @click="runAction('start', '启动实例')" :disabled="loading">启动</button>
+                <button class="btn btn-danger btn-xs" x-show="supports('stop')" @click="runAction('stop', '停止实例')" :disabled="loading">停止</button>
+                <button class="btn btn-xs" x-show="supports('restart')" @click="runAction('restart', '重启实例')" :disabled="loading">重启</button>
+                <button class="btn btn-xs" x-show="supports('reload')" @click="runAction('reload', '重载配置')" :disabled="loading">重载</button>
+                <button class="btn btn-xs" x-show="supports('update_subscription')" @click="updateCurrentSubscription()" :disabled="loading">更新当前订阅</button>
+                <button class="btn btn-xs" x-show="supports('update_subscription') && selected && selected.preferred_update_config_key" @click="updateAndSwitch()" :disabled="loading">更新并切换推荐配置</button>
+              </div>
+            </div>
+
+            <div class="mt-4" x-show="selected && selected.config_profiles && selected.config_profiles.length > 0">
+              <div class="text-xs text-muted mb-2">订阅配置管理</div>
+              <div class="proxy-profile-grid">
+                <template x-for="profile in (selected ? selected.config_profiles : [])" :key="profile.key">
+                  <div class="proxy-profile-card" :class="selected && selected.current_config === profile.key ? 'active' : ''">
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <div style="font-weight:600" x-text="profile.name"></div>
+                        <div class="text-xs text-muted font-mono" x-text="profile.key"></div>
+                      </div>
+                      <span class="badge badge-ok" x-show="selected && selected.current_config === profile.key">当前</span>
+                    </div>
+                    <div class="text-xs text-muted mt-2 font-mono" x-text="profile.file"></div>
+                    <div class="text-xs text-muted mt-2" x-show="profile.has_subscription">
+                      <span>订阅:</span>
+                      <span x-text="profile.subscription_url_preview"></span>
+                    </div>
+                    <div class="flex gap-2 flex-wrap mt-3">
+                      <button
+                        class="btn btn-xs"
+                        :class="selected && selected.current_config === profile.key ? 'btn-primary' : ''"
+                        @click="switchConfig(profile.key)"
+                        :disabled="loading"
+                      >切换</button>
+                      <button
+                        class="btn btn-xs"
+                        x-show="profile.has_subscription"
+                        @click="updateProfileSubscription(profile)"
+                        :disabled="loading"
+                      >更新订阅</button>
+                      <button
+                        class="btn btn-xs"
+                        x-show="profile.has_subscription && selected && selected.current_config !== profile.key"
+                        @click="updateAndSwitchProfile(profile)"
+                        :disabled="loading"
+                      >更新并切换</button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <div class="text-xs text-muted mb-2">添加新机场链接</div>
+              <div class="proxy-add-grid">
+                <input class="input" type="text" x-model.trim="newProfileName" placeholder="机场名称，例如 Kycloud 备用" :disabled="loading">
+                <input class="input" type="url" x-model.trim="newProfileUrl" placeholder="订阅链接，例如 https://..." :disabled="loading">
+              </div>
+              <label class="text-xs text-muted mt-2" style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" x-model="switchAfterAdd" :disabled="loading">
+                <span>添加完成后立即切换</span>
+              </label>
+              <div class="flex gap-2 flex-wrap mt-3">
+                <button class="btn btn-xs" @click="addSubscriptionProfile()" :disabled="loading || !newProfileName || !newProfileUrl">添加机场</button>
+              </div>
+            </div>
+
+            <div x-show="message" x-text="message"
+                 class="mt-4 text-sm" :class="messageOk ? 'text-accent' : 'text-danger'"
+                 x-transition></div>
+          </div>
+        </div>
+
+        <div class="data-table-wrapper" x-show="isClashLike()">
+          <div class="data-table-header">
+            <h3>类型扩展: Clash / Mihomo</h3>
+            <button class="btn btn-sm" @click="loadGroups()" :disabled="loading || !selected">刷新节点组</button>
+          </div>
+
+          <template x-if="groups.length === 0 && !loading">
+            <div class="empty-state" style="padding:32px;text-align:center">
+              <div class="text-muted">当前实例暂无代理组数据</div>
+            </div>
+          </template>
+
+          <template x-for="group in groups" :key="group.name">
+            <div style="border-bottom:1px solid var(--border)">
+              <div
+                style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer"
+                @click="group._open = !group._open"
+              >
+                <div>
+                  <strong x-text="group.name"></strong>
+                  <span class="badge badge-ok ml-2" x-text="group.type" style="font-size:10px"></span>
+                  <span class="text-muted text-sm ml-2">当前: <span class="text-accent" x-text="group.now"></span></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-muted" x-text="group.all.length + ' 个节点'"></span>
+                  <span x-text="group._open ? '▲' : '▼'" class="text-muted text-xs"></span>
+                </div>
+              </div>
+
+              <div x-show="group._open" x-transition style="padding:0 16px 12px">
+                <div class="flex gap-2 mb-2">
+                  <button class="btn btn-xs" @click="testDelays(group)" :disabled="loading">测速全部</button>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px">
+                  <template x-for="node in group.all" :key="node">
+                    <div
+                      style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;transition:all .15s"
+                      :style="node === group.now ? 'border-color:var(--accent);background:rgba(99,179,237,.08)' : ''"
+                      @click="switchNode(group, node)"
+                    >
+                      <span x-text="node" :class="node === group.now ? 'text-accent' : ''"></span>
+                      <span
+                        x-show="group._delays && group._delays[node] !== undefined"
+                        class="text-xs"
+                        :class="(group._delays[node] || 0) < 300 ? 'text-accent' : (group._delays[node] || 0) < 800 ? 'text-warning' : 'text-danger'"
+                        x-text="group._delays && group._delays[node] !== undefined ? group._delays[node] + 'ms' : ''"
+                      ></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
             </div>
           </template>
         </div>
       </div>
     </div>
   </template>
-</div>
 
-<!-- Loading overlay -->
-<div x-show="loading" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;z-index:999" x-transition>
-  <div style="background:var(--card-bg);padding:24px 40px;border-radius:8px;text-align:center">
-    <div class="text-sm" x-text="loadingMsg || '处理中...'"></div>
+  <div x-show="loading" class="proxy-loading" x-transition>
+    <div class="proxy-loading-card">
+      <div class="text-sm" x-text="loadingMsg || '处理中...'"></div>
+    </div>
   </div>
 </div>
 
-</div>
+<style>
+.proxy-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.proxy-instance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.proxy-instance-card {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  padding: 14px;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+
+.proxy-instance-card:hover,
+.proxy-instance-card.active {
+  border-color: var(--accent);
+  background: rgba(99, 179, 237, .08);
+  transform: translateY(-1px);
+}
+
+.proxy-instance-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.proxy-instance-meta {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.proxy-detail-column {
+  min-width: 0;
+}
+
+.proxy-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.proxy-loading {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.proxy-loading-card {
+  background: var(--card-bg);
+  padding: 24px 40px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.proxy-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.proxy-profile-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--panel-bg, rgba(255,255,255,.02));
+}
+
+.proxy-profile-card.active {
+  border-color: var(--accent);
+  background: rgba(99, 179, 237, .08);
+}
+
+.proxy-add-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.proxy-add-grid .input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+@media (max-width: 980px) {
+  .proxy-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .proxy-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .proxy-add-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
 
 <script>
-function proxyManager() {
+function proxyManager(initialInstances, defaultInstanceId) {
   return {
+    instances: initialInstances || [],
+    defaultInstanceId: defaultInstanceId || '',
+    selectedId: defaultInstanceId || (initialInstances[0] && initialInstances[0].id) || '',
+    selected: null,
     groups: [],
     loading: false,
     loadingMsg: '',
     message: '',
     messageOk: true,
+    newProfileName: '',
+    newProfileUrl: '',
+    switchAfterAdd: false,
 
-    async loadGroups() {
-      try {
-        const resp = await fetch('/api/proxy/groups');
-        const data = await resp.json();
-        this.groups = (data || []).map(g => ({...g, _open: false, _delays: {}}));
-      } catch(e) {
-        console.error('加载代理组失败', e);
+    async init() {
+      if (!this.instances.length) {
+        await this.loadInstances();
+      }
+      if (!this.selectedId && this.instances.length) {
+        this.selectedId = this.defaultInstanceId || this.instances[0].id;
+      }
+      if (this.selectedId) {
+        await this.loadSelected();
       }
     },
 
-    async switchNode(group, node) {
-      this.loading = true;
-      this.loadingMsg = '切换节点...';
+    async loadInstances() {
       try {
-        const resp = await fetch('/api/proxy/switch-node', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({group: group.name, node: node})
+        const resp = await fetch('/api/proxy/instances');
+        const data = await resp.json();
+        this.instances = data.instances || [];
+        this.defaultInstanceId = data.default_instance_id || this.defaultInstanceId;
+        if (!this.selectedId && this.instances.length) {
+          this.selectedId = this.defaultInstanceId || this.instances[0].id;
+        }
+      } catch (e) {
+        console.error('加载代理实例失败', e);
+        this.showMsg(false, '加载代理实例失败');
+      }
+    },
+
+    async loadSelected() {
+      if (!this.selectedId) {
+        this.selected = null;
+        this.groups = [];
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selectedId)}`);
+        if (!resp.ok) {
+          this.selected = null;
+          this.groups = [];
+          this.showMsg(false, '加载实例详情失败');
+          return;
+        }
+        this.selected = await resp.json();
+        this.upsertInstance(this.selected);
+
+        if (this.isClashLike()) {
+          await this.loadGroups();
+        } else {
+          this.groups = [];
+        }
+      } catch (e) {
+        console.error('加载实例详情失败', e);
+        this.showMsg(false, '加载实例详情失败');
+      }
+    },
+
+    upsertInstance(instance) {
+      const index = this.instances.findIndex(item => item.id === instance.id);
+      if (index >= 0) {
+        this.instances[index] = instance;
+      } else {
+        this.instances.push(instance);
+      }
+    },
+
+    supports(action) {
+      return !!(this.selected && (this.selected.supported_actions || []).includes(action));
+    },
+
+    isClashLike() {
+      return !!(this.selected && this.selected.plugin === 'clash');
+    },
+
+    async selectInstance(instanceId) {
+      if (this.selectedId === instanceId && this.selected && this.selected.id === instanceId) {
+        return;
+      }
+      this.selectedId = instanceId;
+      this.message = '';
+      await this.loadSelected();
+    },
+
+    async refreshAll() {
+      await this.loadInstances();
+      if (!this.selectedId && this.instances.length) {
+        this.selectedId = this.defaultInstanceId || this.instances[0].id;
+      }
+      await this.loadSelected();
+    },
+
+    async runAction(action, loadingMsg) {
+      if (!this.selected) return;
+      this.loading = true;
+      this.loadingMsg = loadingMsg || '处理中...';
+      try {
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/actions/${encodeURIComponent(action)}`, {
+          method: 'POST'
         });
         const data = await resp.json();
-        if (data.ok) {
-          group.now = node;
-          this.showMsg(true, data.msg);
-        } else {
-          this.showMsg(false, data.msg);
+        this.showMsg(resp.ok && data.ok, data.msg || '操作失败');
+        if (resp.ok && data.ok) {
+          await this.refreshAll();
         }
-      } catch(e) {
+      } catch (e) {
         this.showMsg(false, '请求失败');
       }
       this.loading = false;
+      this.loadingMsg = '';
     },
 
     async switchConfig(key) {
+      if (!this.selected) return;
       this.loading = true;
-      this.loadingMsg = '切换配置中，Clash 将重启...';
+      this.loadingMsg = '切换配置中...';
       try {
-        const resp = await fetch('/api/proxy/switch-config', {
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/switch-config`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({config: key})
         });
         const data = await resp.json();
-        this.showMsg(data.ok, data.msg);
-        if (data.ok) {
-          setTimeout(() => location.reload(), 1500);
+        this.showMsg(resp.ok && data.ok, data.msg || '切换失败');
+        if (resp.ok && data.ok) {
+          await this.refreshAll();
         }
-      } catch(e) {
+      } catch (e) {
         this.showMsg(false, '请求失败');
       }
       this.loading = false;
-    },
-
-    async updateSub() {
-      this.loading = true;
-      this.loadingMsg = '更新订阅中...';
-      try {
-        const resp = await fetch('/api/proxy/update-subscription', {method: 'POST'});
-        const data = await resp.json();
-        this.showMsg(data.ok, data.msg);
-      } catch(e) {
-        this.showMsg(false, '请求失败');
-      }
-      this.loading = false;
+      this.loadingMsg = '';
     },
 
     async updateAndSwitch() {
-      await this.updateSub();
+      if (!this.selected || !this.selected.preferred_update_config_key) return;
+      const profile = (this.selected.config_profiles || []).find(item => item.key === this.selected.preferred_update_config_key);
+      if (!profile) return;
+      await this.updateProfileSubscription(profile, false);
       if (this.messageOk) {
-        await this.switchConfig('fastfly');
+        await this.switchConfig(this.selected.preferred_update_config_key);
       }
     },
 
-    async restartClash() {
+    async updateCurrentSubscription() {
+      if (!this.selected) return;
+      const current = (this.selected.config_profiles || []).find(item => item.key === this.selected.current_config && item.has_subscription);
+      if (current) {
+        await this.updateProfileSubscription(current, false);
+        return;
+      }
+      await this.runAction('update_subscription', '更新订阅中...');
+    },
+
+    async updateProfileSubscription(profile, refreshAfter = true) {
+      if (!this.selected || !profile) return;
       this.loading = true;
-      this.loadingMsg = '重启 Clash 中...';
+      this.loadingMsg = `更新 ${profile.name} 订阅中...`;
       try {
-        const resp = await fetch('/api/proxy/restart', {method: 'POST'});
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/config-profiles/${encodeURIComponent(profile.key)}/update-subscription`, {
+          method: 'POST'
+        });
         const data = await resp.json();
-        this.showMsg(data.ok, data.msg);
-        if (data.ok) {
-          setTimeout(() => location.reload(), 1500);
+        this.showMsg(resp.ok && data.ok, data.msg || '订阅更新失败');
+        if (resp.ok && data.ok && refreshAfter) {
+          await this.refreshAll();
         }
-      } catch(e) {
+      } catch (e) {
         this.showMsg(false, '请求失败');
       }
       this.loading = false;
+      this.loadingMsg = '';
+    },
+
+    async updateAndSwitchProfile(profile) {
+      await this.updateProfileSubscription(profile, false);
+      if (this.messageOk) {
+        await this.switchConfig(profile.key);
+      }
+    },
+
+    async addSubscriptionProfile() {
+      if (!this.selected) return;
+      this.loading = true;
+      this.loadingMsg = '添加机场订阅中...';
+      try {
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/config-profiles`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            name: this.newProfileName,
+            url: this.newProfileUrl,
+            switch_after_add: this.switchAfterAdd
+          })
+        });
+        const data = await resp.json();
+        this.showMsg(resp.ok && data.ok, data.msg || data.detail || '添加失败');
+        if (resp.ok && data.ok) {
+          this.newProfileName = '';
+          this.newProfileUrl = '';
+          this.switchAfterAdd = false;
+          await this.refreshAll();
+        }
+      } catch (e) {
+        this.showMsg(false, '请求失败');
+      }
+      this.loading = false;
+      this.loadingMsg = '';
+    },
+
+    async loadGroups() {
+      if (!this.selected || !this.isClashLike()) return;
+      try {
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/extensions/clash/groups`);
+        if (!resp.ok) {
+          this.groups = [];
+          return;
+        }
+        const data = await resp.json();
+        this.groups = (data || []).map(group => ({...group, _open: false, _delays: {}}));
+      } catch (e) {
+        console.error('加载代理组失败', e);
+        this.groups = [];
+      }
+    },
+
+    async switchNode(group, node) {
+      if (!this.selected) return;
+      this.loading = true;
+      this.loadingMsg = '切换节点中...';
+      try {
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/extensions/clash/switch-node`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({group: group.name, node: node})
+        });
+        const data = await resp.json();
+        if (resp.ok && data.ok) {
+          group.now = node;
+          this.showMsg(true, data.msg);
+        } else {
+          this.showMsg(false, data.msg || '切换失败');
+        }
+      } catch (e) {
+        this.showMsg(false, '请求失败');
+      }
+      this.loading = false;
+      this.loadingMsg = '';
     },
 
     async testDelays(group) {
+      if (!this.selected) return;
       this.loading = true;
       this.loadingMsg = '测速中...';
       try {
-        const resp = await fetch(`/api/proxy/test-delays/${encodeURIComponent(group.name)}`);
+        const resp = await fetch(`/api/proxy/instances/${encodeURIComponent(this.selected.id)}/extensions/clash/test-delays/${encodeURIComponent(group.name)}`);
         const data = await resp.json();
-        group._delays = data;
-      } catch(e) {
+        group._delays = data || {};
+      } catch (e) {
         this.showMsg(false, '测速失败');
       }
       this.loading = false;
+      this.loadingMsg = '';
     },
 
     showMsg(ok, msg) {
       this.messageOk = ok;
       this.message = msg;
-      setTimeout(() => { this.message = ''; }, 4000);
+      setTimeout(() => {
+        if (this.message === msg) {
+          this.message = '';
+        }
+      }, 4000);
     }
-  }
+  };
 }
 </script>
 {% endblock %}

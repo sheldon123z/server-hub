@@ -1,0 +1,76 @@
+{
+  "default_instance_id": "clash-main",
+  "instances": [
+    {
+      "id": "clash-main",
+      "name": "Clash 主实例",
+      "type": "clash",
+      "plugin": "clash",
+      "service_name": "clash",
+      "listen_ports": [
+        {
+          "label": "Mixed Port",
+          "port": 7890,
+          "description": "HTTP / SOCKS5"
+        }
+      ],
+      "admin_api": {
+        "base_url": "http://127.0.0.1:9090",
+        "secret": "clash2026"
+      },
+      "active_config_link": "/opt/clash/config_active.yaml",
+      "config_profiles": [
+        {
+          "key": "original",
+          "name": "原机场",
+          "file": "/opt/clash/config.yaml",
+          "switch_arg": "original",
+          "subscription_url": "https://subscribe.kyapi.xyz/sub/auto?s=178774&t=rdI4DVgVMg9g"
+        },
+        {
+          "key": "fastfly",
+          "name": "FastFly",
+          "file": "/opt/clash/config_fastfly.yaml",
+          "switch_arg": "fastfly",
+          "subscription_url": "https://sbbcc.gggay.cn/api/v1/client/gjP3Lu9jMNU5LmjH9X?token=48d8afb5f402f2860705de309869f1a0",
+          "preferred_after_update": true
+        }
+      ],
+      "commands": {
+        "switch_config": {
+          "argv": [
+            "sudo",
+            "/home/zhengxiaodong/scripts/clash_switch_config.sh",
+            "{config_arg}"
+          ],
+          "timeout": 15,
+          "success_any_of": [
+            "已启动"
+          ]
+        },
+        "update_subscription": {
+          "argv": [
+            "sudo",
+            "/home/zhengxiaodong/scripts/clash_switch_config.sh",
+            "update"
+          ],
+          "timeout": 30,
+          "success_any_of": [
+            "已更新"
+          ]
+        }
+      },
+      "capabilities": {
+        "systemd_actions": [
+          "start",
+          "stop",
+          "restart"
+        ],
+        "config_switch": true,
+        "subscription_update": true,
+        "node_switch": true,
+        "delay_test": true
+      }
+    }
+  ]
+}

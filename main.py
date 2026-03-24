@@ -350,14 +350,22 @@ async def proxy_page(request: Request):
         return RedirectResponse("/login", status_code=302)
     if user["role"] != "admin":
         return RedirectResponse("/", status_code=302)
-    status = {}
+    proxy_instances = []
+    default_proxy_instance_id = None
     try:
-        from modules.proxy.services import get_clash_status
-        status = await get_clash_status()
+        from modules.proxy.services import list_proxy_instances
+        payload = await list_proxy_instances()
+        proxy_instances = payload.get("instances", [])
+        default_proxy_instance_id = payload.get("default_instance_id")
     except Exception as e:
         print(f"[Proxy] 加载失败: {e}")
-        status = {"running": False, "version": "", "premium": False, "current_config": "unknown", "current_config_name": "未知", "configs": {}}
-    ctx = _page_context(request, user, "proxy", status=status)
+    ctx = _page_context(
+        request,
+        user,
+        "proxy",
+        proxy_instances=proxy_instances,
+        default_proxy_instance_id=default_proxy_instance_id,
+    )
     return templates.TemplateResponse("proxy.html", ctx)
 
 
