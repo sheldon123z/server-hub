@@ -104,7 +104,7 @@
     <div class="stat-card-enhanced stat-card-wide" @click="drillTo('gpu')">
       <div class="stat-card-header">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4"/><path d="M14 12h4"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/></svg>
-        <span>GPU A800 80GB</span>
+        <span x-text="gpu.name || 'GPU'"></span>
       </div>
       <div style="display:flex;gap:24px;align-items:flex-end">
         <div>
@@ -353,7 +353,7 @@
   <div class="detail-header">
     <button class="back-btn" @click="backToOverview()">← 返回</button>
     <h2>GPU 详情</h2>
-    <span class="text-xs text-muted">NVIDIA A800 80GB PCIe</span>
+        <span class="text-xs text-muted" x-text="gpu.name || '未检测到 GPU'"></span>
   </div>
   <!-- GPU 指标 -->
   <div class="stats-grid-enhanced" style="grid-template-columns:repeat(4,1fr)">
@@ -448,7 +448,7 @@
   <div class="detail-header">
     <button class="back-btn" @click="backToOverview()">← 返回</button>
     <h2>Docker 容器</h2>
-    <span class="badge badge-info" x-text="docker.total_running + '/' + docker.total_containers + ' 运行中'"></span>
+        <span class="badge badge-info" x-text="docker.total_running + '/' + docker.total_containers + ' 运行中'"></span>
     <a href="/docker" class="btn btn-sm" style="margin-left:auto">完整管理</a>
   </div>
   <table class="process-table">
@@ -482,13 +482,13 @@
     <div class="chart-card">
       <div class="chart-card-header"><h3>主机信息</h3></div>
       <div style="padding:12px 0">
-        <div class="docker-group-row"><span class="text-muted">主机名</span><span>system-NF5468M6</span></div>
-        <div class="docker-group-row"><span class="text-muted">系统</span><span>Ubuntu 23.04</span></div>
-        <div class="docker-group-row"><span class="text-muted">内核</span><span>6.8.0-60-generic</span></div>
-        <div class="docker-group-row"><span class="text-muted">CPU</span><span>Xeon Platinum 8380 x2</span></div>
+        <div class="docker-group-row"><span class="text-muted">主机名</span><span x-text="systemInfo.hostname || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">系统</span><span x-text="systemInfo.os || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">内核</span><span x-text="systemInfo.kernel || '-'"></span></div>
+        <div class="docker-group-row"><span class="text-muted">CPU</span><span x-text="systemInfo.cpu_model || '-'"></span></div>
         <div class="docker-group-row"><span class="text-muted">逻辑核心</span><span x-text="cpu.count + ' 核'"></span></div>
         <div class="docker-group-row"><span class="text-muted">内存</span><span x-text="memory.ram ? formatBytesM(memory.ram.total) : '-'"></span></div>
-        <div class="docker-group-row"><span class="text-muted">GPU</span><span>NVIDIA A800 80GB PCIe</span></div>
+        <div class="docker-group-row"><span class="text-muted">GPU</span><span x-text="gpu.name || '-'"></span></div>
         <div class="docker-group-row"><span class="text-muted">运行时间</span><span x-text="uptime || '-'"></span></div>
       </div>
     </div>

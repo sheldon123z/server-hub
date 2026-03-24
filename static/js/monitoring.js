@@ -256,6 +256,7 @@ function dashboardState() {
         network: { totals: { bytes_recv_rate: 0, bytes_sent_rate: 0, drop_in: 0, drop_out: 0 }, tcp_states: {}, tcp_total: 0 },
         diskIo: { devices: {} },
         docker: { containers: [], groups: {}, total_containers: 0, total_running: 0 },
+        systemInfo: { hostname: '', os: '', kernel: '', cpu_model: '' },
         disk: [],
         inode: [],
         topProcesses: { by_cpu: [], by_mem: [], by_gpu: [] },
@@ -298,6 +299,7 @@ function dashboardState() {
             if (data.network) this.network = data.network;
             if (data.disk_io) this.diskIo = data.disk_io;
             if (data.docker) this.docker = data.docker;
+            if (data.system_info) this.systemInfo = data.system_info;
             if (data.disk) this.disk = data.disk;
             if (data.inode) this.inode = data.inode;
             if (data.top_processes) this.topProcesses = data.top_processes;
@@ -350,9 +352,9 @@ function dashboardState() {
                 var resp = await fetch('/api/monitoring/alerts/summary');
                 if (!resp.ok) return;
                 var data = await resp.json();
-                this.alerts.critical = data.critical || 0;
-                this.alerts.warning = data.warning || 0;
-                this.alerts.info = data.info || 0;
+                this.alerts.critical = data.critical || (data.last_24h ? (data.last_24h.critical || 0) : 0);
+                this.alerts.warning = data.warning || (data.last_24h ? (data.last_24h.warning || 0) : 0);
+                this.alerts.info = data.info || (data.last_24h ? (data.last_24h.info || 0) : 0);
             } catch(e) {}
         },
 

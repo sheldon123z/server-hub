@@ -208,6 +208,9 @@ async def get_alerts_summary(user=Depends(get_current_user)):
 
     return {
         "active_rules": active_rules,
+        "critical": by_severity.get("critical", 0),
+        "warning": by_severity.get("warning", 0),
+        "info": by_severity.get("info", 0),
         "last_24h": by_severity,
         "total_24h": sum(by_severity.values()),
     }

@@ -6,6 +6,7 @@
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import time
@@ -22,6 +23,56 @@ def _run(cmd: str, timeout: int = 10) -> str:
         return r.stdout.strip()
     except Exception:
         return ""
+
+
+def _read_os_pretty_name() -> str:
+    """读取当前系统发行版名称"""
+    try:
+        with open("/etc/os-release", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("PRETTY_NAME="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return platform.system()
+
+
+def _read_cpu_model() -> str:
+    """读取 CPU 型号"""
+    try:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.lower().startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return platform.processor() or "Unknown CPU"
+
+
+def _format_uptime(seconds: float) -> str:
+    """将秒数格式化为可读 uptime 文本"""
+    total = max(int(seconds), 0)
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+def collect_system_info() -> dict:
+    """采集主机基础信息"""
+    return {
+        "hostname": platform.node(),
+        "os": _read_os_pretty_name(),
+        "kernel": platform.release(),
+        "cpu_model": _read_cpu_model(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +131,7 @@ def collect_gpu() -> dict:
     """
     result = {
         "available": False,
+        "name": "",
         "util": 0,
         "mem_used": 0,
         "mem_total": 0,
@@ -89,19 +141,20 @@ def collect_gpu() -> dict:
 
     # 基础 GPU 信息
     raw = _run(
-        "nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,"
+        "nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total,"
         "temperature.gpu --format=csv,noheader,nounits 2>/dev/null"
     )
     if not raw:
         return result
 
     parts = [x.strip() for x in raw.split(",")]
-    if len(parts) >= 4:
+    if len(parts) >= 5:
         result["available"] = True
-        result["util"] = int(parts[0])
-        result["mem_used"] = int(parts[1])
-        result["mem_total"] = int(parts[2])
-        result["temp"] = int(parts[3])
+        result["name"] = parts[0]
+        result["util"] = int(parts[1])
+        result["mem_used"] = int(parts[2])
+        result["mem_total"] = int(parts[3])
+        result["temp"] = int(parts[4])
 
     # GPU 进程列表
     procs_raw = _run(
@@ -112,9 +165,18 @@ def collect_gpu() -> dict:
         for line in procs_raw.splitlines():
             pparts = [x.strip() for x in line.split(",")]
             if len(pparts) >= 3:
+                pid = int(pparts[0])
+                user = ""
+                try:
+                    user = psutil.Process(pid).username()
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
                 result["processes"].append({
-                    "pid": int(pparts[0]),
+                    "pid": pid,
+                    "user": user,
                     "gpu_mem_mb": int(pparts[1]),
+                    "used_memory": int(pparts[1]),
+                    "gpu_memory_usage": int(pparts[1]),
                     "name": pparts[2],
                 })
 
@@ -283,6 +345,27 @@ def collect_docker_stats() -> dict:
     if not names:
         return result
 
+    ps_raw = _run(
+        "docker ps --format '{{json .}}' 2>/dev/null",
+        timeout=15,
+    )
+    ps_map: dict = {}
+    if ps_raw:
+        for line in ps_raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            name = item.get("Names", "")
+            if name:
+                ps_map[name] = {
+                    "image": item.get("Image", ""),
+                    "ports": item.get("Ports", ""),
+                }
+
     # 批量获取 RestartCount 和 compose project
     names_arg = " ".join(f"'{n}'" for n in names)
     inspect_raw = _run(
@@ -329,10 +412,14 @@ def collect_docker_stats() -> dict:
         restart_count = info.get("restart_count", 0)
         compose_project = info.get("compose_project", "")
         status = info.get("status", "running")
+        ps_info = ps_map.get(name, {})
 
         container = {
             "name": name,
             "status": status,
+            "state": status,
+            "image": ps_info.get("image", ""),
+            "ports": ps_info.get("ports", ""),
             "cpu_percent": cpu_pct,
             "mem_usage_mb": mem_usage_mb,
             "mem_limit_mb": mem_limit_mb,
@@ -406,6 +493,8 @@ def collect_disk_io() -> dict:
             devices[dev_name] = {
                 "read_iops": round(read_count_d / dt, 1) if dt > 0 else 0.0,
                 "write_iops": round(write_count_d / dt, 1) if dt > 0 else 0.0,
+                "read_bytes_rate": round(read_bytes_d / dt, 1) if dt > 0 else 0.0,
+                "write_bytes_rate": round(write_bytes_d / dt, 1) if dt > 0 else 0.0,
                 "read_mbps": round(read_bytes_d / dt / 1024 / 1024, 2) if dt > 0 else 0.0,
                 "write_mbps": round(write_bytes_d / dt / 1024 / 1024, 2) if dt > 0 else 0.0,
                 "avg_read_latency_ms": round(read_time_d / read_count_d, 2) if read_count_d > 0 else 0.0,
@@ -471,6 +560,7 @@ def collect_top_processes(limit: int = 15) -> dict:
         try:
             info = p.info
             rss = info["memory_info"].rss if info.get("memory_info") else 0
+            mem_percent = round(p.memory_percent(), 1)
             cmdline_parts = info.get("cmdline") or []
             cmdline = " ".join(cmdline_parts)[:200] if cmdline_parts else info.get("name", "")
             procs.append({
@@ -478,7 +568,10 @@ def collect_top_processes(limit: int = 15) -> dict:
                 "name": info["name"] or "",
                 "user": info.get("username") or "",
                 "cpu_percent": info.get("cpu_percent") or 0.0,
+                "mem_percent": mem_percent,
+                "rss": rss,
                 "mem_rss_mb": round(rss / 1024 / 1024, 1),
+                "cmd": cmdline,
                 "cmdline": cmdline,
             })
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -504,9 +597,12 @@ def collect_top_processes(limit: int = 15) -> dict:
 
 def collect_realtime_fast() -> dict:
     """5秒快速快照 - 仅轻量指标，不含 Docker/进程排行"""
+    uptime = _format_uptime(time.time() - psutil.boot_time())
     load_1, load_5, load_15 = psutil.getloadavg()
     return {
         "timestamp": time.time(),
+        "uptime": uptime,
+        "system_info": collect_system_info(),
         "cpu": {
             "overall_percent": psutil.cpu_percent(interval=0),
             "per_cpu_percent": psutil.cpu_percent(interval=0, percpu=True),
@@ -530,8 +626,11 @@ def collect_realtime_fast() -> dict:
 
 def collect_all() -> dict:
     """完整快照（含Docker和进程，60s周期用）"""
+    uptime = _format_uptime(time.time() - psutil.boot_time())
     return {
         "timestamp": time.time(),
+        "uptime": uptime,
+        "system_info": collect_system_info(),
         "cpu": collect_cpu(),
         "memory": collect_memory(),
         "gpu": collect_gpu(),
