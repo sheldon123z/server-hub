@@ -1,0 +1,166 @@
+[
+  {
+    "id": "ssh_root_login",
+    "category": "SSH安全",
+    "name": "禁止 root 远程登录",
+    "severity": "high",
+    "check_cmd": "grep -E '^\\s*PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo 'NOT_FOUND'",
+    "expect_contains": "no",
+    "fail_if_contains": "yes",
+    "auto_fixable": false,
+    "fix_guide": "编辑 /etc/ssh/sshd_config，设置 PermitRootLogin no，然后 sudo systemctl reload sshd"
+  },
+  {
+    "id": "ssh_empty_password",
+    "category": "SSH安全",
+    "name": "禁止空密码登录",
+    "severity": "critical",
+    "check_cmd": "grep -E '^\\s*PermitEmptyPasswords' /etc/ssh/sshd_config 2>/dev/null || echo 'NOT_FOUND'",
+    "expect_contains": "no",
+    "fail_if_contains": "yes",
+    "auto_fixable": true,
+    "fix_cmd": "sudo sed -i 's/^#*\\s*PermitEmptyPasswords.*/PermitEmptyPasswords no/' /etc/ssh/sshd_config && sudo systemctl reload sshd",
+    "fix_guide": "设置 PermitEmptyPasswords no"
+  },
+  {
+    "id": "ssh_max_auth_tries",
+    "category": "SSH安全",
+    "name": "SSH 最大认证尝试次数 ≤ 4",
+    "severity": "medium",
+    "check_cmd": "grep -E '^\\s*MaxAuthTries' /etc/ssh/sshd_config 2>/dev/null || echo 'MaxAuthTries 6'",
+    "expect_regex": "MaxAuthTries\\s+(\\d+)",
+    "expect_max": 4,
+    "auto_fixable": true,
+    "fix_cmd": "sudo sed -i 's/^#*\\s*MaxAuthTries.*/MaxAuthTries 4/' /etc/ssh/sshd_config && sudo systemctl reload sshd",
+    "fix_guide": "设置 MaxAuthTries 4"
+  },
+  {
+    "id": "ssh_protocol_2",
+    "category": "SSH安全",
+    "name": "仅使用 SSH Protocol 2",
+    "severity": "high",
+    "check_cmd": "grep -E '^\\s*Protocol\\s+1' /etc/ssh/sshd_config 2>/dev/null && echo 'FOUND_V1' || echo 'OK_V2'",
+    "expect_contains": "OK_V2",
+    "fail_if_contains": "FOUND_V1",
+    "auto_fixable": false,
+    "fix_guide": "确保 /etc/ssh/sshd_config 中没有 Protocol 1"
+  },
+  {
+    "id": "password_max_days",
+    "category": "口令策略",
+    "name": "密码最大有效期 ≤ 90 天",
+    "severity": "medium",
+    "check_cmd": "grep -E '^PASS_MAX_DAYS' /etc/login.defs 2>/dev/null || echo 'PASS_MAX_DAYS 99999'",
+    "expect_regex": "PASS_MAX_DAYS\\s+(\\d+)",
+    "expect_max": 90,
+    "auto_fixable": false,
+    "fix_guide": "编辑 /etc/login.defs，设置 PASS_MAX_DAYS 90"
+  },
+  {
+    "id": "password_min_days",
+    "category": "口令策略",
+    "name": "密码最小修改间隔 ≥ 1 天",
+    "severity": "low",
+    "check_cmd": "grep -E '^PASS_MIN_DAYS' /etc/login.defs 2>/dev/null || echo 'PASS_MIN_DAYS 0'",
+    "expect_regex": "PASS_MIN_DAYS\\s+(\\d+)",
+    "expect_min": 1,
+    "auto_fixable": false,
+    "fix_guide": "编辑 /etc/login.defs，设置 PASS_MIN_DAYS 1"
+  },
+  {
+    "id": "password_min_length",
+    "category": "口令策略",
+    "name": "密码最小长度 ≥ 8 字符",
+    "severity": "medium",
+    "check_cmd": "grep -E '^PASS_MIN_LEN|^minlen' /etc/login.defs /etc/pam.d/common-password 2>/dev/null || echo 'MIN_LEN 5'",
+    "expect_regex": "(?:PASS_MIN_LEN|minlen\\s*=\\s*)(\\d+)",
+    "expect_min": 8,
+    "auto_fixable": false,
+    "fix_guide": "编辑 /etc/login.defs 设置 PASS_MIN_LEN 8，或配置 pam_pwquality minlen=8"
+  },
+  {
+    "id": "sudo_requiretty",
+    "category": "权限控制",
+    "name": "检查 sudo 配置安全性",
+    "severity": "medium",
+    "check_cmd": "sudo grep -r 'NOPASSWD.*ALL' /etc/sudoers /etc/sudoers.d/ 2>/dev/null | grep -v '^#' || echo 'NO_NOPASSWD'",
+    "expect_contains": "NO_NOPASSWD",
+    "auto_fixable": false,
+    "fix_guide": "审查 /etc/sudoers 和 /etc/sudoers.d/，移除不必要的 NOPASSWD 配置"
+  },
+  {
+    "id": "world_writable_files",
+    "category": "文件权限",
+    "name": "关键目录无全局可写文件",
+    "severity": "medium",
+    "check_cmd": "find /etc /usr/bin /usr/sbin -maxdepth 1 -perm -o+w -type f 2>/dev/null | head -5 || echo 'NONE'",
+    "expect_contains": "NONE",
+    "auto_fixable": false,
+    "fix_guide": "对发现的全局可写文件执行 chmod o-w"
+  },
+  {
+    "id": "firewall_active",
+    "category": "网络安全",
+    "name": "防火墙已启用",
+    "severity": "high",
+    "check_cmd": "sudo iptables -L INPUT -n 2>/dev/null | grep -c 'Chain INPUT' || echo '0'",
+    "expect_regex": "(\\d+)",
+    "expect_min": 1,
+    "auto_fixable": false,
+    "fix_guide": "确保 iptables 或 ufw 已启用并配置了入站规则"
+  },
+  {
+    "id": "fail2ban_running",
+    "category": "网络安全",
+    "name": "Fail2ban 防暴力破解已运行",
+    "severity": "high",
+    "check_cmd": "systemctl is-active fail2ban 2>/dev/null || echo 'inactive'",
+    "expect_contains": "active",
+    "fail_if_contains": "inactive",
+    "auto_fixable": false,
+    "fix_guide": "执行 sudo systemctl enable --now fail2ban"
+  },
+  {
+    "id": "kernel_randomize_va",
+    "category": "内核安全",
+    "name": "ASLR 地址随机化已启用",
+    "severity": "high",
+    "check_cmd": "cat /proc/sys/kernel/randomize_va_space 2>/dev/null || echo '0'",
+    "expect_regex": "(\\d+)",
+    "expect_min": 2,
+    "auto_fixable": false,
+    "fix_guide": "执行 sudo sysctl -w kernel.randomize_va_space=2 并写入 /etc/sysctl.conf"
+  },
+  {
+    "id": "syslog_running",
+    "category": "审计日志",
+    "name": "系统日志服务已运行",
+    "severity": "high",
+    "check_cmd": "systemctl is-active rsyslog systemd-journald 2>/dev/null | head -1",
+    "expect_contains": "active",
+    "fail_if_contains": "inactive",
+    "auto_fixable": false,
+    "fix_guide": "确保 rsyslog 或 systemd-journald 正在运行"
+  },
+  {
+    "id": "tmp_noexec",
+    "category": "文件系统",
+    "name": "/tmp 挂载限制（建议）",
+    "severity": "low",
+    "check_cmd": "mount | grep ' /tmp ' 2>/dev/null || echo 'NOT_SEPARATE'",
+    "expect_contains": "noexec",
+    "auto_fixable": false,
+    "fix_guide": "建议将 /tmp 单独挂载并添加 noexec,nosuid,nodev 选项"
+  },
+  {
+    "id": "core_dump_restricted",
+    "category": "内核安全",
+    "name": "Core dump 已限制",
+    "severity": "low",
+    "check_cmd": "cat /proc/sys/fs/suid_dumpable 2>/dev/null || echo '2'",
+    "expect_regex": "(\\d+)",
+    "expect_max": 0,
+    "auto_fixable": false,
+    "fix_guide": "执行 sudo sysctl -w fs.suid_dumpable=0 并写入 /etc/sysctl.conf"
+  }
+]

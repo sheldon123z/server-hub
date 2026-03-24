@@ -28,11 +28,7 @@
         <div class="nav-category">{{ item.category }}</div>
       {% endif %}
       <a class="nav-item {% if active_module == item.name %}active{% endif %}"
-         href="/{{ item.name }}"
-         hx-get="/{{ item.name }}"
-         hx-target="#main-content"
-         hx-push-url="true"
-         hx-swap="innerHTML">
+         href="/{{ item.name }}">
         {{ item.display_name }}
       </a>
     {% endfor %}

@@ -257,13 +257,342 @@ def kill_user_processes(username: str) -> str:
     return f"操作失败: {result.get('error', '未知错误')}"
 
 
-# run_shell_command 已删除 — 被 Deep Agents 内置的 execute (持久化 Shell 会话) 替代
+# ─── safe: 趋势分析 ───
+
+@tool
+async def analyze_resource_trend(metric: str = "all", hours: int = 168) -> str:
+    """分析系统资源的历史趋势。从监控数据库查询指定时间范围的指标历史，计算统计量和趋势预测。
+
+    Args:
+        metric: 指标类型 — all(全部), cpu(CPU使用率), memory(内存), gpu(GPU), disk(磁盘)。默认 all。
+        hours: 分析的时间范围（小时），默认 168（一周）。
+    """
+    import aiosqlite
+    from datetime import datetime, timedelta
+    from config import settings
+
+    db_path = settings.db_path
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            cursor = await db.execute(
+                "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' AND timestamp > ? ORDER BY timestamp",
+                (cutoff,),
+            )
+            rows = await cursor.fetchall()
+    except Exception as e:
+        return f"查询历史数据失败: {e}"
+
+    if not rows:
+        return f"最近 {hours} 小时内没有监控数据。请确认监控采集器正在运行。"
+
+    # 提取指标时间序列
+    series = {"cpu": [], "memory": [], "swap": [], "disk": [], "gpu_util": [], "gpu_mem": [], "gpu_temp": []}
+    timestamps = []
+
+    for ts, val_json in rows:
+        try:
+            data = json.loads(val_json) if isinstance(val_json, str) else val_json
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        timestamps.append(ts)
+        cpu = data.get("cpu", {})
+        mem = data.get("memory", {})
+        gpu = data.get("gpu", {})
+        disk_list = data.get("disk", [])
+
+        # CPU: 兼容 overall_percent 或 percent
+        series["cpu"].append(cpu.get("overall_percent", cpu.get("percent", 0)))
+
+        # 内存: 嵌套结构 memory.ram.percent
+        ram = mem.get("ram", mem) if isinstance(mem, dict) else {}
+        swap = mem.get("swap", {}) if isinstance(mem, dict) else {}
+        series["memory"].append(ram.get("percent", mem.get("percent", 0)))
+        series["swap"].append(swap.get("percent", 0))
+
+        # 磁盘: list 格式，取根分区
+        if isinstance(disk_list, list):
+            root_disk = next((d for d in disk_list if d.get("mountpoint") == "/"), None)
+            series["disk"].append(root_disk["percent"] if root_disk else 0)
+        elif isinstance(disk_list, dict):
+            series["disk"].append(disk_list.get("percent", 0))
+
+        # GPU
+        if gpu and gpu.get("available", True):
+            series["gpu_util"].append(gpu.get("util", 0))
+            mem_total = gpu.get("mem_total", 1)
+            mem_used = gpu.get("mem_used", 0)
+            series["gpu_mem"].append(round(mem_used / mem_total * 100, 1) if mem_total else 0)
+            series["gpu_temp"].append(gpu.get("temp", 0))
+
+    def calc_stats(values, name):
+        if not values:
+            return f"- {name}: 无数据\n"
+        n = len(values)
+        avg = sum(values) / n
+        peak = max(values)
+        minimum = min(values)
+        sorted_v = sorted(values)
+        p95 = sorted_v[int(n * 0.95)] if n > 1 else sorted_v[0]
+        # 简单线性趋势 (最小二乘)
+        if n >= 10:
+            x_mean = (n - 1) / 2
+            y_mean = avg
+            num = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(values))
+            den = sum((i - x_mean) ** 2 for i in range(n))
+            slope = num / den if den else 0
+            trend = "上升" if slope > 0.01 else "下降" if slope < -0.01 else "平稳"
+            # 预测（假设每小时一个数据点）
+            hours_per_point = hours / n if n else 1
+            predicted_7d = values[-1] + slope * (7 * 24 / hours_per_point)
+            predicted_7d = max(0, min(100, predicted_7d))  # clamp 到 0-100%
+        else:
+            trend = "数据不足"
+            slope = 0
+            predicted_7d = avg
+
+        return (
+            f"- **{name}**: 均值 {avg:.1f}%, 峰值 {peak:.1f}%, P95 {p95:.1f}%, "
+            f"最低 {minimum:.1f}% | 趋势: {trend} | 7天预测: {predicted_7d:.1f}%\n"
+        )
+
+    # 构建报告
+    lines = [f"## 资源趋势分析 (最近 {hours} 小时, {len(rows)} 个数据点)\n"]
+
+    target_metrics = {
+        "all": ["cpu", "memory", "swap", "disk", "gpu_util", "gpu_mem", "gpu_temp"],
+        "cpu": ["cpu"],
+        "memory": ["memory", "swap"],
+        "gpu": ["gpu_util", "gpu_mem", "gpu_temp"],
+        "disk": ["disk"],
+    }
+
+    names = {
+        "cpu": "CPU使用率", "memory": "内存使用率", "swap": "Swap使用率",
+        "disk": "系统盘使用率", "gpu_util": "GPU利用率", "gpu_mem": "GPU显存", "gpu_temp": "GPU温度(°C)",
+    }
+
+    metrics_to_analyze = target_metrics.get(metric, target_metrics["all"])
+    for m in metrics_to_analyze:
+        lines.append(calc_stats(series.get(m, []), names.get(m, m)))
+
+    # 汇总建议
+    lines.append("\n### 建议\n")
+    for m in metrics_to_analyze:
+        vals = series.get(m, [])
+        if vals:
+            p95 = sorted(vals)[int(len(vals) * 0.95)] if len(vals) > 1 else vals[0]
+            if m in ("cpu", "memory") and p95 > 85:
+                lines.append(f"- ⚠️ {names[m]} P95={p95:.1f}% 偏高，建议关注资源分配\n")
+            if m == "disk" and p95 > 80:
+                lines.append(f"- ⚠️ {names[m]} P95={p95:.1f}%，建议清理或扩容\n")
+            if m == "gpu_temp" and max(vals) > 80:
+                lines.append(f"- ⚠️ {names[m]} 峰值={max(vals):.0f}°C，注意散热\n")
+
+    return "".join(lines)
+
+
+# ─── safe: 合规检查 ───
+
+@tool
+def check_compliance(category: str = "") -> str:
+    """执行安全合规基线检查。基于 CIS Benchmark 标准检查 SSH、口令策略、文件权限、网络安全等配置。
+
+    Args:
+        category: 可选，只检查指定分类（如 SSH安全、口令策略、网络安全）。留空检查全部。
+    """
+    import subprocess
+    from pathlib import Path
+    from config import BASE_DIR
+
+    baselines_path = Path(BASE_DIR) / "data" / "compliance_baselines.json"
+    if not baselines_path.exists():
+        return "合规基线文件不存在: data/compliance_baselines.json"
+
+    try:
+        baselines = json.loads(baselines_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return f"读取基线文件失败: {e}"
+
+    if category:
+        baselines = [b for b in baselines if category.lower() in b.get("category", "").lower()]
+
+    if not baselines:
+        return f"没有找到分类 '{category}' 的基线检查项。"
+
+    results = []
+    pass_count = 0
+    total = len(baselines)
+
+    for baseline in baselines:
+        bid = baseline["id"]
+        name = baseline["name"]
+        severity = baseline.get("severity", "medium")
+        check_cmd = baseline.get("check_cmd", "")
+
+        try:
+            proc = subprocess.run(
+                check_cmd, shell=True, capture_output=True, text=True, timeout=10,
+            )
+            output = (proc.stdout + proc.stderr).strip()
+        except subprocess.TimeoutExpired:
+            results.append(f"| {name} | TIMEOUT | {severity} | 命令超时 |")
+            continue
+        except Exception as e:
+            results.append(f"| {name} | ERROR | {severity} | {e} |")
+            continue
+
+        # 判定是否通过
+        passed = True
+        detail = output[:100]
+
+        if "expect_contains" in baseline:
+            if baseline["expect_contains"] not in output:
+                passed = False
+                detail = f"期望包含 '{baseline['expect_contains']}', 实际: {output[:80]}"
+
+        if "fail_if_contains" in baseline and baseline["fail_if_contains"] in output:
+            passed = False
+            detail = f"检测到不安全配置: {output[:80]}"
+
+        if "expect_regex" in baseline:
+            match = re.search(baseline["expect_regex"], output)
+            if match:
+                try:
+                    val = int(match.group(1))
+                    if "expect_max" in baseline and val > baseline["expect_max"]:
+                        passed = False
+                        detail = f"当前值 {val} 超过最大值 {baseline['expect_max']}"
+                    if "expect_min" in baseline and val < baseline["expect_min"]:
+                        passed = False
+                        detail = f"当前值 {val} 低于最小值 {baseline['expect_min']}"
+                except (ValueError, IndexError):
+                    pass
+            else:
+                passed = False
+                detail = f"未匹配到期望模式"
+
+        status = "PASS" if passed else "FAIL"
+        if passed:
+            pass_count += 1
+
+        fix_info = ""
+        if not passed and baseline.get("fix_guide"):
+            fix_info = f" → {baseline['fix_guide']}"
+
+        results.append(f"| {name} | {status} | {severity} | {detail}{fix_info} |")
+
+    compliance_rate = round(pass_count / total * 100, 1) if total > 0 else 0
+    header = (
+        f"## 安全合规检查报告\n\n"
+        f"合规率: **{compliance_rate}%** ({pass_count}/{total} 通过)\n\n"
+        f"| 检查项 | 结果 | 严重级别 | 详情 |\n|---|---|---|---|"
+    )
+    return header + "\n" + "\n".join(results)
+
+
+# ─── safe: 故障案例库 ───
+
+@tool
+async def search_fault_cases(query: str) -> str:
+    """搜索故障案例库。从历史故障案例中检索匹配的问题和解决方案。
+
+    Args:
+        query: 搜索关键词（如 "内存超限"、"Docker 重启"、"SSH 连接"）
+    """
+    import aiosqlite
+    from config import settings
+
+    try:
+        async with aiosqlite.connect(settings.db_path) as db:
+            # 先尝试 FTS5 搜索
+            try:
+                cursor = await db.execute(
+                    "SELECT fc.id, fc.title, fc.category, fc.symptoms, fc.root_cause, fc.solution, fc.tags "
+                    "FROM fault_cases_fts fts JOIN fault_cases fc ON fts.rowid = fc.id "
+                    "WHERE fault_cases_fts MATCH ? ORDER BY rank LIMIT 5",
+                    (query,),
+                )
+            except Exception:
+                # FTS5 不可用时用 LIKE 回退
+                like = f"%{query}%"
+                cursor = await db.execute(
+                    "SELECT id, title, category, symptoms, root_cause, solution, tags "
+                    "FROM fault_cases WHERE title LIKE ? OR symptoms LIKE ? OR root_cause LIKE ? OR tags LIKE ? "
+                    "ORDER BY created_at DESC LIMIT 5",
+                    (like, like, like, like),
+                )
+
+            rows = await cursor.fetchall()
+
+        if not rows:
+            return f"没有找到与 \"{query}\" 相关的故障案例。"
+
+        lines = [f"## 故障案例搜索: \"{query}\" ({len(rows)} 条结果)\n"]
+        for r in rows:
+            lines.append(f"### [{r[2] or '通用'}] {r[1]}")
+            if r[3]:
+                lines.append(f"**症状**: {r[3][:200]}")
+            if r[4]:
+                lines.append(f"**根因**: {r[4][:200]}")
+            if r[5]:
+                lines.append(f"**解决方案**: {r[5][:300]}")
+            if r[6]:
+                lines.append(f"**标签**: {r[6]}")
+            lines.append("")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"搜索案例库失败: {e}"
+
+
+@tool
+async def save_fault_case(title: str, category: str, symptoms: str, root_cause: str, solution: str, tags: str = "") -> str:
+    """将故障案例保存到案例库。
+
+    Args:
+        title: 案例标题（简短描述问题）
+        category: 分类（memory/docker/service/network/security/gpu）
+        symptoms: 症状描述
+        root_cause: 根本原因
+        solution: 解决方案
+        tags: 标签（逗号分隔，如 "内存,超限,kill"）
+    """
+    import aiosqlite
+    from config import settings
+
+    try:
+        async with aiosqlite.connect(settings.db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO fault_cases (title, category, symptoms, root_cause, solution, tags, source) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'manual') RETURNING id",
+                (title, category, symptoms, root_cause, solution, tags),
+            )
+            row = await cursor.fetchone()
+            case_id = row[0] if row else None
+
+            # 更新 FTS5 索引
+            if case_id:
+                try:
+                    await db.execute(
+                        "INSERT INTO fault_cases_fts(rowid, title, symptoms, root_cause, solution, tags) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (case_id, title, symptoms, root_cause, solution, tags),
+                    )
+                except Exception:
+                    pass  # FTS5 不可用时跳过
+
+            await db.commit()
+            return f"案例已保存 (ID: {case_id})。标题: {title}"
+    except Exception as e:
+        return f"保存案例失败: {e}"
 
 
 # ─── 工具注册表 ───
 
 def get_server_tools() -> list:
-    """返回所有服务器管理工具（15 个）
+    """返回所有服务器管理工具
 
     Deep Agents 还会自动注入内置工具:
     - execute (持久化 Shell)
@@ -288,6 +617,10 @@ def get_server_tools() -> list:
         update_user_quotas,
         execute_ops_script,
         kill_user_processes,
+        check_compliance,
+        analyze_resource_trend,
+        search_fault_cases,
+        save_fault_case,
     ]
 
 

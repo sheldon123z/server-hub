@@ -73,7 +73,13 @@ PATROL_PROMPT = """你是 ServerHub 自动巡检助手。请执行以下巡检�
 任务: {task_name}
 说明: {task_description}
 
-请依次调用工具收集数据，分析是否有异常，生成简洁的巡检报告。格式:
+请依次调用工具收集数据，分析是否有异常，生成简洁的巡检报告。
+
+## 报告要求
+
+先用 Markdown 写可读报告，然后在报告末尾附上结构化 JSON 数据块。
+
+### Markdown 报告格式
 
 ## {task_name}
 **状态**: 正常 / 告警 / 严重
@@ -83,4 +89,36 @@ PATROL_PROMPT = """你是 ServerHub 自动巡检助手。请执行以下巡检�
 - ...（无则写"无异常"）
 ### 建议
 - ...（无则省略）
+
+### 结构化数据
+
+在报告最后，输出如下 JSON（用 ```json 包裹）：
+
+```json
+{{
+  "summary": "一句话概括巡检结果",
+  "status": "ok 或 warning 或 critical",
+  "check_items": [
+    {{
+      "name": "检查项名称",
+      "status": "pass 或 warn 或 fail",
+      "severity": "info/low/medium/high/critical",
+      "current_value": "当前值",
+      "threshold": "阈值",
+      "detail": "详细描述",
+      "recommendation": "修复建议（无则留空）"
+    }}
+  ],
+  "metrics_snapshot": {{
+    "说明": "本次采集到的关键指标键值对"
+  }}
+}}
+```
+
+severity 分级标准:
+- info: 纯信息，无需关注
+- low: 轻微偏离，可暂不处理
+- medium: 需要关注，建议近期处理
+- high: 需要尽快处理
+- critical: 紧急，需要立即处理
 """

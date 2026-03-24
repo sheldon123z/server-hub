@@ -130,6 +130,76 @@
 .patrol-edit { margin-top: 8px; }
 .patrol-edit textarea { min-height: 60px; }
 
+/* 巡检子标签 */
+.patrol-subtabs { display: flex; gap: 0; padding: 6px 6px 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.patrol-subtab { padding: 6px 12px; font-size: 11px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text3); transition: all 0.12s; white-space: nowrap; }
+.patrol-subtab:hover { color: var(--text); }
+.patrol-subtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* 告警规则列表 */
+.alert-rule-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; margin-bottom: 2px; }
+.alert-rule-item:hover { background: rgba(56,189,248,0.04); }
+.alert-rule-item.active { background: var(--accent-dim); }
+.alert-rule-item .alert-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alert-rule-item .alert-meta { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.alert-rule-item.disabled { opacity: 0.5; }
+.alert-detail { display: flex; flex-direction: column; overflow: hidden; height: 100%; }
+.alert-detail-section { padding: 14px 18px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.alert-detail-section h4 { font-size: 13px; margin: 0 0 10px; color: var(--text); }
+.alert-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.alert-field label { min-width: 80px; color: var(--text2); }
+.alert-field input { width: 80px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 4px 8px; font-size: 12px; text-align: center; }
+.alert-field input:focus { outline: none; border-color: var(--accent); }
+.alert-history-list { flex: 1; overflow-y: auto; padding: 14px 18px; }
+.alert-hist-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,0.1); font-size: 12px; }
+.alert-hist-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+.alert-hist-dot.warning { background: var(--yellow); }
+.alert-hist-dot.critical { background: var(--red); }
+.alert-hist-info { flex: 1; }
+.alert-hist-time { font-size: 10px; color: var(--text3); }
+
+/* 模板列表 */
+.tpl-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; margin-bottom: 2px; }
+.tpl-item:hover { background: rgba(56,189,248,0.04); }
+.tpl-item.active { background: var(--accent-dim); }
+.tpl-item .tpl-name { font-size: 12px; font-weight: 500; }
+.tpl-item .tpl-cat { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.tpl-item .badge { font-size: 9px; padding: 1px 5px; margin-left: 4px; }
+.tpl-detail { display: flex; flex-direction: column; overflow-y: auto; padding: 18px; gap: 14px; }
+.tpl-detail h3 { font-size: 16px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 8px; }
+.tpl-info-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.tpl-prompt-preview { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 12px; color: var(--text2); line-height: 1.6; white-space: pre-wrap; }
+.tpl-var-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.tpl-var-table th, .tpl-var-table td { padding: 6px 8px; border: 1px solid var(--border); text-align: left; }
+.tpl-var-table th { background: var(--bg); color: var(--text2); font-weight: 500; }
+.tpl-cat-header { padding: 6px 12px; font-size: 10px; text-transform: uppercase; color: var(--text3); font-weight: 600; letter-spacing: 0.5px; }
+
+/* 故障报告列表 */
+.fault-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; margin-bottom: 2px; border-left: 3px solid transparent; }
+.fault-item:hover { background: rgba(56,189,248,0.04); }
+.fault-item.active { background: var(--accent-dim); }
+.fault-item.sev-critical { border-left-color: var(--red); }
+.fault-item.sev-high { border-left-color: var(--yellow); }
+.fault-item .fault-title { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fault-item .fault-meta { font-size: 10px; color: var(--text3); margin-top: 2px; display: flex; gap: 8px; }
+.fault-detail { padding: 18px; overflow-y: auto; font-size: 13px; line-height: 1.7; }
+.fault-detail h3 { font-size: 16px; margin: 0 0 8px; }
+.fault-section { margin-bottom: 14px; }
+.fault-section h4 { font-size: 12px; color: var(--text2); margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.fault-section ul { padding-left: 16px; margin: 0; }
+.fault-section li { margin: 3px 0; }
+
+/* 案例库 */
+.case-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.12s; margin-bottom: 2px; }
+.case-item:hover { background: rgba(56,189,248,0.04); }
+.case-item.active { background: var(--accent-dim); }
+.case-item .case-title { font-size: 12px; font-weight: 500; }
+.case-item .case-cat { font-size: 10px; color: var(--text3); }
+.case-search { display: flex; gap: 6px; margin-bottom: 8px; }
+.case-search input { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 5px 8px; font-size: 11px; }
+.case-search input:focus { outline: none; border-color: var(--accent); }
+.case-detail { padding: 18px; overflow-y: auto; font-size: 13px; line-height: 1.7; }
+
 /* 页内弹窗 */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
 .modal-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 420px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
@@ -256,56 +326,321 @@
     <!-- 巡检 -->
     <div class="right-panel" :class="(tab==='patrol' && !showTerminal)?'active':''" style="padding:0;overflow:hidden">
       <div class="patrol-panel">
-        <div class="patrol-list">
-          <template x-for="p in patrols" :key="'pli-'+p.id">
-            <div class="patrol-list-item" :class="activePatrol===p.id?'active':''" @click="activePatrol=p.id">
-              <div class="p-dot" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
-              <div class="p-info">
-                <div class="p-name" x-text="p.display_name"></div>
-                <div class="p-meta" x-text="p.enabled ? nextRunText(p) : '已禁用'"></div>
+        <!-- 左栏: 子标签 + 列表 -->
+        <div style="display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)">
+          <div class="patrol-subtabs">
+            <div class="patrol-subtab" :class="patrolView==='tasks'?'active':''" @click="patrolView='tasks'">任务</div>
+            <div class="patrol-subtab" :class="patrolView==='alerts'?'active':''" @click="switchPatrolView('alerts')">告警</div>
+            <div class="patrol-subtab" :class="patrolView==='templates'?'active':''" @click="switchPatrolView('templates')">模板</div>
+            <div class="patrol-subtab" :class="patrolView==='reports'?'active':''" @click="switchPatrolView('reports')">报告</div>
+            <div class="patrol-subtab" :class="patrolView==='cases'?'active':''" @click="switchPatrolView('cases')">案例</div>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:6px">
+            <!-- 任务列表 -->
+            <template x-if="patrolView==='tasks'">
+              <div>
+                <template x-for="p in patrols" :key="'pli-'+p.id">
+                  <div class="patrol-list-item" :class="activePatrol===p.id?'active':''" @click="activePatrol=p.id">
+                    <div class="p-dot" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
+                    <div class="p-info">
+                      <div class="p-name" x-text="p.display_name"></div>
+                      <div class="p-meta" x-text="p.enabled ? nextRunText(p) : '已禁用'"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <!-- 告警规则列表 -->
+            <template x-if="patrolView==='alerts'">
+              <div>
+                <template x-for="r in alertRules" :key="'ar-'+r.id">
+                  <div class="alert-rule-item" :class="(activeAlertRule===r.id?'active ':'')+(r.enabled?'':'disabled')" @click="activeAlertRule=r.id">
+                    <div class="alert-name" x-text="r.name"></div>
+                    <div class="alert-meta" x-text="r.metric+' '+r.operator+' '+(r.warning_threshold||'?')+'/'+(r.critical_threshold||'?')"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <!-- 故障报告列表 -->
+            <template x-if="patrolView==='reports'">
+              <div>
+                <template x-if="faultReports.length===0">
+                  <div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">暂无故障报告</div>
+                </template>
+                <template x-for="r in faultReports" :key="'fr-'+r.id">
+                  <div class="fault-item" :class="(activeFaultReport===r.id?'active ':'')+('sev-'+r.severity)" @click="loadFaultReportDetail(r.id)">
+                    <div class="fault-title" x-text="(r.root_cause||r.source||'').slice(0,40)"></div>
+                    <div class="fault-meta">
+                      <span class="badge" :class="r.status==='open'?'badge-crit':'badge-ok'" x-text="r.status==='open'?'待处理':'已解决'" style="font-size:9px"></span>
+                      <span x-text="(r.detected_at||'').replace('T',' ').slice(0,16)"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <!-- 案例库列表 -->
+            <template x-if="patrolView==='cases'">
+              <div>
+                <div class="case-search">
+                  <input type="text" placeholder="搜索案例..." x-model="caseSearchQuery" @keydown.enter="searchCases()">
+                  <button class="btn btn-xs btn-primary" @click="searchCases()">搜索</button>
+                </div>
+                <template x-if="faultCases.length===0">
+                  <div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">暂无案例</div>
+                </template>
+                <template x-for="c in faultCases" :key="'fc-'+c.id">
+                  <div class="case-item" :class="activeFaultCase===c.id?'active':''" @click="activeFaultCase=c.id">
+                    <div class="case-title" x-text="c.title"></div>
+                    <div class="case-cat">
+                      <span class="badge badge-info" x-text="c.category||'通用'" style="font-size:9px"></span>
+                      <span x-text="c.source==='auto'?'自动':'手动'" style="font-size:10px;color:var(--text3)"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <!-- 模板列表 -->
+            <template x-if="patrolView==='templates'">
+              <div>
+                <template x-for="cat in ['performance','availability','security','general']" :key="'tc-'+cat">
+                  <div x-show="templates.filter(t=>t.category===cat).length">
+                    <div class="tpl-cat-header" x-text="({performance:'性能',availability:'可用性',security:'安全',general:'通用'})[cat]||cat"></div>
+                    <template x-for="t in templates.filter(x=>x.category===cat)" :key="'tl-'+t.id">
+                      <div class="tpl-item" :class="activeTpl===t.id?'active':''" @click="activeTpl=t.id">
+                        <div class="tpl-name">
+                          <span x-text="t.name"></span>
+                          <span class="badge badge-info" x-show="t.is_builtin">内置</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 右栏: 详情区（根据 patrolView 切换） -->
+
+        <!-- 巡检任务详情 -->
+        <div x-show="patrolView==='tasks'" style="display:flex;flex-direction:column;overflow:hidden">
+          <template x-for="p in patrols" :key="'pd-'+p.id">
+            <div class="patrol-detail" x-show="activePatrol===p.id">
+              <div class="patrol-detail-header">
+                <div class="p-title-row">
+                  <div class="p-title">
+                    <span x-text="p.display_name"></span>
+                    <span class="patrol-status-badge" :class="'s-'+(p.last_status||'none')">
+                      <span class="s-dot"></span>
+                      <span x-text="p.last_status==='ok'?'正常':p.last_status==='warning'?'告警':p.last_status==='critical'?'严重':'未运行'"></span>
+                    </span>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
+                    <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+                  </div>
+                </div>
+                <div class="p-desc" x-text="p.description"></div>
+                <div style="display:flex;align-items:center;gap:12px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
+                  <label style="display:flex;align-items:center;gap:4px">间隔
+                    <input type="number" min="1" max="10080" style="width:56px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
+                           x-model.number="p._editInterval" x-init="p._editInterval=p.interval_minutes"> 分钟</label>
+                  <button class="btn btn-xs btn-primary" style="padding:3px 10px;font-size:10px"
+                          @click="updatePatrolInterval(p.id, p._editInterval)">保存</button>
+                  <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
+                  <span x-show="p.enabled" style="color:var(--accent)" x-text="nextRunText(p)"></span>
+                  <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
+                  <span x-show="patrolCronMap[p.id]" style="color:var(--text3);font-style:italic" x-text="'Cron: '+(patrolCronMap[p.id]||'')"></span>
+                </div>
+              </div>
+              <div class="patrol-report" x-show="p.last_report" x-html="renderMd(p.last_report||'')"></div>
+              <div class="patrol-empty" x-show="!p.last_report">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+                <span style="font-size:13px">尚无巡检报告</span>
+                <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">运行巡检</button>
               </div>
             </div>
           </template>
         </div>
-        <template x-for="p in patrols" :key="'pd-'+p.id">
-          <div class="patrol-detail" x-show="activePatrol===p.id">
-            <div class="patrol-detail-header">
-              <div class="p-title-row">
-                <div class="p-title">
-                  <span x-text="p.display_name"></span>
-                  <span class="patrol-status-badge" :class="'s-'+(p.last_status||'none')">
-                    <span class="s-dot"></span>
-                    <span x-text="p.last_status==='ok'?'正常':p.last_status==='warning'?'告警':p.last_status==='critical'?'严重':'未运行'"></span>
-                  </span>
+
+        <!-- 告警详情 -->
+        <div x-show="patrolView==='alerts'" class="alert-detail">
+          <template x-if="activeAlertRule && alertRules.find(r=>r.id===activeAlertRule)">
+            <div>
+              <div class="alert-detail-section" x-data="{get rule(){return $data.alertRules.find(r=>r.id===$data.activeAlertRule)||{}}}">
+                <h4 x-text="rule.name" style="display:flex;align-items:center;gap:8px">
+                </h4>
+                <div class="alert-field">
+                  <label>指标</label>
+                  <span style="color:var(--accent);font-family:monospace" x-text="rule.metric"></span>
+                  <span x-text="rule.operator" style="color:var(--text3)"></span>
                 </div>
-                <div style="display:flex;gap:6px;align-items:center">
-                  <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">立即运行</button>
-                  <button class="btn btn-xs" @click="togglePatrol(p.id,!p.enabled)" x-text="p.enabled?'禁用':'启用'"></button>
+                <div class="alert-field">
+                  <label>警告阈值</label>
+                  <input type="number" step="any" x-model.number="rule.warning_threshold">
+                </div>
+                <div class="alert-field">
+                  <label>严重阈值</label>
+                  <input type="number" step="any" x-model.number="rule.critical_threshold">
+                </div>
+                <div class="alert-field">
+                  <label>冷却(分钟)</label>
+                  <input type="number" min="1" x-model.number="rule.cooldown_minutes">
+                </div>
+                <div class="alert-field">
+                  <label>通知</label>
+                  <button class="btn btn-xs" :style="rule.notify?'background:var(--green);color:#000;border-color:var(--green)':''" @click="rule.notify=!rule.notify" x-text="rule.notify?'开启':'关闭'"></button>
+                  <button class="btn btn-xs" :style="rule.enabled?'':'background:var(--yellow);color:#000;border-color:var(--yellow)'" @click="rule.enabled=!rule.enabled" x-text="rule.enabled?'已启用':'已禁用'"></button>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+                  <button class="btn btn-xs btn-primary" @click="saveAlertRule(rule)">保存规则</button>
                 </div>
               </div>
-              <div class="p-desc" x-text="p.description"></div>
-              <div style="display:flex;align-items:center;gap:12px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:4px">间隔
-                  <input type="number" min="1" max="10080" style="width:56px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
-                         x-model.number="p._editInterval" x-init="p._editInterval=p.interval_minutes"> 分钟</label>
-                <button class="btn btn-xs btn-primary" style="padding:3px 10px;font-size:10px"
-                        @click="updatePatrolInterval(p.id, p._editInterval)">保存</button>
-                <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
-                <span x-show="p.enabled" style="color:var(--accent)" x-text="nextRunText(p)"></span>
-                <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
-                <span x-show="patrolCronMap[p.id]" style="color:var(--text3);font-style:italic" x-text="'Cron: '+(patrolCronMap[p.id]||'')"></span>
-              </div>
             </div>
-            <div class="patrol-report" x-show="p.last_report" x-html="renderMd(p.last_report||'')"></div>
-            <div class="patrol-empty" x-show="!p.last_report">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
-              <span style="font-size:13px">尚无巡检报告</span>
-              <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">运行巡检</button>
-            </div>
+          </template>
+          <div style="padding:10px 18px;flex-shrink:0;border-bottom:1px solid var(--border)">
+            <h4 style="font-size:13px;margin:0;color:var(--text2)">告警历史</h4>
           </div>
-        </template>
-      </div>
-    </div>
+          <div class="alert-history-list">
+            <template x-if="alertHistory.length===0">
+              <div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">暂无告警记录</div>
+            </template>
+            <template x-for="h in alertHistory" :key="'ah-'+h.id">
+              <div class="alert-hist-item">
+                <div class="alert-hist-dot" :class="h.severity"></div>
+                <div class="alert-hist-info">
+                  <div x-text="h.rule_name+' — '+h.message"></div>
+                  <div class="alert-hist-time" x-text="(h.created_at||'').replace('T',' ').slice(0,19)"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- 模板详情 -->
+        <div x-show="patrolView==='templates'" style="overflow:hidden;display:flex;flex-direction:column">
+          <template x-if="activeTpl && templates.find(t=>t.id===activeTpl)">
+            <div class="tpl-detail" x-data="{get tpl(){return $data.templates.find(t=>t.id===$data.activeTpl)||{}}}">
+              <h3>
+                <span x-text="tpl.name"></span>
+                <span class="badge badge-info" x-show="tpl.is_builtin">内置</span>
+              </h3>
+              <div style="font-size:12px;color:var(--text2)" x-text="tpl.description"></div>
+              <div class="tpl-info-row">
+                <span class="badge badge-ok" x-text="({performance:'性能',availability:'可用性',security:'安全',general:'通用'})[tpl.category]||tpl.category"></span>
+                <template x-for="tool in (tpl.check_tools||'').split(',')" :key="tool">
+                  <span class="badge badge-info" x-text="tool"></span>
+                </template>
+              </div>
+              <div>
+                <div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Prompt 模板</div>
+                <div class="tpl-prompt-preview" x-text="tpl.prompt_template"></div>
+              </div>
+              <div x-show="tpl.variables && tpl.variables.length">
+                <div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">变量定义</div>
+                <table class="tpl-var-table">
+                  <thead><tr><th>变量名</th><th>类型</th><th>默认值</th><th>说明</th></tr></thead>
+                  <tbody>
+                    <template x-for="v in (tpl.variables||[])" :key="v.name">
+                      <tr>
+                        <td style="font-family:monospace;color:var(--accent)" x-text="v.name"></td>
+                        <td x-text="v.type"></td>
+                        <td x-text="v.default"></td>
+                        <td x-text="v.description"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-sm btn-primary" @click="openCreateFromTpl(tpl)">从此模板创建巡检任务</button>
+              </div>
+            </div>
+          </template>
+          <div x-show="!activeTpl" class="patrol-empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/></svg>
+            <span style="font-size:13px">选择一个模板查看详情</span>
+          </div>
+        </div>
+
+        <!-- 故障报告详情 -->
+        <div x-show="patrolView==='reports'" style="overflow:hidden;display:flex;flex-direction:column">
+          <template x-if="faultReportDetail">
+            <div class="fault-detail">
+              <h3 style="display:flex;align-items:center;gap:8px">
+                <span class="badge" :class="faultReportDetail.status==='open'?'badge-crit':'badge-ok'" x-text="faultReportDetail.status==='open'?'待处理':'已解决'"></span>
+                <span x-text="faultReportDetail.severity" style="text-transform:uppercase"></span>
+              </h3>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+                <span x-text="'来源: '+(faultReportDetail.source||'')"></span> |
+                <span x-text="(faultReportDetail.detected_at||'').replace('T',' ').slice(0,19)"></span>
+              </div>
+              <div class="fault-section">
+                <h4>根本原因</h4>
+                <div x-text="faultReportDetail.root_cause||'分析中...'"></div>
+              </div>
+              <div class="fault-section" x-show="faultReportDetail.symptoms?.length">
+                <h4>症状</h4>
+                <ul><template x-for="s in (faultReportDetail.symptoms||[])" :key="s"><li x-text="s"></li></template></ul>
+              </div>
+              <div class="fault-section" x-show="faultReportDetail.immediate_actions?.length">
+                <h4>紧急处置</h4>
+                <ul><template x-for="a in (faultReportDetail.immediate_actions||[])" :key="a"><li x-text="a"></li></template></ul>
+              </div>
+              <div class="fault-section" x-show="faultReportDetail.long_term_solutions?.length">
+                <h4>长期方案</h4>
+                <ul><template x-for="a in (faultReportDetail.long_term_solutions||[])" :key="a"><li x-text="a"></li></template></ul>
+              </div>
+              <div class="fault-section" x-show="faultReportDetail.evidence?.length">
+                <h4>证据</h4>
+                <ul><template x-for="e in (faultReportDetail.evidence||[])" :key="e"><li style="font-family:monospace;font-size:11px" x-text="e"></li></template></ul>
+              </div>
+              <div style="margin-top:12px" x-show="faultReportDetail.status==='open'">
+                <button class="btn btn-sm btn-primary" @click="resolveFaultReport(faultReportDetail.id)">标记为已解决</button>
+              </div>
+            </div>
+          </template>
+          <div x-show="!faultReportDetail" class="patrol-empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 9v4m0 4h.01M3 12a9 9 0 1 1 18 0 9 9 0 0 1-18 0z"/></svg>
+            <span style="font-size:13px">选择一个故障报告查看详情</span>
+          </div>
+        </div>
+
+        <!-- 案例库详情 -->
+        <div x-show="patrolView==='cases'" style="overflow:hidden;display:flex;flex-direction:column">
+          <template x-if="activeFaultCase && faultCases.find(c=>c.id===activeFaultCase)">
+            <div class="case-detail" x-data="{get c(){return $data.faultCases.find(x=>x.id===$data.activeFaultCase)||{}}}">
+              <h3 x-text="c.title" style="font-size:16px;margin:0 0 8px"></h3>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+                <span class="badge badge-info" x-text="c.category||'通用'"></span>
+                <span class="badge" :class="c.source==='auto'?'badge-warn':'badge-ok'" x-text="c.source==='auto'?'自动生成':'手动录入'"></span>
+                <template x-for="tag in (c.tags||'').split(',').filter(Boolean)" :key="tag">
+                  <span class="badge badge-info" x-text="tag" style="font-size:9px"></span>
+                </template>
+              </div>
+              <div class="fault-section" x-show="c.symptoms">
+                <h4>症状描述</h4>
+                <div x-text="c.symptoms"></div>
+              </div>
+              <div class="fault-section" x-show="c.root_cause">
+                <h4>根本原因</h4>
+                <div x-text="c.root_cause"></div>
+              </div>
+              <div class="fault-section" x-show="c.solution">
+                <h4>解决方案</h4>
+                <div x-text="c.solution"></div>
+              </div>
+              <div style="font-size:10px;color:var(--text3);margin-top:12px" x-text="'创建于: '+(c.created_at||'').replace('T',' ').slice(0,19)"></div>
+            </div>
+          </template>
+          <div x-show="!activeFaultCase" class="patrol-empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+            <span style="font-size:13px">搜索或选择一个案例查看详情</span>
+          </div>
+        </div>
+
+      </div><!-- /patrol-panel -->
+    </div><!-- /巡检 right-panel -->
 
     <!-- 管理 -->
     <div class="right-panel" :class="(tab==='admin' && !showTerminal)?'active':''" style="overflow-y:auto;padding:4px">
@@ -438,6 +773,35 @@
 
   </div><!-- /agent-main -->
 
+  <!-- 从模板创建巡检任务弹窗 (必须在 grid 外) -->
+  <div class="modal-overlay" x-show="createFromTpl.show" x-cloak @click.self="createFromTpl.show=false">
+    <div class="modal-box" style="max-width:480px">
+      <h3>从模板创建巡检任务</h3>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px" x-text="createFromTpl.tpl?.name||''"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div>
+          <label class="text-xs text-muted">任务名称</label>
+          <input class="form-input" style="font-size:12px" x-model="createFromTpl.displayName">
+        </div>
+        <div>
+          <label class="text-xs text-muted">执行间隔（分钟）</label>
+          <input class="form-input" type="number" min="1" style="font-size:12px;width:100px" x-model.number="createFromTpl.interval">
+        </div>
+        <template x-for="v in (createFromTpl.tpl?.variables||[])" :key="'cv-'+v.name">
+          <div>
+            <label class="text-xs text-muted" x-text="v.description+' ('+v.name+')'"></label>
+            <input class="form-input" :type="v.type==='number'?'number':'text'" style="font-size:12px;width:100px"
+                   x-model="createFromTpl.variables[v.name]" :placeholder="v.default">
+          </div>
+        </template>
+      </div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn btn-sm" @click="createFromTpl.show=false">取消</button>
+        <button class="btn btn-sm btn-primary" @click="doCreateFromTpl()">创建</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /agent-layout -->
 
 <script src="/static/js/xterm.min.js"></script>
@@ -446,6 +810,11 @@
 function agentApp() {
   return {
     tab: localStorage.getItem('agent-tab') || 'chat', showTerminal: false, messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
+    patrolView: 'tasks', alertRules: [], alertHistory: [], activeAlertRule: '',
+    templates: [], activeTpl: '',
+    createFromTpl: { show: false, tpl: null, variables: {}, interval: 60, displayName: '' },
+    faultReports: [], activeFaultReport: '', faultReportDetail: null,
+    faultCases: [], activeFaultCase: '', caseSearchQuery: '',
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
@@ -701,6 +1070,83 @@ function agentApp() {
 
         this._term = term; this._ws = ws;
       });
+    },
+
+    // ─── 巡检子视图切换 ───
+    async switchPatrolView(view) {
+      this.patrolView = view;
+      if (view === 'alerts') { await this.loadAlertRules(); await this.loadAlertHistory(); }
+      if (view === 'templates') { await this.loadTemplates(); }
+      if (view === 'reports') { await this.loadFaultReports(); }
+      if (view === 'cases') { await this.loadFaultCases(); }
+    },
+
+    // ─── 告警 ───
+    async loadAlertRules() {
+      try { this.alertRules = await (await fetch('/api/agents/alerts/rules')).json(); if (!this.activeAlertRule && this.alertRules.length) this.activeAlertRule = this.alertRules[0].id; } catch(e) {}
+    },
+    async loadAlertHistory() {
+      try { this.alertHistory = await (await fetch('/api/agents/alerts/history?limit=30')).json(); } catch(e) {}
+    },
+    async saveAlertRule(rule) {
+      try {
+        const r = await fetch(`/api/agents/alerts/rules/${rule.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          warning_threshold:rule.warning_threshold, critical_threshold:rule.critical_threshold,
+          cooldown_minutes:rule.cooldown_minutes, notify:rule.notify, enabled:rule.enabled
+        })});
+        const d = await r.json();
+        if(d.ok) showToast('规则已保存','ok'); else showToast('保存失败','err');
+      } catch(e) { showToast('保存失败','err'); }
+    },
+
+    // ─── 模板 ───
+    async loadTemplates() {
+      try { this.templates = await (await fetch('/api/agents/templates')).json(); if (!this.activeTpl && this.templates.length) this.activeTpl = this.templates[0].id; } catch(e) {}
+    },
+    openCreateFromTpl(tpl) {
+      const vars = {};
+      (tpl.variables||[]).forEach(v => { vars[v.name] = v.default || ''; });
+      this.createFromTpl = { show: true, tpl, variables: vars, interval: 60, displayName: tpl.name };
+    },
+    async doCreateFromTpl() {
+      const c = this.createFromTpl;
+      if (!c.tpl) return;
+      try {
+        const r = await fetch('/api/agents/patrols/from-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          template_id: c.tpl.id, variables: c.variables,
+          interval_minutes: c.interval, display_name: c.displayName
+        })});
+        const d = await r.json();
+        if(d.ok) { showToast(`任务 "${d.display_name}" 已创建`,'ok'); c.show = false; await this.loadPatrols(); this.patrolView = 'tasks'; }
+        else showToast(d.detail||'创建失败','err');
+      } catch(e) { showToast('创建失败','err'); }
+    },
+
+    // ─── 故障报告 ───
+    async loadFaultReports() {
+      try { this.faultReports = await (await fetch('/api/agents/fault-reports?limit=30')).json(); } catch(e) {}
+    },
+    async loadFaultReportDetail(id) {
+      this.activeFaultReport = id;
+      try { this.faultReportDetail = await (await fetch(`/api/agents/fault-reports/${id}`)).json(); } catch(e) {}
+    },
+    async resolveFaultReport(id) {
+      try {
+        const d = await (await fetch(`/api/agents/fault-reports/${id}/resolve`,{method:'PUT'})).json();
+        if(d.ok) { showToast('已标记为已解决','ok'); await this.loadFaultReports(); this.faultReportDetail.status='resolved'; }
+      } catch(e) { showToast('操作失败','err'); }
+    },
+
+    // ─── 案例库 ───
+    async loadFaultCases() {
+      try { this.faultCases = await (await fetch('/api/agents/fault-cases?limit=30')).json(); } catch(e) {}
+    },
+    async searchCases() {
+      const q = this.caseSearchQuery.trim();
+      try {
+        this.faultCases = await (await fetch(`/api/agents/fault-cases?q=${encodeURIComponent(q)}&limit=30`)).json();
+        this.activeFaultCase = '';
+      } catch(e) {}
     },
 
     // ─── 巡检 ───

@@ -137,10 +137,104 @@ async def init_tables(db: aiosqlite.Connection):
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT NOT NULL,
             report TEXT,
+            report_json TEXT,
             alert_sent INTEGER DEFAULT 0,
             duration_seconds REAL
         );
         CREATE INDEX IF NOT EXISTS idx_patrol_hist
             ON agent_patrol_history(task_id, timestamp);
+
+        -- 告警规则
+        CREATE TABLE IF NOT EXISTS alert_rules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            operator TEXT NOT NULL DEFAULT '>',
+            warning_threshold REAL,
+            critical_threshold REAL,
+            cooldown_minutes INTEGER DEFAULT 60,
+            notify INTEGER DEFAULT 1,
+            enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 告警历史
+        CREATE TABLE IF NOT EXISTS alert_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id TEXT,
+            severity TEXT NOT NULL,
+            current_value REAL,
+            message TEXT,
+            notified INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_alert_hist_rule
+            ON alert_history(rule_id, created_at);
+
+        -- 巡检模板
+        CREATE TABLE IF NOT EXISTS patrol_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            description TEXT,
+            check_tools TEXT NOT NULL,
+            prompt_template TEXT NOT NULL,
+            variables TEXT,
+            report_schema TEXT,
+            is_builtin INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 故障报告
+        CREATE TABLE IF NOT EXISTS fault_reports (
+            id TEXT PRIMARY KEY,
+            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            source TEXT,
+            severity TEXT,
+            affected_components TEXT,
+            symptoms TEXT,
+            root_cause TEXT,
+            evidence TEXT,
+            immediate_actions TEXT,
+            long_term_solutions TEXT,
+            similar_cases TEXT,
+            status TEXT DEFAULT 'open',
+            resolved_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_fault_reports_status
+            ON fault_reports(status, detected_at);
+
+        -- 故障案例库
+        CREATE TABLE IF NOT EXISTS fault_cases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            category TEXT,
+            symptoms TEXT,
+            root_cause TEXT,
+            solution TEXT,
+            tags TEXT,
+            source TEXT DEFAULT 'manual',
+            source_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
+
+    # FTS5 虚拟表（不能在 executescript 中创建）
+    try:
+        await db.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fault_cases_fts USING fts5("
+            "title, symptoms, root_cause, solution, tags, content=fault_cases, content_rowid=id)"
+        )
+    except Exception:
+        pass
+
+    # 兼容旧版：为 agent_patrol_history 表添加 report_json 列（如果不存在）
+    try:
+        await db.execute("SELECT report_json FROM agent_patrol_history LIMIT 0")
+    except Exception:
+        try:
+            await db.execute("ALTER TABLE agent_patrol_history ADD COLUMN report_json TEXT")
+        except Exception:
+            pass
+
     await db.commit()

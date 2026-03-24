@@ -348,12 +348,385 @@ async def trigger_patrol(patrol_id: str, user=Depends(require_role("admin"))):
 async def get_patrol_history(patrol_id: str, limit: int = 20, user=Depends(require_role("admin"))):
     db = await get_db()
     cursor = await db.execute(
-        "SELECT timestamp, status, report, duration_seconds "
+        "SELECT timestamp, status, report, duration_seconds, report_json "
         "FROM agent_patrol_history WHERE task_id = ? ORDER BY timestamp DESC LIMIT ?",
         (patrol_id, limit),
     )
     rows = await cursor.fetchall()
-    return [{"timestamp": r[0], "status": r[1], "report": (r[2] or "")[:1000], "duration": r[3]} for r in rows]
+    results = []
+    for r in rows:
+        item = {"timestamp": r[0], "status": r[1], "report": (r[2] or "")[:1000], "duration": r[3]}
+        if r[4]:
+            try:
+                item["report_json"] = json.loads(r[4])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        results.append(item)
+    return results
+
+
+@router.get("/patrols/{patrol_id}/report/{history_id}")
+async def get_patrol_report(patrol_id: str, history_id: int, user=Depends(require_role("admin"))):
+    """获取单次巡检的完整结构化报告"""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT timestamp, status, report, report_json, duration_seconds "
+        "FROM agent_patrol_history WHERE id = ? AND task_id = ?",
+        (history_id, patrol_id),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(404, "巡检记录不存在")
+    result = {
+        "timestamp": row[0], "status": row[1],
+        "report": row[2], "duration": row[4],
+    }
+    if row[3]:
+        try:
+            result["report_json"] = json.loads(row[3])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return result
+
+
+# ─── 巡检模板 ───
+
+@router.get("/templates")
+async def list_templates(category: str = "", user=Depends(require_role("admin"))):
+    """列出所有巡检模板"""
+    db = await get_db()
+    if category:
+        cursor = await db.execute(
+            "SELECT id, name, category, description, check_tools, prompt_template, variables, is_builtin "
+            "FROM patrol_templates WHERE category = ? ORDER BY name", (category,),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT id, name, category, description, check_tools, prompt_template, variables, is_builtin "
+            "FROM patrol_templates ORDER BY category, name"
+        )
+    rows = await cursor.fetchall()
+    results = []
+    for r in rows:
+        item = {
+            "id": r[0], "name": r[1], "category": r[2], "description": r[3],
+            "check_tools": r[4], "prompt_template": r[5], "is_builtin": bool(r[7]),
+        }
+        try:
+            item["variables"] = json.loads(r[6]) if r[6] else []
+        except (json.JSONDecodeError, TypeError):
+            item["variables"] = []
+        results.append(item)
+    return results
+
+
+@router.post("/templates")
+async def create_template(request: Request, user=Depends(require_role("admin"))):
+    """创建自定义巡检模板"""
+    body = await request.json()
+    for field in ("id", "name", "check_tools", "prompt_template"):
+        if field not in body:
+            raise HTTPException(400, f"缺少必填字段: {field}")
+
+    db = await get_db()
+    existing = await db.execute("SELECT id FROM patrol_templates WHERE id = ?", (body["id"],))
+    if await existing.fetchone():
+        raise HTTPException(409, f"模板 ID 已存在: {body['id']}")
+
+    variables = body.get("variables", [])
+    if isinstance(variables, list):
+        variables = json.dumps(variables, ensure_ascii=False)
+
+    await db.execute(
+        "INSERT INTO patrol_templates (id, name, category, description, check_tools, prompt_template, variables, is_builtin) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+        (body["id"], body["name"], body.get("category", "general"), body.get("description", ""),
+         body["check_tools"], body["prompt_template"], variables),
+    )
+    await db.commit()
+    return {"ok": True, "id": body["id"]}
+
+
+@router.delete("/templates/{template_id}")
+async def delete_template(template_id: str, user=Depends(require_role("admin"))):
+    """删除自定义巡检模板（内置模板不可删除）"""
+    db = await get_db()
+    cursor = await db.execute("SELECT is_builtin FROM patrol_templates WHERE id = ?", (template_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(404, "模板不存在")
+    if row[0]:
+        raise HTTPException(403, "内置模板不可删除")
+    await db.execute("DELETE FROM patrol_templates WHERE id = ?", (template_id,))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/patrols/from-template")
+async def create_patrol_from_template(request: Request, user=Depends(require_role("admin"))):
+    """从模板创建巡检任务"""
+    body = await request.json()
+    template_id = body.get("template_id")
+    if not template_id:
+        raise HTTPException(400, "缺少 template_id")
+
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT name, description, check_tools, prompt_template, variables FROM patrol_templates WHERE id = ?",
+        (template_id,),
+    )
+    tpl = await cursor.fetchone()
+    if not tpl:
+        raise HTTPException(404, f"模板不存在: {template_id}")
+
+    # 用传入的变量值替换 prompt 模板中的占位符
+    prompt = tpl[3]
+    variables = body.get("variables", {})
+    if variables:
+        try:
+            prompt = prompt.format(**variables)
+        except KeyError:
+            pass  # 缺少变量时保留原占位符
+
+    patrol_id = body.get("id") or f"custom_{template_id}_{int(datetime.now().timestamp())}"
+    display_name = body.get("display_name") or tpl[0]
+    interval = body.get("interval_minutes", 60)
+
+    # 检查 ID 是否重复
+    existing = await db.execute("SELECT id FROM agent_patrol_tasks WHERE id = ?", (patrol_id,))
+    if await existing.fetchone():
+        raise HTTPException(409, f"巡检任务 ID 已存在: {patrol_id}")
+
+    await db.execute(
+        "INSERT INTO agent_patrol_tasks (id, display_name, description, interval_minutes, check_tools, prompt) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (patrol_id, display_name, tpl[1] or "", interval, tpl[2], prompt),
+    )
+    await db.commit()
+    return {"ok": True, "id": patrol_id, "display_name": display_name}
+
+
+# ─── 故障报告 ───
+
+@router.get("/fault-reports")
+async def list_fault_reports(limit: int = 20, status: str = "", user=Depends(require_role("admin"))):
+    """获取故障报告列表"""
+    db = await get_db()
+    if status:
+        cursor = await db.execute(
+            "SELECT id, detected_at, source, severity, root_cause, status FROM fault_reports "
+            "WHERE status = ? ORDER BY detected_at DESC LIMIT ?", (status, limit),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT id, detected_at, source, severity, root_cause, status FROM fault_reports "
+            "ORDER BY detected_at DESC LIMIT ?", (limit,),
+        )
+    rows = await cursor.fetchall()
+    return [
+        {"id": r[0], "detected_at": r[1], "source": r[2], "severity": r[3],
+         "root_cause": (r[4] or "")[:200], "status": r[5]}
+        for r in rows
+    ]
+
+
+@router.get("/fault-reports/{report_id}")
+async def get_fault_report(report_id: str, user=Depends(require_role("admin"))):
+    """获取故障报告详情"""
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM fault_reports WHERE id = ?", (report_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(404, "报告不存在")
+    cols = [d[0] for d in cursor.description]
+    result = dict(zip(cols, row))
+    # 解析 JSON 字段
+    for field in ("affected_components", "symptoms", "evidence", "immediate_actions", "long_term_solutions", "similar_cases"):
+        if result.get(field):
+            try:
+                result[field] = json.loads(result[field])
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return result
+
+
+@router.put("/fault-reports/{report_id}/resolve")
+async def resolve_fault_report(report_id: str, user=Depends(require_role("admin"))):
+    """标记故障报告为已解决"""
+    db = await get_db()
+    await db.execute(
+        "UPDATE fault_reports SET status = 'resolved', resolved_at = ? WHERE id = ?",
+        (datetime.now().isoformat(), report_id),
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+# ─── 告警规则 ───
+
+@router.get("/alerts/rules")
+async def list_alert_rules(user=Depends(require_role("admin"))):
+    """获取所有告警规则"""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, name, metric, operator, warning_threshold, critical_threshold, "
+        "cooldown_minutes, notify, enabled FROM alert_rules ORDER BY id"
+    )
+    rows = await cursor.fetchall()
+    return [
+        {"id": r[0], "name": r[1], "metric": r[2], "operator": r[3],
+         "warning_threshold": r[4], "critical_threshold": r[5],
+         "cooldown_minutes": r[6], "notify": bool(r[7]), "enabled": bool(r[8])}
+        for r in rows
+    ]
+
+
+@router.put("/alerts/rules/{rule_id}")
+async def update_alert_rule(rule_id: str, request: Request, user=Depends(require_role("admin"))):
+    """更新告警规则"""
+    db = await get_db()
+    body = await request.json()
+    sets, vals = [], []
+    for field in ("name", "metric", "operator", "warning_threshold", "critical_threshold", "cooldown_minutes"):
+        if field in body:
+            sets.append(f"{field} = ?")
+            vals.append(body[field])
+    if "notify" in body:
+        sets.append("notify = ?")
+        vals.append(1 if body["notify"] else 0)
+    if "enabled" in body:
+        sets.append("enabled = ?")
+        vals.append(1 if body["enabled"] else 0)
+    if not sets:
+        raise HTTPException(400, "没有要更新的字段")
+    vals.append(rule_id)
+    await db.execute(f"UPDATE alert_rules SET {', '.join(sets)} WHERE id = ?", vals)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/alerts/rules")
+async def create_alert_rule(request: Request, user=Depends(require_role("admin"))):
+    """创建自定义告警规则"""
+    body = await request.json()
+    required = ("id", "name", "metric")
+    for field in required:
+        if field not in body:
+            raise HTTPException(400, f"缺少必填字段: {field}")
+    db = await get_db()
+    existing = await db.execute("SELECT id FROM alert_rules WHERE id = ?", (body["id"],))
+    if await existing.fetchone():
+        raise HTTPException(409, f"规则 ID 已存在: {body['id']}")
+    await db.execute(
+        "INSERT INTO alert_rules (id, name, metric, operator, warning_threshold, critical_threshold, cooldown_minutes, notify) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (body["id"], body["name"], body["metric"], body.get("operator", ">"),
+         body.get("warning_threshold"), body.get("critical_threshold"),
+         body.get("cooldown_minutes", 60), 1 if body.get("notify", True) else 0),
+    )
+    await db.commit()
+    return {"ok": True, "id": body["id"]}
+
+
+@router.delete("/alerts/rules/{rule_id}")
+async def delete_alert_rule(rule_id: str, user=Depends(require_role("admin"))):
+    """删除告警规则"""
+    db = await get_db()
+    await db.execute("DELETE FROM alert_rules WHERE id = ?", (rule_id,))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/alerts/history")
+async def list_alert_history(limit: int = 50, user=Depends(require_role("admin"))):
+    """获取告警历史"""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT ah.id, ah.rule_id, ar.name, ah.severity, ah.current_value, ah.message, ah.notified, ah.created_at "
+        "FROM alert_history ah LEFT JOIN alert_rules ar ON ah.rule_id = ar.id "
+        "ORDER BY ah.created_at DESC LIMIT ?", (limit,),
+    )
+    rows = await cursor.fetchall()
+    return [
+        {"id": r[0], "rule_id": r[1], "rule_name": r[2] or r[1], "severity": r[3],
+         "current_value": r[4], "message": r[5], "notified": bool(r[6]), "created_at": r[7]}
+        for r in rows
+    ]
+
+
+# ─── 案例库 ───
+
+@router.get("/fault-cases")
+async def list_fault_cases(q: str = "", category: str = "", limit: int = 30, user=Depends(require_role("admin"))):
+    """搜索或列出故障案例"""
+    db = await get_db()
+    if q:
+        like = f"%{q}%"
+        cursor = await db.execute(
+            "SELECT id, title, category, symptoms, root_cause, solution, tags, source, created_at "
+            "FROM fault_cases WHERE title LIKE ? OR symptoms LIKE ? OR root_cause LIKE ? OR tags LIKE ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (like, like, like, like, limit),
+        )
+    elif category:
+        cursor = await db.execute(
+            "SELECT id, title, category, symptoms, root_cause, solution, tags, source, created_at "
+            "FROM fault_cases WHERE category = ? ORDER BY created_at DESC LIMIT ?",
+            (category, limit),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT id, title, category, symptoms, root_cause, solution, tags, source, created_at "
+            "FROM fault_cases ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+    rows = await cursor.fetchall()
+    return [
+        {"id": r[0], "title": r[1], "category": r[2], "symptoms": (r[3] or "")[:200],
+         "root_cause": (r[4] or "")[:200], "solution": (r[5] or "")[:200],
+         "tags": r[6], "source": r[7], "created_at": r[8]}
+        for r in rows
+    ]
+
+
+@router.post("/fault-cases")
+async def create_fault_case(request: Request, user=Depends(require_role("admin"))):
+    """手动录入故障案例"""
+    body = await request.json()
+    if not body.get("title"):
+        raise HTTPException(400, "缺少标题")
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO fault_cases (title, category, symptoms, root_cause, solution, tags, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'manual')",
+        (body["title"], body.get("category", ""), body.get("symptoms", ""),
+         body.get("root_cause", ""), body.get("solution", ""), body.get("tags", "")),
+    )
+    case_id = cursor.lastrowid
+    # 更新 FTS5
+    try:
+        await db.execute(
+            "INSERT INTO fault_cases_fts(rowid, title, symptoms, root_cause, solution, tags) VALUES (?, ?, ?, ?, ?, ?)",
+            (case_id, body["title"], body.get("symptoms", ""), body.get("root_cause", ""),
+             body.get("solution", ""), body.get("tags", "")),
+        )
+    except Exception:
+        pass
+    await db.commit()
+    return {"ok": True, "id": case_id}
+
+
+@router.delete("/fault-cases/{case_id}")
+async def delete_fault_case(case_id: int, user=Depends(require_role("admin"))):
+    """删除故障案例"""
+    db = await get_db()
+    await db.execute("DELETE FROM fault_cases WHERE id = ?", (case_id,))
+    try:
+        await db.execute("DELETE FROM fault_cases_fts WHERE rowid = ?", (case_id,))
+    except Exception:
+        pass
+    await db.commit()
+    return {"ok": True}
 
 
 # ─── 事件 ───
