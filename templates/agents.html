@@ -15,8 +15,9 @@
 .agent-panel.active { display: flex; flex-direction: column; width: 100%; }
 .agent-panel.active.chat-layout { display: grid; flex-direction: unset; }
 
-/* 对话布局 */
-.chat-layout { display: grid; grid-template-columns: 200px 1fr; gap: 10px; height: 100%; overflow: hidden; }
+/* 对话+终端布局: 侧边栏 | 聊天 | 终端 */
+.chat-layout { display: grid; grid-template-columns: 180px 1fr 1fr; gap: 8px; height: 100%; overflow: hidden; }
+.chat-layout.terminal-hidden { grid-template-columns: 180px 1fr; }
 .chat-sidebar { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
 .chat-main { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; min-height: 0; }
 .chat-header { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
@@ -120,13 +121,12 @@
   <!-- 标签页 -->
   <div class="agent-tabs">
     <div class="agent-tab" :class="tab==='chat'?'active':''" @click="tab='chat'">AI 对话</div>
-    <div class="agent-tab" :class="tab==='terminal'?'active':''" @click="tab='terminal'; initTerminal()">终端</div>
     <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab='patrol'">巡检</div>
     <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab='admin'; loadAdmin()">管理</div>
   </div>
 
-  <!-- ═══ AI 对话 ═══ -->
-  <div class="agent-panel chat-layout" :class="tab==='chat'?'active':''">
+  <!-- ═══ AI 对话 + 终端 ═══ -->
+  <div class="agent-panel chat-layout" :class="(tab==='chat'?'active':'') + (showTerminal?'':' terminal-hidden')">
     <div class="chat-sidebar">
       <button class="btn btn-primary" style="width:100%" @click="newConversation()">+ 新对话</button>
       <template x-for="conv in conversations" :key="conv.id">
@@ -140,9 +140,12 @@
     <div class="chat-main">
       <div class="chat-header">
         <span style="font-weight:600;font-size:14px" x-text="currentTitle||'新对话'"></span>
-        <div class="safety-toggle">
-          <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
-          <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-xs" :style="showTerminal?'color:var(--accent)':''" @click="showTerminal=!showTerminal; if(showTerminal) initTerminal()">终端</button>
+          <div class="safety-toggle">
+            <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
+            <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
+          </div>
         </div>
       </div>
 
@@ -211,11 +214,9 @@
         <button class="btn btn-primary" @click="sendMessage()" :disabled="isTyping||!inputText.trim()">发送</button>
       </div>
     </div>
-  </div>
 
-  <!-- ═══ 终端 ═══ -->
-  <div class="agent-panel" :class="tab==='terminal'?'active':''">
-    <div class="terminal-container" id="xterm-container"></div>
+    <!-- 终端（第三栏，可切换显示） -->
+    <div class="terminal-container" id="xterm-container" x-show="showTerminal"></div>
   </div>
 
   <!-- ═══ 巡检 ═══ -->
@@ -361,7 +362,7 @@ function agentApp() {
     tab: 'chat', messages: [], conversations: [], patrols: [], todos: [],
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
-    _term: null, _ws: null, _termInitialized: false,
+    showTerminal: false, _term: null, _ws: null, _termInitialized: false,
     // 管理面板
     adminData: { prompt: '', promptCustom: false, subagents: [], availableTools: [], memory: '', editingSubagent: -1 },
     // 快捷指令
