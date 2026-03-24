@@ -11,10 +11,9 @@
 .agent-tab { padding: 10px 20px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: var(--text2); transition: all 0.15s; }
 .agent-tab:hover { color: var(--text); }
 .agent-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-/* 统一布局: 侧边栏 | 聊天 | 右栏（终端/巡检/管理，可隐藏） */
-.agent-main { display: grid; grid-template-columns: 180px 1fr; gap: 8px; flex: 1; overflow: hidden; min-height: 0; }
-.agent-main.has-right { grid-template-columns: 180px 1fr 1fr; }
-.right-panel { display: none; overflow-y: auto; min-height: 0; }
+/* 三栏统一布局: 侧边栏 | 聊天 | 右栏 */
+.agent-main { display: grid; grid-template-columns: 180px 1fr 1fr; gap: 8px; flex: 1; overflow: hidden; min-height: 0; }
+.right-panel { display: none; overflow: hidden; min-height: 0; }
 .right-panel.active { display: flex; flex-direction: column; }
 .chat-sidebar { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
 .chat-main { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; min-height: 0; }
@@ -144,16 +143,17 @@
 
 <div class="agent-layout" x-data="agentApp()" x-init="init()">
 
-  <!-- 右栏标签切换 -->
+  <!-- 标签页 -->
   <div class="agent-tabs">
-    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab = tab==='patrol'?'none':'patrol'">巡检</div>
-    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab = tab==='admin'?'none':'admin'; if(tab==='admin') loadAdmin()">管理</div>
+    <div class="agent-tab" :class="tab==='chat'?'active':''" @click="tab='chat'">AI 对话</div>
+    <div class="agent-tab" :class="tab==='patrol'?'active':''" @click="tab='patrol'">巡检</div>
+    <div class="agent-tab" :class="tab==='admin'?'active':''" @click="tab='admin'; loadAdmin()">管理</div>
   </div>
 
-  <!-- 布局: 侧边栏 | 聊天 | 右栏(可选) -->
-  <div class="agent-main" :class="tab!=='none'?'has-right':''">
+  <!-- 三栏: 侧边栏 | 聊天(始终) | 右栏(按标签切换) -->
+  <div class="agent-main">
 
-    <!-- 左栏: 对话列表 (始终显示) -->
+    <!-- 左栏: 对话列表 -->
     <div class="chat-sidebar">
       <button class="btn btn-primary" style="width:100%" @click="newConversation()">+ 新对话</button>
       <template x-for="conv in conversations" :key="conv.id">
@@ -164,33 +164,26 @@
       </template>
     </div>
 
-    <!-- 中栏: 聊天窗口 (始终显示) -->
+    <!-- 中栏: 聊天窗口 -->
     <div class="chat-main">
       <div class="chat-header">
         <span style="font-weight:600;font-size:14px" x-text="currentTitle||'新对话'"></span>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-xs" :style="tab==='terminal'?'background:var(--accent-dim);color:var(--accent);border-color:var(--accent)':''"
-                  @click="tab = tab==='terminal'?'none':'terminal'; if(tab==='terminal') initTerminal()">
-            <span style="font-size:11px">&#9638;</span> 终端
-          </button>
+          <button class="btn btn-xs" :style="showTerminal?'background:var(--accent-dim);color:var(--accent);border-color:var(--accent)':''"
+                  @click="showTerminal=!showTerminal; if(showTerminal) initTerminal()">&#9638; 终端</button>
           <div class="safety-toggle">
             <button :class="safetyMode==='supervised'?'active':''" @click="safetyMode='supervised'">监督</button>
             <button :class="safetyMode==='autonomous'?'active':''" @click="safetyMode='autonomous'">自主</button>
           </div>
         </div>
       </div>
-
       <div class="chat-messages" id="chat-messages">
         <template x-for="(msg,idx) in messages" :key="idx">
           <div>
             <template x-if="msg.role==='user'"><div class="msg msg-user" x-text="msg.content"></div></template>
             <template x-if="msg.role==='assistant'"><div class="msg msg-assistant" x-html="renderMd(msg.content)"></div></template>
-            <template x-if="msg.role==='tool_call'">
-              <div class="tool-card"><span class="tool-name" x-text="'🔧 '+msg.tool"></span><div class="tool-output" x-text="JSON.stringify(msg.args,null,2)"></div></div>
-            </template>
-            <template x-if="msg.role==='tool_result'">
-              <div class="tool-card"><span class="tool-name" x-text="'📋 '+(msg.tool||'结果')"></span><div class="tool-output" x-text="msg.content"></div></div>
-            </template>
+            <template x-if="msg.role==='tool_call'"><div class="tool-card"><span class="tool-name" x-text="'🔧 '+msg.tool"></span><div class="tool-output" x-text="JSON.stringify(msg.args,null,2)"></div></div></template>
+            <template x-if="msg.role==='tool_result'"><div class="tool-card"><span class="tool-name" x-text="'📋 '+(msg.tool||'结果')"></span><div class="tool-output" x-text="msg.content"></div></div></template>
             <template x-if="msg.role==='approval'">
               <div class="approval-card">
                 <h4>⚠️ 需要审批</h4>
@@ -205,62 +198,49 @@
         </template>
         <div class="typing-indicator" x-show="isTyping">思考中</div>
       </div>
-
-      <!-- Todo 规划面板 -->
       <div class="todo-panel" :class="todoCollapsed?'collapsed':''" x-show="todos.length > 0">
         <div class="todo-header" @click="todoCollapsed=!todoCollapsed">
-          <h4>
-            <span x-text="todoCollapsed?'▶':'▼'" style="font-size:10px;margin-right:4px"></span>
-            任务规划
-          </h4>
+          <h4><span x-text="todoCollapsed?'▶':'▼'" style="font-size:10px;margin-right:4px"></span>任务规划</h4>
           <span class="todo-count" x-text="todos.filter(t=>t.status==='completed').length+'/'+todos.length+' 完成'"></span>
         </div>
-        <div class="todo-progress">
-          <div class="todo-progress-bar" :style="'width:'+todoProgress()+'%'"></div>
-        </div>
+        <div class="todo-progress"><div class="todo-progress-bar" :style="'width:'+todoProgress()+'%'"></div></div>
         <template x-for="(t,i) in todos" :key="i">
-          <div class="todo-item" :class="t.status + (t._justCompleted?' just-completed':'')">
+          <div class="todo-item" :class="t.status+(t._justCompleted?' just-completed':'')">
             <span class="todo-icon" x-text="t.status==='completed'?'✅':t.status==='in_progress'?'🔄':'⬜'"></span>
             <span class="todo-text" :class="t.status" x-text="t.content"></span>
           </div>
         </template>
       </div>
-
       <div class="chat-input-area" style="position:relative">
         <div class="slash-menu" x-show="showSlashMenu" @click.away="showSlashMenu=false">
           <template x-for="(cmd,i) in filteredCommands" :key="cmd.cmd">
-            <div class="slash-item" :class="slashIdx===i?'active':''"
-                 @click="selectCommand(cmd)" @mouseenter="slashIdx=i">
-              <span class="slash-cmd" x-text="cmd.cmd"></span>
-              <span class="slash-desc" x-text="cmd.desc"></span>
+            <div class="slash-item" :class="slashIdx===i?'active':''" @click="selectCommand(cmd)" @mouseenter="slashIdx=i">
+              <span class="slash-cmd" x-text="cmd.cmd"></span><span class="slash-desc" x-text="cmd.desc"></span>
             </div>
           </template>
         </div>
         <textarea x-model="inputText" placeholder="输入消息或 / 快捷指令... (Enter 发送)"
-                  @input="onSlashInput()"
-                  @keydown="handleSlashKey($event)"
+                  @input="onSlashInput()" @keydown="handleSlashKey($event)"
                   @keydown.enter.prevent="if(showSlashMenu){selectCommand(filteredCommands[slashIdx])}else if(!$event.shiftKey){sendMessage()}"
                   :disabled="isTyping"></textarea>
         <button class="btn btn-primary" @click="sendMessage()" :disabled="isTyping||!inputText.trim()">发送</button>
       </div>
     </div>
 
-    <!-- 右栏: 按标签切换内容 -->
+    <!-- 右栏: 按标签切换 -->
 
-    <!-- 终端 -->
-    <div class="right-panel" :class="tab==='terminal'?'active':''">
+    <!-- 终端 (showTerminal 按钮控制，覆盖其他右栏) -->
+    <div class="right-panel" :class="showTerminal?'active':''">
       <div class="terminal-container" id="xterm-container" style="flex:1"></div>
     </div>
 
-    <!-- 巡检: 左列表 + 右详情 -->
-    <div class="right-panel" :class="tab==='patrol'?'active':''" style="padding:0;overflow:hidden">
+    <!-- 巡检 -->
+    <div class="right-panel" :class="(tab==='patrol' && !showTerminal)?'active':''" style="padding:0;overflow:hidden">
       <div class="patrol-panel">
-
-        <!-- 左: 任务列表 -->
         <div class="patrol-list">
           <template x-for="p in patrols" :key="'pli-'+p.id">
             <div class="patrol-list-item" :class="activePatrol===p.id?'active':''" @click="activePatrol=p.id">
-              <div class="p-dot" :class="'patrol-'+(p.last_status||'ok')" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
+              <div class="p-dot" :style="'background:var(--'+(p.last_status==='warning'?'yellow':p.last_status==='critical'?'red':'green')+')'"></div>
               <div class="p-info">
                 <div class="p-name" x-text="p.display_name"></div>
                 <div class="p-meta" x-text="p.enabled ? nextRunText(p) : '已禁用'"></div>
@@ -268,18 +248,13 @@
             </div>
           </template>
         </div>
-
-        <!-- 右: 选中任务详情 -->
         <template x-for="p in patrols" :key="'pd-'+p.id">
           <div class="patrol-detail" x-show="activePatrol===p.id">
-
-            <!-- 头部: 状态 + 操作 -->
             <div class="patrol-detail-header">
               <div class="p-title-row">
                 <div class="p-title">
                   <span x-text="p.display_name"></span>
-                  <span class="patrol-status-badge"
-                        :class="'s-'+(p.last_status||'none')">
+                  <span class="patrol-status-badge" :class="'s-'+(p.last_status||'none')">
                     <span class="s-dot"></span>
                     <span x-text="p.last_status==='ok'?'正常':p.last_status==='warning'?'告警':p.last_status==='critical'?'严重':'未运行'"></span>
                   </span>
@@ -291,48 +266,30 @@
               </div>
               <div class="p-desc" x-text="p.description"></div>
               <div style="display:flex;align-items:center;gap:12px;margin-top:8px;font-size:11px;color:var(--text3);flex-wrap:wrap">
-                <!-- 间隔编辑 + 保存按钮 -->
-                <label style="display:flex;align-items:center;gap:4px">
-                  间隔
-                  <input type="number" min="1" max="10080"
-                         style="width:56px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
-                         x-model.number="p._editInterval"
-                         x-init="p._editInterval = p.interval_minutes"
-                         @focus="p._editInterval = p._editInterval || p.interval_minutes">
-                  分钟
-                </label>
-                <button class="btn btn-xs btn-primary" style="padding:2px 8px;font-size:10px"
-                        x-show="p._editInterval && p._editInterval !== p.interval_minutes"
-                        @click="updatePatrolInterval(p.id, p._editInterval)">保存生效</button>
+                <label style="display:flex;align-items:center;gap:4px">间隔
+                  <input type="number" min="1" max="10080" style="width:56px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 6px;font-size:11px;text-align:center"
+                         x-model.number="p._editInterval" x-init="p._editInterval=p.interval_minutes" @focus="p._editInterval=p._editInterval||p.interval_minutes"> 分钟</label>
+                <button class="btn btn-xs btn-primary" style="padding:2px 8px;font-size:10px" x-show="p._editInterval && p._editInterval!==p.interval_minutes"
+                        @click="updatePatrolInterval(p.id,p._editInterval)">保存生效</button>
                 <span x-show="p.last_run" x-text="'上次: '+(p.last_run||'').replace('T',' ').slice(0,19)"></span>
                 <span x-show="p.enabled" style="color:var(--accent)" x-text="nextRunText(p)"></span>
                 <span x-show="!p.enabled" style="color:var(--yellow)">已禁用</span>
                 <span x-show="patrolCronMap[p.id]" style="color:var(--text3);font-style:italic" x-text="'Cron: '+(patrolCronMap[p.id]||'')"></span>
               </div>
             </div>
-
-            <!-- 报告区域 -->
             <div class="patrol-report" x-show="p.last_report" x-html="renderMd(p.last_report||'')"></div>
-
-            <!-- 空状态 -->
             <div class="patrol-empty" x-show="!p.last_report">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                <rect x="9" y="3" width="6" height="4" rx="1"/>
-                <path d="M9 14l2 2 4-4"/>
-              </svg>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
               <span style="font-size:13px">尚无巡检报告</span>
               <button class="btn btn-xs btn-primary" @click="triggerPatrol(p.id)">运行巡检</button>
             </div>
-
           </div>
         </template>
-
       </div>
     </div>
 
     <!-- 管理 -->
-    <div class="right-panel" :class="tab==='admin'?'active':''" style="overflow-y:auto;padding:4px">
+    <div class="right-panel" :class="(tab==='admin' && !showTerminal)?'active':''" style="overflow-y:auto;padding:4px">
 
     <!-- 系统提示词 -->
     <div class="admin-section">
@@ -435,7 +392,7 @@
       </template>
     </div>
 
-  </div>
+  </div><!-- /admin right-panel -->
 
   </div><!-- /agent-main -->
 
@@ -446,7 +403,7 @@
 <script>
 function agentApp() {
   return {
-    tab: 'none', messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
+    tab: 'chat', showTerminal: false, messages: [], conversations: [], patrols: [], todos: [], activePatrol: '',
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
     _term: null, _ws: null, _termInitialized: false,
