@@ -30,6 +30,8 @@ TOOL_RISK_MAP = {
     "analyze_resource_trend": RiskLevel.SAFE,
     "search_fault_cases": RiskLevel.SAFE,
     "save_fault_case": RiskLevel.SAFE,
+    "get_asset_inventory": RiskLevel.SAFE,
+    "get_asset_topology": RiskLevel.SAFE,
     "update_user_quotas": RiskLevel.MODERATE,
     "docker_container_action": RiskLevel.MODERATE,
     "docker_compose_action": RiskLevel.MODERATE,

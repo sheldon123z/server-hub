@@ -217,6 +217,21 @@ async def init_tables(db: aiosqlite.Connection):
             source_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 资产台账
+        CREATE TABLE IF NOT EXISTS assets (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT DEFAULT 'unknown',
+            properties TEXT,
+            dependencies TEXT,
+            is_manual INTEGER DEFAULT 0,
+            last_seen TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_assets_type
+            ON assets(type);
     """)
 
     # FTS5 虚拟表（不能在 executescript 中创建）
@@ -227,6 +242,16 @@ async def init_tables(db: aiosqlite.Connection):
         )
     except Exception:
         pass
+
+    # 兼容旧版：为 alert_rules 表添加基线检测相关列
+    for col, default in [("rule_type", "'threshold'"), ("baseline_window_hours", "168"), ("stddev_multiplier", "3.0")]:
+        try:
+            await db.execute(f"SELECT {col} FROM alert_rules LIMIT 0")
+        except Exception:
+            try:
+                await db.execute(f"ALTER TABLE alert_rules ADD COLUMN {col} DEFAULT {default}")
+            except Exception:
+                pass
 
     # 兼容旧版：为 agent_patrol_history 表添加 report_json 列（如果不存在）
     try:
