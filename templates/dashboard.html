@@ -560,7 +560,7 @@
         <ul class="alert-timeline">
           <template x-for="(a, idx) in alerts.recent" :key="idx">
             <li>
-              <span class="alert-time" x-text="a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : '-'"></span>
+              <span class="alert-time" x-text="(a.created_at || a.timestamp) ? new Date(a.created_at || a.timestamp).toLocaleString('zh-CN') : '-'"></span>
               <span class="alert-severity"
                     :class="a.severity === 'critical' ? 'alert-badge-critical' : a.severity === 'warning' ? 'alert-badge-warning' : 'alert-badge-ok'"
                     x-text="a.severity || 'info'"></span>
