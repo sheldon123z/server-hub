@@ -74,11 +74,6 @@ TOOL_RISK_MAP = {
     # RAG 工具
     "retrieve_knowledge": RiskLevel.SAFE,
     "reindex_knowledge_base": RiskLevel.SAFE,
-    # 后台异步任务工具
-    "start_background_analysis": RiskLevel.MODERATE,
-    "check_background_task": RiskLevel.SAFE,
-    "list_background_tasks": RiskLevel.SAFE,
-    "cancel_background_task": RiskLevel.MODERATE,
 }
 
 

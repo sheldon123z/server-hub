@@ -69,6 +69,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("[ServerHub] 异步任务清理失败: %s", e)
 
+    # 初始化 LG Compat Server — 异步 SubAgent 后端
+    try:
+        from modules.agents.lg_compat import lg_router, register_graph, start_cleanup
+        from modules.agents.async_graphs import build_all_async_graphs
+
+        app.include_router(lg_router)
+        graphs = await build_all_async_graphs()
+        for gid, graph in graphs.items():
+            register_graph(gid, graph)
+        await start_cleanup()
+        logger.info("[ServerHub] LG Compat Server: %d 个异步 graph 已注册", len(graphs))
+    except Exception as e:
+        logger.warning("[ServerHub] LG Compat Server 初始化失败 (非致命): %s", e)
+
     # 启动 AI 巡检调度器
     try:
         from modules.agents.patrol import start_patrol_scheduler
@@ -80,6 +94,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # 关闭
+    try:
+        from modules.agents.lg_compat import stop_cleanup
+        await stop_cleanup()
+    except Exception:
+        pass
     try:
         from modules.agents.patrol import stop_patrol_scheduler
         await stop_patrol_scheduler()

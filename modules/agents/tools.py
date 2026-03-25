@@ -833,62 +833,6 @@ async def reindex_knowledge_base() -> str:
 
 # ─── 工具注册表 ───
 
-# ─── 后台异步任务工具 ───
-
-@tool
-async def start_background_analysis(
-    instruction: str,
-    task_type: str = "correlation-analyzer",
-) -> str:
-    """Launch a long-running analysis task in the background. Returns task_id immediately.
-
-    Use for tasks that take >30 seconds: deep security audits, multi-container log correlation,
-    comprehensive health reports, knowledge base research. User can continue chatting and
-    check results later with check_background_task.
-
-    Args:
-        instruction: Detailed description of what to analyze
-        task_type: SubAgent to delegate to. Options: researcher, log-analyzer,
-            security-auditor, correlation-analyzer, ops-scheduler, knowledge-retriever
-    """
-    from modules.agents.async_tasks import start_background_task
-    task_id = await start_background_task(task_type, instruction)
-    if len(task_id) == 8:
-        return (
-            f"后台任务已启动: task_id={task_id}, 类型={task_type}\n"
-            f"任务在后台运行中，使用 check_background_task(task_id=\"{task_id}\") 查看结果。"
-        )
-    return task_id  # 错误信息
-
-
-@tool
-async def check_background_task(task_id: str) -> str:
-    """Check the status and result of a background analysis task.
-
-    Args:
-        task_id: The 8-character task ID returned by start_background_analysis
-    """
-    from modules.agents.async_tasks import get_task_status
-    return await get_task_status(task_id)
-
-
-@tool
-async def list_background_tasks() -> str:
-    """List all background analysis tasks with their statuses (running/success/error/cancelled)."""
-    from modules.agents.async_tasks import list_tasks
-    return await list_tasks()
-
-
-@tool
-async def cancel_background_task(task_id: str) -> str:
-    """Cancel a running background analysis task.
-
-    Args:
-        task_id: The 8-character task ID to cancel
-    """
-    from modules.agents.async_tasks import cancel_task
-    return await cancel_task(task_id)
-
 
 def get_server_tools(user_role: str = "admin") -> list:
     """返回服务器管理工具列表
@@ -941,11 +885,6 @@ def get_server_tools(user_role: str = "admin") -> list:
         # RAG 知识库
         retrieve_knowledge,
         reindex_knowledge_base,
-        # 后台异步任务
-        start_background_analysis,
-        check_background_task,
-        list_background_tasks,
-        cancel_background_task,
     ]
 
     if user_role == "admin":

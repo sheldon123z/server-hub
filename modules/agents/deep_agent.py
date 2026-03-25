@@ -139,6 +139,13 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
         store = None
     else:
         subagents = load_subagents()
+        # 异步 SubAgent — 框架按 graph_id 自动路由到 AsyncSubAgentMiddleware
+        try:
+            from modules.agents.subagents import load_async_subagent_specs
+            async_specs = load_async_subagent_specs()
+            subagents = subagents + async_specs
+        except Exception as e:
+            logger.warning(f"异步 SubAgent 配置加载失败 (非致命): {e}")
         store = await _get_store()
 
     # Checkpoint — 短期记忆（per-conversation state 持久化）
