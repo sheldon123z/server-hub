@@ -119,11 +119,19 @@ async def _get_user_or_redirect(request: Request):
 
 def _page_context(request: Request, user: dict, active_module: str, **extra):
     """构建模板渲染上下文"""
+    sidebar = get_sidebar_items(user["role"])
+    # 查找模块显示名（供对话气泡组件显示）
+    display_name = active_module
+    for item in sidebar:
+        if item["name"] == active_module:
+            display_name = item["display_name"]
+            break
     return {
         "request": request,
         "user": user,
         "active_module": active_module,
-        "sidebar_items": get_sidebar_items(user["role"]),
+        "active_module_display": display_name,
+        "sidebar_items": sidebar,
         **extra,
     }
 

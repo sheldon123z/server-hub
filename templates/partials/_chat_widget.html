@@ -1,0 +1,118 @@
+{# 全局 AI 对话气泡组件 — 在 base.html 中条件引入 #}
+<div id="chat-widget"
+     x-data="chatWidget()"
+     x-init="pageContext='{{ active_module }}'; pageLabel='{{ active_module_display|default(active_module) }}'; init()">
+
+  <!-- 气泡按钮 -->
+  <button class="chat-fab" x-show="!isOpen" @click="isOpen=true" title="AI 助手">
+    <i class="ti ti-robot"></i>
+  </button>
+
+  <!-- 对话面板 -->
+  <div class="chat-widget-panel" x-show="isOpen" x-cloak
+       :style="panelStyle">
+
+    <!-- 缩放手柄 -->
+    <div class="chat-widget-resize" @mousedown="startResize($event)"></div>
+
+    <!-- 头部 -->
+    <div class="chat-widget-header" @mousedown="startDrag($event)">
+      <span>
+        <i class="ti ti-robot" style="margin-right:4px"></i>AI 助手
+        <span class="chat-widget-page-badge" x-text="pageLabel" style="margin-left:6px"></span>
+      </span>
+      <div class="chat-widget-header-actions">
+        <button @click="newConversation()" title="新对话">
+          <i class="ti ti-plus"></i>
+        </button>
+        <button @click="isMinimized=!isMinimized" :title="isMinimized?'展开':'最小化'">
+          <i class="ti" :class="isMinimized?'ti-chevron-up':'ti-chevron-down'"></i>
+        </button>
+        <button @click="isOpen=false" title="关闭">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 内容体 -->
+    <div class="chat-widget-body" x-show="!isMinimized">
+
+      <!-- 消息列表 -->
+      <div class="chat-widget-messages" id="cw-messages">
+        <!-- 欢迎消息 -->
+        <template x-if="messages.length === 0">
+          <div class="cw-msg cw-msg-assistant">
+            你好！我是 AI 助手。你可以问我关于当前页面的问题，或让我帮你执行操作。
+          </div>
+        </template>
+
+        <template x-for="(msg, idx) in messages" :key="idx">
+          <div>
+            <!-- 用户消息 -->
+            <template x-if="msg.role === 'user'">
+              <div class="cw-msg cw-msg-user" x-text="msg.content"></div>
+            </template>
+
+            <!-- AI 回复 -->
+            <template x-if="msg.role === 'assistant'">
+              <div class="cw-msg cw-msg-assistant" x-html="renderMd(msg.content)"></div>
+            </template>
+
+            <!-- 工具调用 -->
+            <template x-if="msg.role === 'tool_call'">
+              <div class="cw-tool-card">
+                <i class="ti ti-tool"></i>
+                <span class="cw-tool-name" x-text="msg.tool"></span>
+              </div>
+            </template>
+
+            <!-- 工具结果 -->
+            <template x-if="msg.role === 'tool_result'">
+              <div class="cw-tool-card">
+                <i class="ti ti-check"></i>
+                <span x-text="(msg.content||'').substring(0, 200)"></span>
+              </div>
+            </template>
+
+            <!-- 审批请求 -->
+            <template x-if="msg.role === 'approval'">
+              <div class="cw-approval-card">
+                <div><i class="ti ti-alert-triangle" style="color:#f59e0b"></i> 需要确认: <span x-text="msg.description"></span></div>
+                <div class="cw-approval-actions">
+                  <button class="cw-approval-approve" @click="resolveApproval(msg.approval_id, 'approve')">批准</button>
+                  <button class="cw-approval-reject" @click="resolveApproval(msg.approval_id, 'reject')">拒绝</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- 打字中 -->
+        <div class="cw-typing" x-show="isTyping">AI 正在思考</div>
+      </div>
+
+      <!-- Todo 面板 -->
+      <div class="cw-todos" x-show="todos.length > 0 && !todoCollapsed">
+        <template x-for="(t, i) in todos" :key="i">
+          <div class="cw-todo-item" :class="t.status === 'completed' ? 'completed' : ''">
+            <span x-text="t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '▸' : '○'"></span>
+            <span x-text="t.content"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- 输入区 -->
+      <div class="chat-widget-input">
+        <textarea x-model="inputText"
+                  rows="1"
+                  placeholder="问我关于此页面的问题..."
+                  @keydown.enter.prevent="if(!$event.shiftKey) sendMessage()"
+                  @input="$el.style.height='auto'; $el.style.height=Math.min($el.scrollHeight,80)+'px'"
+                  :disabled="isTyping"></textarea>
+        <button @click="sendMessage()" :disabled="isTyping || !inputText.trim()">
+          <i class="ti ti-send"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

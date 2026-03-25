@@ -94,8 +94,8 @@ async def _users_context() -> str:
     quotas = await asyncio.get_event_loop().run_in_executor(None, read_quotas)
     user_lines = []
     for u in users[:10]:
-        mem_gb = round(u.get("mem_bytes", 0) / 1073741824, 1)
-        user_lines.append(f"  {u['username']}: 内存 {mem_gb}GB, {u.get('process_count', 0)} 进程")
+        mem_gb = u.get("mem_gb", round(u.get("mem_bytes", 0) / 1073741824, 1))
+        user_lines.append(f"  {u.get('name', u.get('username', '?'))}: 内存 {mem_gb}GB, {u.get('proc_count', u.get('process_count', 0))} 进程")
     return (
         f"[当前页面: 用户管理]\n"
         f"用户数: {len(users)}\n"
