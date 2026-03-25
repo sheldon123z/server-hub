@@ -276,7 +276,7 @@
         </div>
       </div>
       <div class="chat-messages" id="chat-messages">
-        <template x-for="(msg,idx) in messages" :key="idx">
+        <template x-for="msg in messages" :key="msg._id">
           <div>
             <template x-if="msg.role==='user'"><div class="msg msg-user" x-text="msg.content"></div></template>
             <template x-if="msg.role==='assistant'"><div class="msg msg-assistant" x-html="renderMd(msg.content)"></div></template>
@@ -870,6 +870,7 @@ function agentApp() {
     faultCases: [], activeFaultCase: '', caseSearchQuery: '',
     currentConvId: null, currentTitle: '新对话', inputText: '',
     isTyping: false, safetyMode: 'supervised', todoCollapsed: false,
+    _msgSeq: 0, _seenMsgIds: new Set(),
     _term: null, _ws: null, _termInitialized: false,
     // 弹窗
     confirmModal: { show: false, title: '', message: '', confirmText: '', onConfirm: ()=>{} },
@@ -972,7 +973,7 @@ function agentApp() {
       if (!cmd) return;
       this.showSlashMenu = false;
       if (cmd.cmd === '/help') {
-        this.messages.push({role:'assistant', content: this.slashCommands.map(c => `**${c.cmd}** — ${c.desc}`).join('\n')});
+        this._pushMsg({role:'assistant', content: this.slashCommands.map(c => `**${c.cmd}** — ${c.desc}`).join('\n')});
         this.inputText = '';
         return;
       }
@@ -1009,14 +1010,20 @@ function agentApp() {
         if (!this.activePatrol && this.patrols.length) this.activePatrol = this.patrols[0].id;
       } catch(e) {}
     },
-    newConversation() { this.currentConvId = null; this.currentTitle = '新对话'; this.messages = []; this.todos = []; },
+    newConversation() { this.currentConvId = null; this.currentTitle = '新对话'; this.messages = []; this.todos = []; this._seenMsgIds = new Set(); this._msgSeq = 0; },
     async loadConversation(id) {
       this.currentConvId = id;
+      this._seenMsgIds = new Set();
+      this._msgSeq = 0;
       const conv = this.conversations.find(c => c.id === id);
       this.currentTitle = conv ? conv.title : '对话';
       try {
         const d = await (await fetch(`/api/agents/conversations/${id}`)).json();
-        this.messages = d.messages || [];
+        // 给历史消息分配稳定 _id
+        this.messages = (d.messages || []).map(m => {
+          const _id = 'h_' + (++this._msgSeq);
+          return {...m, _id};
+        });
         this.todos = d.todos || [];
         this.scrollBottom();
       } catch(e) {}
@@ -1025,7 +1032,10 @@ function agentApp() {
     async sendMessage() {
       const text = this.inputText.trim();
       if (!text || this.isTyping) return;
-      this.inputText = ''; this.messages.push({role:'user',content:text});
+      // 预生成 conversation_id 防止快速连发导致消息分裂
+      if (!this.currentConvId) this.currentConvId = crypto.randomUUID();
+      this.inputText = '';
+      this.messages.push({role:'user', content:text, _id:'u_'+(++this._msgSeq)});
       this.isTyping = true; this.scrollBottom();
       try {
         const resp = await fetch('/api/agents/chat', {
@@ -1043,15 +1053,24 @@ function agentApp() {
             else if (line.startsWith('data:')) { try { this.handleSSE(currentEvent, JSON.parse(line.slice(5).trim())); } catch(e) {} }
           }
         }
-      } catch(e) { this.messages.push({role:'assistant',content:'连接错误: '+e.message}); }
+      } catch(e) { this._pushMsg({role:'assistant',content:'连接错误: '+e.message}); }
       this.isTyping = false; this.loadConversations(); this.scrollBottom();
+    },
+
+    _pushMsg(msg) {
+      // 基于后端消息 ID 去重（如果有的话）
+      const serverId = msg._serverId;
+      if (serverId && this._seenMsgIds.has(serverId)) return;
+      if (serverId) this._seenMsgIds.add(serverId);
+      msg._id = msg._id || ('s_' + (++this._msgSeq));
+      this.messages.push(msg);
     },
 
     handleSSE(event, data) {
       switch(event) {
-        case 'message': this.messages.push({role:'assistant',content:data.content}); break;
-        case 'tool_call': this.messages.push({role:'tool_call',tool:data.tool,args:data.input}); break;
-        case 'tool_result': this.messages.push({role:'tool_result',tool:data.tool||'',content:data.content}); break;
+        case 'message': this._pushMsg({role:'assistant', content:data.content, _serverId:data.id||''}); break;
+        case 'tool_call': this._pushMsg({role:'tool_call', tool:data.tool, args:data.input, _serverId:data.id||''}); break;
+        case 'tool_result': this._pushMsg({role:'tool_result', tool:data.tool||'', content:data.content, _serverId:data.id||''}); break;
         case 'todo_update': {
           // 检测刚完成的项目，添加动画标记
           const oldTodos = this.todos;
@@ -1069,10 +1088,10 @@ function agentApp() {
           break;
         }
         case 'approval_request':
-          this.messages.push({role:'approval',approval_id:data.approval_id,actions:data.actions,description:data.description||(data.actions?data.actions.map(a=>a.name).join(', '):'需要确认操作')});
+          this._pushMsg({role:'approval',approval_id:data.approval_id,actions:data.actions,description:data.description||(data.actions?data.actions.map(a=>a.name).join(', '):'需要确认操作'), _serverId:'approval_'+data.approval_id});
           break;
         case 'done': if(data.conversation_id) this.currentConvId = data.conversation_id; break;
-        case 'error': this.messages.push({role:'assistant',content:'错误: '+(data.error||'未知')}); break;
+        case 'error': this._pushMsg({role:'assistant',content:'错误: '+(data.error||'未知')}); break;
       }
       this.scrollBottom();
     },
@@ -1081,8 +1100,8 @@ function agentApp() {
       try {
         const d = await (await fetch(`/api/agents/approvals/${approvalId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,reason:''})})).json();
         this.messages = this.messages.filter(m=>m.approval_id!==approvalId);
-        if(d.ok && action==='approve' && d.result) this.messages.push({role:'assistant',content:d.result});
-        else if(action==='reject') this.messages.push({role:'assistant',content:'操作已被拒绝。'});
+        if(d.ok && action==='approve' && d.result) this._pushMsg({role:'assistant',content:d.result, _serverId:'approval_result_'+approvalId});
+        else if(action==='reject') this._pushMsg({role:'assistant',content:'操作已被拒绝。', _serverId:'approval_reject_'+approvalId});
       } catch(e) { showToast('审批处理失败','err'); }
       this.scrollBottom();
     },
