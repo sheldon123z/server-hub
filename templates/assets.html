@@ -6,7 +6,8 @@
 <style>
 .assets-layout { display: flex; flex-direction: column; gap: 14px; }
 .asset-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.asset-stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; text-align: center; }
+.asset-stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; text-align: center; transition: border-color 0.2s, transform 0.15s; }
+.asset-stat-card:hover { border-color: var(--border-light); transform: translateY(-1px); }
 .asset-stat-card .stat-num { font-size: 28px; font-weight: 700; color: var(--accent); }
 .asset-stat-card .stat-label { font-size: 12px; color: var(--text2); margin-top: 2px; }
 .asset-stat-card .stat-sub { font-size: 10px; color: var(--text3); }
@@ -20,7 +21,7 @@
 .asset-type-label { padding: 4px 10px; font-size: 10px; text-transform: uppercase; color: var(--text3); font-weight: 600; letter-spacing: 0.5px; }
 .asset-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: background 0.12s; }
 .asset-item:hover { background: rgba(56,189,248,0.04); }
-.asset-item.active { background: var(--accent-dim); }
+.asset-item.active { background: var(--accent-dim); border-left: 3px solid var(--accent); padding-left: 7px; }
 .asset-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .asset-dot.running, .asset-dot.ok, .asset-dot.listening { background: var(--green); }
 .asset-dot.stopped { background: var(--red); }

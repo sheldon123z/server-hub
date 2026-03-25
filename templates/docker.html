@@ -5,14 +5,36 @@
 {% block content %}
 <div x-data="dockerManager()" x-init="loadExtra()">
 
-<div class="flex gap-2 mb-4">
-  <button class="btn btn-sm" :class="tab==='containers'?'btn-primary':''" @click="tab='containers'">容器</button>
-  <button class="btn btn-sm" :class="tab==='stacks'?'btn-primary':''" @click="tab='stacks'">Compose 堆栈</button>
-  <button class="btn btn-sm" :class="tab==='images'?'btn-primary':''" @click="tab='images'">镜像</button>
-  <button class="btn btn-sm" :class="tab==='networks'?'btn-primary':''" @click="tab='networks'">网络</button>
-  <button class="btn btn-sm" :class="tab==='volumes'?'btn-primary':''" @click="tab='volumes'">卷</button>
+<!-- 统计卡片 -->
+<div class="page-stats">
+  <div class="page-stat-card">
+    <div class="stat-label">容器总数</div>
+    <div class="stat-value">{{ containers|length }}</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">运行中</div>
+    <div class="stat-value">{{ containers|selectattr('State', 'equalto', 'running')|list|length|default(0, true) }}</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">镜像数</div>
+    <div class="stat-value">{{ images|length }}</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">堆栈数</div>
+    <div class="stat-value">{{ stacks|length }}</div>
+  </div>
+</div>
+
+<!-- 标签页 -->
+<div class="tab-bar" style="justify-content:space-between">
+  <div style="display:flex">
+    <button class="tab-item" :class="tab==='containers' && 'active'" @click="tab='containers'"><i class="ti ti-box"></i> 容器</button>
+    <button class="tab-item" :class="tab==='stacks' && 'active'" @click="tab='stacks'"><i class="ti ti-stack-2"></i> 堆栈</button>
+    <button class="tab-item" :class="tab==='images' && 'active'" @click="tab='images'"><i class="ti ti-photo"></i> 镜像</button>
+    <button class="tab-item" :class="tab==='networks' && 'active'" @click="tab='networks'"><i class="ti ti-network"></i> 网络</button>
+    <button class="tab-item" :class="tab==='volumes' && 'active'" @click="tab='volumes'"><i class="ti ti-database"></i> 卷</button>
+  </div>
   {% if user.role == 'admin' %}
-  <div style="flex:1"></div>
   <button class="btn btn-sm btn-danger" @click="pruneResources('all')">清理全部</button>
   {% endif %}
 </div>
@@ -35,11 +57,11 @@
           <td>
             {% set st = c.State if c.State else c.status|lower %}
             {% if st == 'running' or 'up' in (c.Status if c.Status else c.status)|lower %}
-              <span class="badge badge-ok">运行中</span>
+              <span class="status-dot status-dot-ok"></span> <span class="badge badge-ok">运行中</span>
             {% elif 'restarting' in (c.Status if c.Status else c.status)|lower %}
-              <span class="badge badge-crit">重启中</span>
+              <span class="status-dot status-dot-warn"></span> <span class="badge badge-crit">重启中</span>
             {% else %}
-              <span class="badge badge-idle">已停止</span>
+              <span class="status-dot status-dot-err"></span> <span class="badge badge-idle">已停止</span>
             {% endif %}
             <span class="text-xs text-muted">{{ c.Status if c.Status else c.status }}</span>
           </td>
@@ -190,9 +212,9 @@
 </div>
 
 <!-- Exec 模态框 -->
-<div x-show="showExec" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+<div x-show="showExec" class="modal-overlay"
      @click.self="showExec=false" x-cloak>
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:600px">
+  <div class="modal" style="width:600px">
     <h3 style="margin:0 0 12px">容器 Exec: <span x-text="execContainer" class="text-accent"></span></h3>
     <input class="form-input font-mono" style="width:100%;margin-bottom:8px" placeholder="输入命令..." x-model="execCommand"
            @keyup.enter="runExec()">

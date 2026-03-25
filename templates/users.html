@@ -5,17 +5,33 @@
 {% block content %}
 <div x-data="userManager()" x-init="loadSessions()">
 
+<!-- 统计卡片 -->
+<div class="page-stats">
+  <div class="page-stat-card">
+    <div class="stat-label">总用户数</div>
+    <div class="stat-value">{{ users|length }}</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">活跃会话</div>
+    <div class="stat-value" x-text="sessions.length">0</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">超配额用户</div>
+    <div class="stat-value">&mdash;</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">内存使用</div>
+    <div class="stat-value">&mdash;</div>
+  </div>
+</div>
+
 <!-- 标签页 -->
-<div class="flex gap-2 mb-4">
-  <button class="btn btn-sm" :class="tab==='users' ? 'btn-primary' : ''" @click="tab='users'">用户资源</button>
-  <button class="btn btn-sm" :class="tab==='quotas' ? 'btn-primary' : ''" @click="tab='quotas'">配额管理</button>
+<div class="tab-bar">
+  <button class="tab-item" :class="tab==='users' && 'active'" @click="tab='users'"><i class="ti ti-users"></i> 用户资源</button>
+  <button class="tab-item" :class="tab==='quotas' && 'active'" @click="tab='quotas'"><i class="ti ti-adjustments"></i> 配额管理</button>
   {% if user.role == 'admin' %}
-  <button class="btn btn-sm" :class="tab==='manage' ? 'btn-primary' : ''" @click="tab='manage'; loadAllUsers()">用户管理</button>
+  <button class="tab-item" :class="tab==='manage' && 'active'" @click="tab='manage'; loadAllUsers()"><i class="ti ti-settings"></i> 用户管理</button>
   {% endif %}
-  <div style="flex:1"></div>
-  <template x-if="sessions.length > 0">
-    <span class="badge badge-info" style="font-size:11px" x-text="sessions.length + ' 个活跃会话'"></span>
-  </template>
 </div>
 
 <!-- 用户资源 -->
@@ -192,9 +208,9 @@
 </div>
 
 <!-- 创建用户弹窗 -->
-<div x-show="showCreateUser" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+<div x-show="showCreateUser" class="modal-overlay"
      @click.self="showCreateUser=false" x-cloak>
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:440px">
+  <div class="modal" style="width:440px">
     <h3 style="margin:0 0 16px">创建用户</h3>
     <div class="mb-3">
       <label class="form-label">用户名</label>
@@ -224,9 +240,9 @@
 </div>
 
 <!-- 登录历史弹窗 -->
-<div x-show="showHistoryModal" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+<div x-show="showHistoryModal" class="modal-overlay"
      @click.self="showHistoryModal=false" x-cloak>
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:700px;max-height:80vh;overflow-y:auto">
+  <div class="modal" style="width:700px;max-height:80vh;overflow-y:auto">
     <h3 style="margin:0 0 12px" x-text="'登录历史: ' + historyUser"></h3>
     <template x-if="historyEntries.length > 0">
     <table>

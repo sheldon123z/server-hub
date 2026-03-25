@@ -5,18 +5,42 @@
 {% block content %}
 <div x-data="cronManager()" x-init="load()">
 
-<div class="flex gap-2 mb-4">
-  <button class="btn btn-sm" :class="tab==='user'?'btn-primary':''" @click="tab='user'">用户任务</button>
-  {% if user.role == 'admin' %}
-  <button class="btn btn-sm" :class="tab==='root'?'btn-primary':''" @click="tab='root'">Root 任务</button>
-  <button class="btn btn-sm" :class="tab==='history'?'btn-primary':''" @click="tab='history'; loadHistory()">执行历史</button>
-  {% endif %}
-  <div style="flex:1"></div>
-  <button class="btn btn-sm" @click="load()">刷新</button>
-  {% if user.role == 'admin' %}
-  <button class="btn btn-sm btn-primary" @click="showCreate=true; createForm.cron_user=tab==='root'?'root':'zhengxiaodong'">新建任务</button>
-  <button class="btn btn-sm" @click="doBackup(tab==='root'?'root':'zhengxiaodong')">备份</button>
-  {% endif %}
+<!-- 统计卡片 -->
+<div class="page-stats">
+  <div class="page-stat-card">
+    <div class="stat-label">用户任务</div>
+    <div class="stat-value" x-text="userJobs.length">0</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">Root 任务</div>
+    <div class="stat-value" x-text="rootJobs.length">0</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">已启用</div>
+    <div class="stat-value" x-text="userJobs.filter(j=>j.enabled).length + rootJobs.filter(j=>j.enabled).length">0</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">已禁用</div>
+    <div class="stat-value" x-text="userJobs.filter(j=>!j.enabled).length + rootJobs.filter(j=>!j.enabled).length">0</div>
+  </div>
+</div>
+
+<!-- 标签页 -->
+<div class="tab-bar" style="justify-content:space-between">
+  <div style="display:flex">
+    <button class="tab-item" :class="tab==='user' && 'active'" @click="tab='user'"><i class="ti ti-clock"></i> 用户任务</button>
+    {% if user.role == 'admin' %}
+    <button class="tab-item" :class="tab==='root' && 'active'" @click="tab='root'"><i class="ti ti-shield"></i> Root 任务</button>
+    <button class="tab-item" :class="tab==='history' && 'active'" @click="tab='history'; loadHistory()"><i class="ti ti-history"></i> 执行历史</button>
+    {% endif %}
+  </div>
+  <div class="flex gap-2">
+    <button class="btn btn-sm" @click="load()">刷新</button>
+    {% if user.role == 'admin' %}
+    <button class="btn btn-sm btn-primary" @click="showCreate=true; createForm.cron_user=tab==='root'?'root':'zhengxiaodong'">新建任务</button>
+    <button class="btn btn-sm" @click="doBackup(tab==='root'?'root':'zhengxiaodong')">备份</button>
+    {% endif %}
+  </div>
 </div>
 
 <!-- 用户任务 -->
@@ -192,9 +216,9 @@
 {% endif %}
 
 <!-- 创建任务模态框 -->
-<div x-show="showCreate" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)"
+<div x-show="showCreate" class="modal-overlay"
      @click.self="showCreate=false" x-cloak>
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;width:560px;max-width:90vw">
+  <div class="modal" style="width:560px;max-width:90vw">
     <h3 style="margin:0 0 16px">新建定时任务</h3>
 
     <div class="mb-3">
@@ -254,12 +278,6 @@
 </div>
 
 <style>
-.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: var(--border); border-radius: 20px; transition: .2s; }
-.toggle-slider::before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .2s; }
-.toggle-switch input:checked + .toggle-slider { background: var(--success, #22c55e); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
 .hover-bg:hover { background: var(--border); }
 </style>
 

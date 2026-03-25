@@ -4,17 +4,40 @@
 
 {% block content %}
 <div x-data="serviceManager()">
+  <!-- 统计卡片 -->
+  <div class="page-stats">
+    <div class="page-stat-card">
+      <div class="stat-label">总服务数</div>
+      <div class="stat-value">{{ services|length }}</div>
+    </div>
+    <div class="page-stat-card">
+      <div class="stat-label">运行中</div>
+      <div class="stat-value text-green">{{ services|selectattr('active')|list|length }}</div>
+    </div>
+    <div class="page-stat-card">
+      <div class="stat-label">已停止</div>
+      <div class="stat-value text-muted">{{ services|rejectattr('active')|list|length }}</div>
+    </div>
+    <div class="page-stat-card">
+      <div class="stat-label">自启动</div>
+      <div class="stat-value">{{ services|selectattr('enabled')|list|length }}</div>
+    </div>
+  </div>
+
   <div class="data-table-wrapper">
     <div class="data-table-header">
       <h3>Systemd 服务</h3>
-      <button class="btn btn-sm" hx-get="/services" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+      <div class="flex gap-2">
+        <input class="form-input" style="max-width:200px;padding:4px 10px;font-size:12px" placeholder="搜索服务..." x-model="searchQ">
+        <button class="btn btn-sm" hx-get="/services" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+      </div>
     </div>
     <table>
       <thead><tr><th>服务名</th><th>状态</th><th>自启动</th>
       {% if user.role == 'admin' %}<th>操作</th>{% endif %}</tr></thead>
       <tbody>
       {% for s in services %}
-        <tr>
+        <tr x-show="!searchQ || '{{ s.name }}'.toLowerCase().includes(searchQ.toLowerCase())">
           <td>
             <strong style="cursor:pointer;text-decoration:underline dotted" @click="showDeps('{{ s.name }}')" title="查看依赖">{{ s.name }}</strong>
           </td>
@@ -91,20 +114,10 @@
   </template>
 </div>
 
-<style>
-.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: var(--border); border-radius: 20px; transition: .2s; }
-.toggle-slider::before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .2s; }
-.toggle-switch input:checked + .toggle-slider { background: var(--success, #22c55e); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
-.log-line-error { color: #ef4444; }
-.log-line-warn { color: #eab308; }
-</style>
-
 <script>
 function serviceManager() {
   return {
+    searchQ: '',
     journalService: '', journalContentHtml: '',
     depsService: '', depsContent: '',
 
