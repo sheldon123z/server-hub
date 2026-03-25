@@ -56,19 +56,22 @@ function chatWidget() {
     },
 
     get panelStyle() {
-      return `right:${this.panelRight}px;bottom:${this.panelBottom}px;` +
-             `width:${this.panelWidth}px;height:${this.panelHeight}px;`;
+      const base = `right:${this.panelRight}px;bottom:${this.panelBottom}px;width:${this.panelWidth}px;`;
+      // 最小化时不设固定高度，让面板自适应（仅显示标题栏）
+      return this.isMinimized ? base : base + `height:${this.panelHeight}px;`;
     },
 
     // ─── 拖拽 ───
+    // 面板使用 right+bottom 定位，数值方向与鼠标运动相反
     startDrag(e) {
       if (e.target.closest('button')) return;
       this._dragStart = { x: e.clientX, y: e.clientY, r: this.panelRight, b: this.panelBottom };
       const onMove = (ev) => {
         const dx = ev.clientX - this._dragStart.x;
         const dy = ev.clientY - this._dragStart.y;
+        // 鼠标右移 → right 减小（面板右移）；鼠标下移 → bottom 减小（面板下移）
         this.panelRight = Math.max(0, this._dragStart.r - dx);
-        this.panelBottom = Math.max(0, this._dragStart.b + dy);
+        this.panelBottom = Math.max(0, this._dragStart.b - dy);
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
