@@ -1,22 +1,46 @@
 # SubAgent 详细说明
 
-SubAgent 定义在 `modules/agents/subagents.py`，遵循 LangChain 官方规范。主 Agent 通过 `task(subagent_type="name", message="...")` 工具委派任务。
+SubAgent 定义拆分为独立子模块，存放在 `modules/agents/subagents/` 目录下：
+
+```
+modules/agents/subagents/
+├── __init__.py              # 导出入口：get_subagents(), load_subagents()
+├── _tools.py                # 工具查找（web_search, think, _get_tools_by_names）
+├── _config.py               # 配置管理（middleware 构建、持久化、模型映射）
+├── _async_specs.py          # 异步 SubAgent 配置（3 个深度分析任务）
+├── researcher.py            # 联网研究员
+├── log_analyzer.py          # 日志分析师
+├── security_auditor.py      # 安全审计员
+├── correlation_analyzer.py  # 多源关联分析
+├── ops_scheduler.py         # 定时任务调度专家
+└── knowledge_retriever.py   # 知识检索专家
+```
+
+主 Agent 通过 `task(subagent_type="name", message="...")` 工具委派任务。
 
 ---
 
 ## 规范说明
 
-每个 SubAgent 必须包含以下 4 个字段（LangChain 官方 SubAgent 规范要求）：
+每个 SubAgent 定义为 `DEFINITION` 字典，包含以下字段：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `name` | str | 唯一标识，主 agent 通过此名称委派 |
-| `description` | str | action-oriented 描述，帮助主 agent 决定何时委派 |
-| `system_prompt` | str | 详细工作流指令 + 输出格式 + 长度限制 |
-| `tools` | list | 最小工具集（仅包含完成任务所需的工具）|
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | str | 是 | 唯一标识，主 agent 通过此名称委派 |
+| `description` | str | 是 | action-oriented 描述，帮助主 agent 决定何时委派 |
+| `system_prompt` | str | 是 | 详细工作流指令 + 输出格式 + 长度限制 |
+| `tools_fn` | callable | 是 | 返回工具列表的函数（延迟加载避免循环导入） |
+| `model_purpose` | str | 否 | 模型用途（`chat` / `patrol`），决定使用哪个模型配置 |
+| `middleware_profile` | str | 否 | Middleware 配置档位（`heavy` / `light` / `ops`） |
+| `interrupt_on` | dict | 否 | 需要审批的工具（如 `{"create_cron_job": True}`） |
 
-可选字段：
-- `model: str`：覆盖模型（格式 `provider:model_name`），不指定则继承主 agent 模型
+### Middleware 配置档位
+
+| 档位 | 适用场景 | 配置 |
+|------|---------|------|
+| `heavy` | 工具密集型（correlation-analyzer, log-analyzer） | ModelRetry(2) + ToolRetry(2) + ModelCallLimit(30) |
+| `light` | 轻量型（researcher, knowledge-retriever） | ModelRetry(2) + ModelCallLimit(15) |
+| `ops` | 操作型（ops-scheduler, security-auditor） | ModelRetry(2) + ToolRetry(1) + ModelCallLimit(20) |
 
 ---
 
@@ -248,13 +272,80 @@ task(subagent_type="ops-scheduler", message="创建一个每天凌晨 3 点执�
 
 ---
 
+## 6. knowledge-retriever — 知识检索专家
+
+**名称**: `knowledge-retriever`
+
+**描述**: 深度知识检索专家，结合语义搜索、关键词匹配和联网搜索获取信息。
+
+**工具集**（4 个）:
+
+| 工具 | 来源 | 说明 |
+|------|------|------|
+| `retrieve_knowledge` | 主 agent 工具 | RAG 语义 + 关键词混合检索 |
+| `search_fault_cases` | 主 agent 工具 | 故障案例库搜索 |
+| `web_search` | SubAgent 专属 | 联网搜索补充 |
+| `think` | SubAgent 专属 | 暂停评估信息充足性 |
+
+**工作流程**:
+1. 分析查询意图，决定检索策略
+2. 调用 `retrieve_knowledge` 搜索本地知识库
+3. 调用 `search_fault_cases` 搜索历史故障案例
+4. 如需补充，用 `web_search` 搜索互联网
+5. 综合多源结果，给出结构化回答
+
+**使用场景**:
+- 查找运维文档和 API 说明
+- 检索历史巡检报告和故障案例
+- 结合本地知识和互联网信息回答技术问题
+
+**委派示例**:
+```
+task(subagent_type="knowledge-retriever", message="查找关于 Docker 容器内存限制的最佳实践")
+```
+
+---
+
+## 异步 SubAgent
+
+除了上述 6 个同步 SubAgent，系统还支持 3 个**异步 SubAgent**，它们在后台独立运行，不阻塞主对话：
+
+### 架构
+
+```
+modules/agents/async_graphs/
+├── __init__.py              # build_all_async_graphs() 编译图
+├── researcher.py            # 异步版联网研究
+├── security_auditor.py      # 异步版安全审计
+└── correlation_analyzer.py  # 异步版关联分析
+```
+
+异步 SubAgent 通过 `lg_compat.py`（LangGraph 兼容服务器）运行：
+1. Main Agent 的 SubAgentMiddleware 识别 `graph_id` 字段
+2. 发送 HTTP 请求到本地 `/lg` 兼容 API
+3. LG Compat Server 在独立 `asyncio.Task` 中执行图
+4. Main Agent 继续对话，后台并行执行
+5. 用户可通过 `/api/agents/async-tasks` 查询进度
+
+### LG Compat Server 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/lg/threads` | 创建线程 |
+| POST | `/lg/threads/{id}/runs` | 启动运行 |
+| GET | `/lg/threads/{id}/runs/{run_id}` | 查询状态 |
+| GET | `/lg/threads/{id}` | 获取结果 |
+| POST | `/lg/threads/{id}/runs/{run_id}/cancel` | 取消运行 |
+
+---
+
 ## 配置管理
 
 ### 默认 vs 自定义配置
 
 SubAgent 配置支持两种方式：
 
-1. **硬编码默认**（`modules/agents/subagents.py:get_subagents()`）：上述 5 个 SubAgent
+1. **硬编码默认**（`modules/agents/subagents/__init__.py:get_subagents()`）：上述 6 个 SubAgent
 2. **自定义 JSON**（`data/custom_subagents.json`）：通过管理面板保存，优先于默认配置
 
 ### 自定义 SubAgent 格式
@@ -286,10 +377,11 @@ SubAgent 配置支持两种方式：
 
 ### SubAgent 工具集汇总
 
-| SubAgent | 工具数量 | 工具列表 |
-|----------|---------|---------|
-| researcher | 2 | web_search, think |
-| log-analyzer | 2 | get_container_logs, get_service_logs |
-| security-auditor | 1 | get_system_overview |
-| correlation-analyzer | 11 | analyze_resource_trend, get_system_overview, list_docker_containers, get_container_logs, list_systemd_services, get_service_logs, search_fault_cases, get_user_login_history_tool, get_active_sessions_tool, list_docker_networks, get_service_dependencies_tool |
-| ops-scheduler | 6 | list_cron_jobs, validate_cron_expr, create_cron_job, modify_cron_schedule, delete_cron_job_tool, toggle_cron_job_tool |
+| SubAgent | Middleware 档位 | 工具数量 | 工具列表 |
+|----------|---------------|---------|---------|
+| researcher | light | 2 | web_search, think |
+| log-analyzer | heavy | 2 | get_container_logs, get_service_logs |
+| security-auditor | ops | 1+1 | get_system_overview, check_compliance |
+| correlation-analyzer | heavy | 11 | analyze_resource_trend, get_system_overview, list_docker_containers, get_container_logs, list_systemd_services, get_service_logs, search_fault_cases, get_user_login_history_tool, get_active_sessions_tool, list_docker_networks, get_service_dependencies_tool |
+| ops-scheduler | ops | 6 | list_cron_jobs, validate_cron_expr, create_cron_job, modify_cron_schedule, delete_cron_job_tool, toggle_cron_job_tool |
+| knowledge-retriever | light | 4 | retrieve_knowledge, search_fault_cases, web_search, think |

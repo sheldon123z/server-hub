@@ -57,29 +57,34 @@ MODULE_INFO = {
 
 ### AI 智能体架构 (modules/agents/)
 
-基于 **Deep Agents 框架**，通过 `create_deep_agent()` 构建：
+基于 **Deep Agents 框架**，通过 `create_deep_agent()` 构建。模块已拆分为结构化子目录：
 
 ```
-deep_agent.py   → 工厂函数，组装 model + tools + backend + middleware + subagents + memory + store
-llm.py          → 8 家 LLM 服务商注册表，parse_model_id("provider:model")
-tools.py        → 37 个 @tool 服务器管理工具（只读 + 操作 + 危险三级）
-subagents.py    → 5 个 SubAgent 定义 + web_search/think 工具 + 配置序列化
-safety.py       → build_interrupt_config() 生成审批规则 + Shell 黑名单
-sandbox.py      → SafeLocalShellBackend（继承 LocalShellBackend，剥离敏感环境变量 + ulimit 资源限制）
-prompts.py      → 系统提示词 + get_system_prompt() 优先读自定义文件
-patrol.py       → 6 个内置巡检任务 + asyncio 调度循环（每 60s 检查）
-routes.py       → SSE 对话流 + 审批 + 巡检 + 设置 + 管理 API + WebSocket 终端
-terminal.py     → pty.fork() WebTerminal 类
+modules/agents/
+├── deep_agent.py    → 工厂函数，组装 model + tools + backend + middleware + subagents + memory + store
+├── llm.py           → 8 家 LLM 服务商注册表，parse_model_id("provider:model")
+├── tools/           → 39 个 @tool 服务器管理工具（10 个子模块：system/docker/services/users/cron/assets/knowledge/security/notifications/scripts）
+├── subagents/       → 6 个 SubAgent 定义（researcher/log-analyzer/security-auditor/correlation-analyzer/ops-scheduler/knowledge-retriever）+ 配置管理
+├── async_graphs/    → 3 个异步 SubAgent 图（researcher/security-auditor/correlation-analyzer）
+├── lg_compat.py     → LangGraph 兼容 HTTP 服务器（异步任务执行）
+├── safety.py        → build_interrupt_config() 生成审批规则 + Shell 黑名单
+├── sandbox.py       → SafeLocalShellBackend（继承 LocalShellBackend，剥离敏感环境变量 + ulimit 资源限制）
+├── prompts.py       → 系统提示词 + get_system_prompt() 优先读自定义文件
+├── patrol.py        → 6 个内置巡检任务 + asyncio 调度循环（每 60s 检查）
+├── routes/          → 9 个 HTTP 端点子模块（chat/conversations/approvals/patrols/config/alerts/fault/async_tasks/terminal）
+└── terminal.py      → pty.fork() WebTerminal 类
 ```
 
 **Backend**: `SafeLocalShellBackend(root_dir=~)` — 继承 `LocalShellBackend`，剥离 `*API_KEY*`/`*SECRET*`/`*TOKEN*` 环境变量，沙箱目录 `/tmp/serverhub-sandbox/` 内执行自动添加 ulimit 资源限制。
 
-**SubAgent 系统** (遵循 LangChain 官方规范):
-- `researcher` — 联网搜索（Tavily），tools: `[web_search, think]`
-- `log-analyzer` — 日志分析，tools: `[get_container_logs, get_service_logs]`
-- `security-auditor` — 安全审计，tools: `[get_system_overview]`
-- `correlation-analyzer` — 多源关联分析（11 个工具），跨维度定位根因
-- `ops-scheduler` — 定时任务管理（6 个 cron 工具），创建/修改/删除/启禁 cron 任务
+**SubAgent 系统** (已拆分为 `subagents/` 子目录，每个 SubAgent 独立文件):
+- `researcher` — 联网搜索（Tavily），tools: `[web_search, think]`，middleware: light
+- `log-analyzer` — 日志分析，tools: `[get_container_logs, get_service_logs]`，middleware: heavy
+- `security-auditor` — 安全审计，tools: `[get_system_overview, check_compliance]`，middleware: ops
+- `correlation-analyzer` — 多源关联分析（11 个工具），middleware: heavy
+- `ops-scheduler` — 定时任务管理（6 个 cron 工具），middleware: ops
+- `knowledge-retriever` — RAG 知识检索，tools: `[retrieve_knowledge, search_fault_cases, web_search, think]`，middleware: light
+- 异步 SubAgent: researcher/security-auditor/correlation-analyzer 可通过 `async_graphs/` + `lg_compat.py` 后台执行
 - 创建新 SubAgent 需遵循 `/create-subagent` skill 的 checklist
 
 **Middleware 栈** (12 个):

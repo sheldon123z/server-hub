@@ -1,6 +1,26 @@
 # Agent 工具详细说明
 
-所有工具定义在 `modules/agents/tools.py`，通过 `get_server_tools()` 注册到主 Agent。
+工具按功能领域拆分为 10 个子模块，存放在 `modules/agents/tools/` 目录下：
+
+```
+modules/agents/tools/
+├── __init__.py          # 导出入口：get_server_tools(user_role)
+├── system.py            # 系统监控（3 个工具）
+├── docker.py            # Docker 管理（7 个工具）
+├── services.py          # Systemd 服务（5 个工具）
+├── users.py             # 用户管理（8 个工具）
+├── cron.py              # 定时任务（6 个工具）
+├── assets.py            # 资产与故障案例（4 个工具）
+├── knowledge.py         # RAG 知识库（2 个工具）
+├── security.py          # 安全合规（2 个工具）
+├── notifications.py     # 通知推送（1 个工具）
+└── scripts.py           # 运维脚本桥接（1 个工具）
+```
+
+通过 `get_server_tools(user_role)` 注册到主 Agent：
+- **admin**: 返回全部 39 个工具
+- **user**: 仅返回 SAFE 级别的只读工具
+
 工具使用 LangChain `@tool` 装饰器，框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
 
 ---
@@ -466,13 +486,35 @@
 
 ---
 
+## RAG 知识库工具（2 个）— `tools/knowledge.py`
+
+#### retrieve_knowledge
+
+- **风险等级**: safe
+- **说明**: 语义搜索 + 关键词混合检索知识库，支持多种数据源。
+- **参数**: `query: str`（搜索查询）、`source: str`（数据源：ops-docs/api-docs/fault_case/patrol_history/agent-memory，留空搜索全部）、`top_k: int`（返回数量，默认 5）
+- **返回**: 检索到的相关文档片段（含来源和相似度）
+- **使用场景**: 查找运维文档、API 说明、历史巡检报告、故障案例
+
+---
+
+#### reindex_knowledge_base
+
+- **风险等级**: safe
+- **说明**: 手动触发知识库全量重建索引（ChromaDB）。
+- **参数**: 无
+- **返回**: 索引构建结果统计
+- **使用场景**: 文档更新后刷新知识库索引
+
+---
+
 ## 工具风险分布汇总
 
 | 风险级别 | 自定义工具 | 框架内置 | SubAgent 专属 | 合计 |
 |---------|-----------|---------|-------------|------|
-| safe | 21 | 5 | 2 | 28 |
+| safe | 23 | 5 | 2 | 30 |
 | moderate | 10 | 2 | 0 | 12 |
 | danger | 6 | 1 | 0 | 7 |
-| **合计** | **37** | **8** | **2** | **47** |
+| **合计** | **39** | **8** | **2** | **49** |
 
-> 注：47 为含重复计数的总数（SubAgent 专属工具 web_search/think 同时计入 safe 和 SubAgent 列）。去重后 TOOL_RISK_MAP 实际条目数为 **48**（37 自定义 + 9 框架内置 + 2 SubAgent）。
+> 注：自定义工具从 37 增至 39（新增 retrieve_knowledge 和 reindex_knowledge_base）。TOOL_RISK_MAP 包含全部工具的风险标签。

@@ -11,10 +11,22 @@ ServerHub 使用服务端渲染（Jinja2）+ 轻量交互（HTMX + Alpine.js）�
 | Jinja2 | FastAPI 内置 | 服务端模板渲染 |
 | HTMX | 2.x | 局部 HTML 刷新（无需编写 JS fetch）|
 | Alpine.js | 3.x | 客户端交互状态（对话、设置、下拉）|
-| Chart.js | 4.x | 监控图表（折线图、仪表盘）|
+| ECharts | 5.x | 高性能图表可视化（仪表盘、趋势图）|
 | xterm.js | 5.x | WebSocket 终端（WebTerminal）|
+| Tabler Icons | 3.x | 侧边栏和页面图标（CDN Webfont）|
 
 所有 JS/CSS 以静态文件形式存储在 `static/` 目录，无需构建步骤。
+
+### 图标系统
+
+使用 [Tabler Icons](https://tabler.io/icons) Webfont，通过 CDN 引入：
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+```
+
+在模板中使用：`<i class="ti ti-icon-name"></i>`
+
+各模块在 `MODULE_INFO["icon"]` 中定义图标名称，`base.html` 侧边栏自动渲染。
 
 ---
 
@@ -43,7 +55,7 @@ ServerHub 使用服务端渲染（Jinja2）+ 轻量交互（HTMX + Alpine.js）�
 
 | 变量 | 值 | 用途 |
 |------|---|------|
-| `--sidebar-w` | 200px | 侧边栏宽度 |
+| `--sidebar-w` | 220px | 侧边栏宽度 |
 | `--header-h` | 56px | 顶栏高度 |
 | `--radius` | 8px | 卡片圆角 |
 
@@ -67,11 +79,35 @@ base.html
     ├── panel_users.html   （面板用户）
     ├── proxy.html         （代理管理）
     ├── settings.html      （系统设置）
-    ├── agents.html        （AI 助手）
+    ├── agents.html        （OpsAgent）
     ├── assets.html        （资产台账）
     ├── cron.html          （定时任务）
     └── login.html         （登录页，不继承 base）
 ```
+
+### 共享 CSS 组件
+
+以下组件定义在 `app.css` 中，供所有管理页面复用：
+
+| 组件 | 类名 | 说明 |
+|------|------|------|
+| 标签栏 | `.tab-bar` + `.tab-item` | 水平标签页导航，替代 `btn btn-sm` 模式 |
+| 开关 | `.toggle-switch` + `.toggle-slider` | 启用/禁用切换开关 |
+| 筛选栏 | `.filter-bar` | 搜索/筛选控件行 |
+| 统计网格 | `.page-stats` + `.page-stat-card` | 页面顶部统计卡片（自动响应式网格）|
+| 状态圆点 | `.status-dot` + `.status-dot-ok/warn/err/idle` | 彩色状态指示器（带发光效果）|
+| 日志高亮 | `.log-line-error/warn/info/debug` | 日志级别语法着色 |
+| 空状态 | `.empty-state` | 无数据占位提示 |
+
+### 登录页（login.html）
+
+登录页不继承 `base.html`，拥有独立的视觉设计：
+- **背景**: SVG 透视网格 + 抽象波形曲线动画 + Canvas 粒子网络 + 呼吸光斑
+- **登录卡片**: 玻璃拟态（`backdrop-filter: blur(20px)`）
+- **动画**: `prefers-reduced-motion` 全面适配
+- **无真实参数暴露**: 背景仅展示抽象装饰元素
+
+---
 
 ### 页面功能详述
 

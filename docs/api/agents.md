@@ -3,9 +3,25 @@
 提供 Deep Agent 对话、审批流程、自动巡检、告警规则、故障报告、案例库、配置管理及 WebSocket 终端等完整接口。
 
 **路由前缀**: `/api/agents`
-**相关文件**: `modules/agents/routes.py`, `modules/agents/schemas.py`, `modules/agents/deep_agent.py`, `modules/agents/patrol.py`, `modules/agents/tools.py`, `modules/agents/safety.py`, `modules/agents/llm.py`, `modules/agents/subagents.py`, `modules/agents/terminal.py`
 
-> 所有端点均需要 admin 权限。
+**路由模块结构**（已拆分为子模块）:
+```
+modules/agents/routes/
+├── __init__.py          # 统一注册所有子路由
+├── chat.py              # 对话 SSE 流
+├── conversations.py     # 对话历史
+├── approvals.py         # 审批流程
+├── patrols.py           # 巡检任务 + 模板
+├── config.py            # Agent 设置 + 管理接口
+├── alerts.py            # 告警规则
+├── fault.py             # 故障报告 + 案例库 + 事件
+├── async_tasks.py       # 异步任务管理
+└── terminal.py          # WebSocket 终端
+```
+
+**相关文件**: `modules/agents/deep_agent.py`, `modules/agents/patrol.py`, `modules/agents/tools/`, `modules/agents/safety.py`, `modules/agents/llm.py`, `modules/agents/subagents/`, `modules/agents/lg_compat.py`
+
+> 对话端点 (POST /chat, GET/DELETE /conversations) 需要 user 权限；其余端点需要 admin 权限。
 
 ---
 
@@ -22,7 +38,8 @@
 9. [事件记录（Events）](#9-事件记录)
 10. [Agent 配置（Settings）](#10-agent-配置)
 11. [管理接口（Admin）](#11-管理接口)
-12. [WebSocket 终端](#12-websocket-终端)
+12. [异步任务（Async Tasks）](#12-异步任务)
+13. [WebSocket 终端](#13-websocket-终端)
 
 ---
 
@@ -32,7 +49,7 @@
 
 向 AI Agent 发送消息，通过 **Server-Sent Events (SSE)** 流式返回响应。
 
-**权限**: admin
+**权限**: user（普通用户仅获得只读工具集）
 
 **请求体**:
 
@@ -1171,7 +1188,68 @@ data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000"}
 
 ---
 
-## 12. WebSocket 终端
+## 12. 异步任务
+
+### GET /api/agents/async-tasks
+
+获取后台异步任务列表（由异步 SubAgent 创建）。
+
+**权限**: admin
+
+**成功响应** `200`:
+
+```json
+[
+  {
+    "id": "uuid",
+    "subagent": "researcher",
+    "status": "running",
+    "created_at": "2026-03-25T10:00:00",
+    "query": "搜索 Docker OOM 解决方案"
+  }
+]
+```
+
+---
+
+### GET /api/agents/async-tasks/{task_id}
+
+获取异步任务详情（含结果）。
+
+**权限**: admin
+
+**成功响应** `200`:
+
+```json
+{
+  "id": "uuid",
+  "subagent": "researcher",
+  "status": "completed",
+  "result": "...",
+  "created_at": "2026-03-25T10:00:00",
+  "completed_at": "2026-03-25T10:01:30"
+}
+```
+
+---
+
+### DELETE /api/agents/async-tasks/{task_id}
+
+取消正在运行的异步任务。
+
+**权限**: admin
+
+**成功响应** `200`:
+
+```json
+{
+  "ok": true
+}
+```
+
+---
+
+## 13. WebSocket 终端
 
 ### WS /api/agents/ws/terminal
 

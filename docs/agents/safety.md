@@ -122,11 +122,11 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 
 | 风险级别 | 工具数量 | 前端显示颜色 |
 |---------|---------|------------|
-| safe | 29 | 无标签 |
+| safe | 31 | 无标签 |
 | moderate | 12 | 黄色标签 |
 | danger | 7 | 红色标签 |
 
-### safe 工具列表（29 个）
+### safe 工具列表（31 个）
 
 | 工具 | 类型 |
 |------|------|
@@ -157,6 +157,8 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 | grep | 框架内置 |
 | write_todos | 框架内置 |
 | task | 框架内置 |
+| retrieve_knowledge | RAG 知识库 |
+| reindex_knowledge_base | RAG 知识库 |
 | web_search | SubAgent 专属 |
 | think | SubAgent 专属 |
 
