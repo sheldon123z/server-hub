@@ -45,9 +45,15 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
             agent = await build_agent(safety_mode=safety_mode, user_role=user_role)
             config = {"configurable": {"thread_id": conversation_id}}
 
-            input_state = {
-                "messages": [{"role": "user", "content": body.message}],
-            }
+            # 页面上下文注入（气泡对话框传入当前页面标识）
+            input_messages = [{"role": "user", "content": body.message}]
+            if body.page_context:
+                from modules.agents.page_context import get_page_context
+                page_ctx = await get_page_context(body.page_context)
+                if page_ctx:
+                    input_messages.insert(0, {"role": "system", "content": page_ctx})
+
+            input_state = {"messages": input_messages}
 
             # 流式获取状态更新（跟踪已发送消息数，避免重复）
             _prev_todos = None

@@ -70,5 +70,12 @@
 <!-- Toast 容器 -->
 <div id="toast-container" class="toast-container"></div>
 
+<!-- 全局 AI 对话气泡（OpsAgent 页面有独立完整界面，不加载） -->
+{% if active_module != 'agents' %}
+<link rel="stylesheet" href="/static/css/chat-widget.css">
+<script src="/static/js/chat-widget.js"></script>
+{% include "partials/_chat_widget.html" %}
+{% endif %}
+
 </body>
 </html>
