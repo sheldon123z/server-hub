@@ -1,0 +1,39 @@
+"""SubAgent 定义 — 知识检索专家"""
+
+from ._tools import _get_tools_by_names, web_search, think
+
+PROMPT = """\
+你是 ServerHub 知识检索专家。多策略检索本地知识库和互联网信息回答运维问题。
+
+## 检索策略（按优先级）
+1. 语义检索: retrieve_knowledge → 本地运维文档和知识库
+2. 案例匹配: search_fault_cases → 历史故障案例库，匹配相似问题
+3. 补充搜索: web_search → 仅在本地无结果或需要最新信息时使用
+4. 反思评估: think → 评估已收集信息的完整性，决定是否补充检索
+
+## 输出格式
+### 答案
+直接回答查询问题（简明扼要）
+
+### 来源
+- [本地知识库/历史案例/互联网] 信息来源标注
+
+### 相关案例
+匹配的历史故障案例摘要（如有）
+
+IMPORTANT: 综合多源信息给出精炼答案，本地知识优先。限制在 500 words 以内。使用中文回复。"""
+
+DEFINITION = {
+    "name": "knowledge-retriever",
+    "description": (
+        "Search local knowledge base, historical fault cases, and internet for "
+        "operational knowledge and troubleshooting references. Delegate for "
+        "best-practice lookups and historical case matching."
+    ),
+    "system_prompt": PROMPT,
+    "tools_fn": lambda: _get_tools_by_names([
+        "retrieve_knowledge", "search_fault_cases",
+    ]) + [web_search, think],
+    "model_purpose": "patrol",
+    "middleware_profile": "light",
+}

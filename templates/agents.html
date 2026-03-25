@@ -888,6 +888,10 @@ function agentApp() {
       { cmd: '/search', desc: '搜索互联网', prompt: '搜索互联网获取最新信息: {arg}', hasArg: true, argHint: '关键词' },
       { cmd: '/health', desc: '全面健康检查', prompt: '执行全面的服务器健康检查，检查所有关键指标' },
       { cmd: '/security', desc: '安全审计', prompt: '对服务器进行安全审计，检查SSH、端口、权限、防火墙配置' },
+      { cmd: '/deep-research', desc: '深度研究(异步)', prompt: '请使用 start_async_task 委派 deep-researcher 进行深度研究: {arg}', hasArg: true, argHint: '研究主题' },
+      { cmd: '/deep-audit', desc: '深度安全审计(异步)', prompt: '请使用 start_async_task 委派 deep-security-audit 执行全面安全审计，覆盖SSH、防火墙、用户权限、端口、CIS基线' },
+      { cmd: '/deep-analysis', desc: '深度关联分析(异步)', prompt: '请使用 start_async_task 委派 deep-correlation 进行深度关联分析: {arg}', hasArg: true, argHint: '问题描述' },
+      { cmd: '/tasks', desc: '查看异步任务', prompt: '请使用 list_async_tasks 查看所有异步任务的状态' },
       { cmd: '/help', desc: '显示所有指令', prompt: '' },
     ],
 

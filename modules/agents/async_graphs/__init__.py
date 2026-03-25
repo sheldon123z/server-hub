@@ -24,12 +24,23 @@ from pathlib import Path
 from config import settings
 from modules.agents.llm import get_chat_model
 from modules.agents.sandbox import SafeLocalShellBackend
-from modules.agents.subagents import (
-    web_search, think, _get_tools_by_names,
-    RESEARCHER_PROMPT, SECURITY_AUDITOR_PROMPT, CORRELATION_ANALYZER_PROMPT,
-)
+
+# 各 graph 的 SPEC + get_tools
+from .researcher import SPEC as RESEARCHER_SPEC, get_tools as researcher_tools
+from .security_auditor import SPEC as SECURITY_AUDITOR_SPEC, get_tools as security_auditor_tools
+from .correlation_analyzer import SPEC as CORRELATION_ANALYZER_SPEC, get_tools as correlation_analyzer_tools
+
+# 向后兼容: deep_agent.py 可能从 subagents 导入，这里也 re-export
+from modules.agents.subagents._async_specs import get_async_subagent_specs
 
 logger = logging.getLogger(__name__)
+
+# 所有 graph spec 注册表
+ALL_SPECS = [
+    (RESEARCHER_SPEC, researcher_tools),
+    (SECURITY_AUDITOR_SPEC, security_auditor_tools),
+    (CORRELATION_ANALYZER_SPEC, correlation_analyzer_tools),
+]
 
 # 异步 graph 共享的 checkpointer 连接
 _async_checkpointer: AsyncSqliteSaver | None = None
@@ -58,40 +69,6 @@ def _create_backend() -> SafeLocalShellBackend:
     )
 
 
-# ─── Graph 定义 ───
-
-ASYNC_GRAPH_SPECS = {
-    "researcher": {
-        "system_prompt": RESEARCHER_PROMPT,
-        "tools_fn": lambda: [web_search, think],
-        "model_purpose": "chat",
-        "middleware_profile": "light",
-        "call_limit": 20,
-    },
-    "security-auditor": {
-        "system_prompt": SECURITY_AUDITOR_PROMPT,
-        "tools_fn": lambda: _get_tools_by_names(["get_system_overview", "check_compliance"]),
-        "model_purpose": "patrol",
-        "middleware_profile": "ops",
-        "call_limit": 25,
-    },
-    "correlation-analyzer": {
-        "system_prompt": CORRELATION_ANALYZER_PROMPT,
-        "tools_fn": lambda: _get_tools_by_names([
-            "analyze_resource_trend", "get_system_overview",
-            "list_docker_containers", "get_container_logs",
-            "list_systemd_services", "get_service_logs",
-            "search_fault_cases", "get_user_login_history_tool",
-            "get_active_sessions_tool", "list_docker_networks",
-            "get_service_dependencies_tool",
-        ]),
-        "model_purpose": "chat",
-        "middleware_profile": "heavy",
-        "call_limit": 35,
-    },
-}
-
-
 def _build_middleware(profile: str, call_limit: int) -> list:
     """按 profile 构建 middleware"""
     mw = [ModelRetryMiddleware(max_retries=2, backoff_factor=1.0)]
@@ -110,10 +87,11 @@ async def build_all_async_graphs() -> dict:
     checkpointer = await _get_async_checkpointer()
     graphs = {}
 
-    for graph_id, spec in ASYNC_GRAPH_SPECS.items():
+    for spec, tools_fn in ALL_SPECS:
+        graph_id = spec["graph_id"]
         try:
             model = get_chat_model(spec["model_purpose"])
-            tools = spec["tools_fn"]()
+            tools = tools_fn()
             middleware = _build_middleware(spec["middleware_profile"], spec["call_limit"])
 
             graph = create_agent(
@@ -129,3 +107,10 @@ async def build_all_async_graphs() -> dict:
             logger.error(f"异步 graph '{graph_id}' 编译失败: {e}")
 
     return graphs
+
+
+__all__ = [
+    "build_all_async_graphs",
+    "get_async_subagent_specs",
+    "ALL_SPECS",
+]
