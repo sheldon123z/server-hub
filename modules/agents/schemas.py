@@ -8,6 +8,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     safety_mode: str = "supervised"
+    page_context: Optional[str] = None  # 页面上下文标识: "dashboard"/"docker"/"users" 等
 
 
 class ApprovalAction(BaseModel):
