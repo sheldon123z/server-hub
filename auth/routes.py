@@ -1,14 +1,15 @@
 """认证路由"""
 
-from fastapi import APIRouter, HTTPException, Response, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+
 from auth.dependencies import get_current_user, get_user_from_token
 from auth.jwt_handler import create_access_token, create_refresh_token
 from auth.models import ChangePasswordRequest, LoginRequest
 from auth.user_store import (
     authenticate,
     get_token_version,
-    verify_password,
     hash_password,
+    verify_password,
 )
 from config import settings
 from database import get_db

@@ -42,6 +42,7 @@ def get_or_create_bootstrap_admin_password() -> str:
         label="SERVERHUB_ADMIN_PASSWORD",
     )
 
+
 class Settings:
     """应用配置，优先读取环境变量 SERVERHUB_*"""
 
