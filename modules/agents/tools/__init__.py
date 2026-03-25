@@ -75,6 +75,9 @@ from modules.agents.tools.knowledge import (
     reindex_knowledge_base,
 )
 
+# ─── 页面上下文 ───
+from modules.agents.tools.page_context_tool import get_page_data
+
 
 # ─── 工具注册表 ───
 
@@ -130,6 +133,8 @@ def get_server_tools(user_role: str = "admin") -> list:
         # RAG 知识库
         retrieve_knowledge,
         reindex_knowledge_base,
+        # 页面上下文
+        get_page_data,
     ]
 
     if user_role == "admin":

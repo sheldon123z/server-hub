@@ -74,6 +74,8 @@ TOOL_RISK_MAP = {
     # RAG 工具
     "retrieve_knowledge": RiskLevel.SAFE,
     "reindex_knowledge_base": RiskLevel.SAFE,
+    # 页面上下文
+    "get_page_data": RiskLevel.SAFE,
 }
 
 
