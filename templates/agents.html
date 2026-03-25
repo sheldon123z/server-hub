@@ -47,6 +47,9 @@
 .conv-item { padding: 7px 10px; cursor: pointer; border-radius: 6px; font-size: 12px; transition: background 0.15s; }
 .conv-item:hover { background: rgba(56,189,248,0.05); }
 .conv-item.active { background: var(--accent-dim); color: var(--accent); }
+.conv-delete-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text3); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; }
+.conv-item:hover .conv-delete-btn { opacity: 1; }
+.conv-delete-btn:hover { color: var(--red); background: rgba(248,113,113,0.1); }
 .conv-title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conv-time { color: var(--text3); font-size: 10px; }
 
@@ -250,9 +253,10 @@
     <div class="chat-sidebar">
       <button class="btn btn-primary" style="width:100%" @click="newConversation()">+ 新对话</button>
       <template x-for="conv in conversations" :key="conv.id">
-        <div class="conv-item" :class="currentConvId===conv.id?'active':''" @click="loadConversation(conv.id)">
+        <div class="conv-item" :class="currentConvId===conv.id?'active':''" @click="loadConversation(conv.id)" style="position:relative">
           <div class="conv-title" x-text="conv.title"></div>
           <div class="conv-time" x-text="conv.updated_at"></div>
+          <button class="conv-delete-btn" @click.stop="deleteConversation(conv.id)" title="删除对话">&times;</button>
         </div>
       </template>
     </div>
@@ -1011,6 +1015,16 @@ function agentApp() {
       } catch(e) {}
     },
     newConversation() { this.currentConvId = null; this.currentTitle = '新对话'; this.messages = []; this.todos = []; this._seenMsgIds = new Set(); this._msgSeq = 0; },
+
+    async deleteConversation(id) {
+      if (!confirm('确定删除此对话？')) return;
+      try {
+        await fetch(`/api/agents/conversations/${id}`, { method: 'DELETE' });
+        if (this.currentConvId === id) this.newConversation();
+        await this.loadConversations();
+        showToast('对话已删除', 'ok');
+      } catch(e) { showToast('删除失败', 'err'); }
+    },
     async loadConversation(id) {
       this.currentConvId = id;
       this._seenMsgIds = new Set();
