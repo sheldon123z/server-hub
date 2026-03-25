@@ -17,11 +17,11 @@
   </div>
   <div class="page-stat-card">
     <div class="stat-label">超配额用户</div>
-    <div class="stat-value">&mdash;</div>
+    <div class="stat-value" {% if over_quota_count|default(0) > 0 %}style="color:var(--red)"{% endif %}>{{ over_quota_count|default(0) }}</div>
   </div>
   <div class="page-stat-card">
-    <div class="stat-label">内存使用</div>
-    <div class="stat-value">&mdash;</div>
+    <div class="stat-label">总内存使用</div>
+    <div class="stat-value">{{ total_user_mem_gb|default(0) }} <span style="font-size:14px;font-weight:400">GB</span></div>
   </div>
 </div>
 
@@ -31,6 +31,7 @@
   <button class="tab-item" :class="tab==='quotas' && 'active'" @click="tab='quotas'"><i class="ti ti-adjustments"></i> 配额管理</button>
   {% if user.role == 'admin' %}
   <button class="tab-item" :class="tab==='manage' && 'active'" @click="tab='manage'; loadAllUsers()"><i class="ti ti-settings"></i> 用户管理</button>
+  <button class="tab-item" :class="tab==='enforce' && 'active'" @click="tab='enforce'; loadEnforcement()"><i class="ti ti-shield-check"></i> 处置策略</button>
   {% endif %}
 </div>
 
@@ -51,7 +52,7 @@
         {% set q = get_user_quota(u.name, u.groups, quotas) %}
         {% set qmem = q.mem_gb if q else 0 %}
         {% set mem_pct = (u.mem_gb / qmem * 100)|round|int if qmem else 0 %}
-        <tr>
+        <tr style="{% if mem_pct >= 100 %}border-left:3px solid var(--red){% elif mem_pct >= 75 %}border-left:3px solid var(--yellow){% endif %}">
           <td>
             <strong>{{ u.name }}</strong>
             <div class="text-xs text-muted">{{ u.groups }}</div>
@@ -86,6 +87,11 @@
               </div>
             {% endfor %}
             {% if not u.top_procs %}<span class="text-muted">-</span>{% endif %}
+            {% if u.proc_count > 3 %}
+            <div class="text-xs" style="margin-top:2px">
+              <a href="#" style="color:var(--accent);cursor:pointer" @click.prevent="openProcessModal('{{ u.name }}')">查看全部 ({{ u.proc_count }})</a>
+            </div>
+            {% endif %}
           </td>
           {% if user.role == 'admin' %}
           <td>
@@ -239,6 +245,126 @@
   </div>
 </div>
 
+<!-- 处置策略标签页 -->
+<div x-show="tab==='enforce'">
+  <div class="data-table-wrapper" style="margin-bottom:16px">
+    <div class="data-table-header"><h3>配额处置策略</h3></div>
+    <div style="padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span class="toggle-switch">
+            <input type="checkbox" x-model="enforcement.enabled">
+            <span class="toggle-slider"></span>
+          </span>
+          启用自动处置
+        </label>
+        <div class="mb-3">
+          <label class="form-label">处置模式</label>
+          <select class="form-input" style="width:100%" x-model="enforcement.mode">
+            <option value="notify">仅通知</option>
+            <option value="notify_and_limit">通知 + 限制</option>
+            <option value="auto_kill">自动处置（超限 kill 进程）</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <div class="mb-3">
+          <label class="form-label">预警阈值 (%) <span class="text-muted text-xs">默认 75</span></label>
+          <input type="number" class="form-input" style="width:100%" x-model.number="enforcement.warning_pct" min="50" max="100">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">告警阈值 (%) <span class="text-muted text-xs">默认 100</span></label>
+          <input type="number" class="form-input" style="width:100%" x-model.number="enforcement.critical_pct" min="75" max="150">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">强制处置阈值 (%) <span class="text-muted text-xs">默认 120</span></label>
+          <input type="number" class="form-input" style="width:100%" x-model.number="enforcement.kill_pct" min="100" max="200">
+        </div>
+        <div style="display:flex;gap:12px">
+          <div class="mb-3" style="flex:1">
+            <label class="form-label">宽限期 (分钟)</label>
+            <input type="number" class="form-input" style="width:100%" x-model.number="enforcement.grace_minutes" min="1" max="60">
+          </div>
+          <div class="mb-3" style="flex:1">
+            <label class="form-label">通知冷却 (分钟)</label>
+            <input type="number" class="form-input" style="width:100%" x-model.number="enforcement.cooldown_minutes" min="5" max="1440">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:0 18px 16px;text-align:right">
+      <button class="btn btn-primary btn-sm" @click="saveEnforcement()">保存策略</button>
+    </div>
+  </div>
+
+  <!-- 违规记录 -->
+  <div class="data-table-wrapper">
+    <div class="data-table-header"><h3>违规记录</h3></div>
+    <table>
+      <thead><tr><th>时间</th><th>用户</th><th>类型</th><th>使用量</th><th>配额</th><th>使用率</th><th>处置</th></tr></thead>
+      <tbody>
+        <template x-for="v in violations" :key="v.id">
+          <tr>
+            <td class="text-xs text-muted" x-text="v.time?.replace('T',' ').slice(0,19)"></td>
+            <td><strong x-text="v.username"></strong></td>
+            <td>
+              <span class="badge" :class="v.type==='kill'?'badge-crit':v.type==='critical'?'badge-warn':'badge-info'" x-text="v.type"></span>
+            </td>
+            <td x-text="v.mem_gb?.toFixed(1) + ' GB'"></td>
+            <td x-text="v.quota_mem_gb + ' GB'"></td>
+            <td x-text="v.usage_pct + '%'"></td>
+            <td class="text-xs" x-text="v.action || '-'"></td>
+          </tr>
+        </template>
+        <template x-if="violations.length === 0">
+          <tr><td colspan="7" class="empty-state">暂无违规记录</td></tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 进程详情 Modal -->
+<div x-show="showProcessModal" class="modal-overlay"
+     @click.self="showProcessModal=false" x-cloak>
+  <div class="modal" style="width:900px;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0" x-text="'进程列表: ' + processUser"></h3>
+      <div class="flex gap-2">
+        <input class="form-input" style="width:180px;padding:4px 10px;font-size:12px" placeholder="搜索进程..." x-model="processSearch" @input.debounce.300ms="loadProcesses()">
+        <select class="form-input" style="width:100px;padding:4px 10px;font-size:12px" x-model="processSort" @change="loadProcesses()">
+          <option value="mem">内存排序</option>
+          <option value="cpu">CPU 排序</option>
+          <option value="time">时间排序</option>
+          <option value="name">名称排序</option>
+        </select>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>PID</th><th>进程名</th><th>命令</th><th>CPU%</th><th>内存 MB</th><th>运行时长</th><th>操作</th></tr></thead>
+      <tbody>
+        <template x-for="p in processList" :key="p.pid">
+          <tr>
+            <td class="text-xs font-mono" x-text="p.pid"></td>
+            <td><strong class="text-accent" x-text="p.name"></strong></td>
+            <td class="text-xs font-mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="p.cmdline" :title="p.cmdline"></td>
+            <td x-text="p.cpu_percent?.toFixed(1)"></td>
+            <td x-text="p.mem_mb?.toFixed(1)"></td>
+            <td class="text-xs text-muted" x-text="p.elapsed"></td>
+            <td><button class="btn btn-xs btn-danger" @click="killFromModal(p.pid)">Kill</button></td>
+          </tr>
+        </template>
+        <template x-if="processList.length === 0">
+          <tr><td colspan="7" class="empty-state">无进程</td></tr>
+        </template>
+      </tbody>
+    </table>
+    <div class="flex justify-end mt-3">
+      <button class="btn btn-sm" @click="showProcessModal=false">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 登录历史弹窗 -->
 <div x-show="showHistoryModal" class="modal-overlay"
      @click.self="showHistoryModal=false" x-cloak>
@@ -279,6 +405,15 @@ function userManager() {
     historyEntries: [],
     editUser: null,
     newUser: { username: '', password: '', groups: '', shell: '/bin/bash' },
+    // 进程 Modal
+    showProcessModal: false,
+    processUser: '',
+    processList: [],
+    processSearch: '',
+    processSort: 'mem',
+    // 处置策略
+    enforcement: { enabled: true, mode: 'notify', warning_pct: 75, critical_pct: 100, kill_pct: 120, grace_minutes: 5, cooldown_minutes: 30 },
+    violations: [],
 
     async loadSessions() {
       try {
@@ -342,6 +477,44 @@ function userManager() {
           setTimeout(() => htmx.ajax('GET', '/users', {target: '#main-content'}), 1500);
         } else { showToast(data.detail || '终止失败', 'err'); }
       } catch(e) { showToast('终止失败: ' + e.message, 'err'); }
+    },
+
+    // 进程 Modal
+    async openProcessModal(username) {
+      this.processUser = username;
+      this.processSearch = '';
+      this.processSort = 'mem';
+      this.showProcessModal = true;
+      await this.loadProcesses();
+    },
+    async loadProcesses() {
+      try {
+        const r = await fetch(`/api/users/${this.processUser}/processes?sort=${this.processSort}&search=${encodeURIComponent(this.processSearch)}`).then(r=>r.json());
+        this.processList = r.processes || [];
+      } catch(e) { showToast('加载进程失败', 'err'); }
+    },
+    async killFromModal(pid) {
+      if (!confirm(`终止进程 PID ${pid}?`)) return;
+      try {
+        const resp = await fetch(`/api/users/${this.processUser}/kill/${pid}`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) { showToast(`进程 ${pid} 已终止`, 'ok'); await this.loadProcesses(); }
+        else { showToast(data.detail || '终止失败', 'err'); }
+      } catch(e) { showToast('终止失败', 'err'); }
+    },
+
+    // 处置策略
+    async loadEnforcement() {
+      try {
+        this.enforcement = await fetch('/api/users/enforcement').then(r=>r.json());
+        this.violations = await fetch('/api/users/violations?limit=30').then(r=>r.json());
+      } catch(e) {}
+    },
+    async saveEnforcement() {
+      try {
+        await apiCall('/api/users/enforcement', 'PUT', this.enforcement);
+        showToast('策略已保存', 'ok');
+      } catch(e) { showToast('保存失败', 'err'); }
     },
   };
 }

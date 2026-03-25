@@ -37,6 +37,8 @@ from modules.agents.tools.users import (
     get_active_sessions_tool,
     manage_linux_user,
     kill_single_process_tool,
+    get_user_full_processes,
+    check_quota_violations,
 )
 
 # ─── 定时任务 ───
@@ -123,6 +125,8 @@ def get_server_tools(user_role: str = "admin") -> list:
         get_active_sessions_tool,
         manage_linux_user,
         kill_single_process_tool,
+        get_user_full_processes,
+        check_quota_violations,
         # 定时任务
         list_cron_jobs,
         validate_cron_expr,

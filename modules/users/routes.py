@@ -92,6 +92,55 @@ async def user_login_history(username: str, count: int = 20, user=Depends(requir
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ─── 配额状态 & 处置策略（固定路径必须在 /{username} 之前） ───
+
+@router.get("/quota-status")
+async def quota_status(user=Depends(get_current_user)):
+    """获取所有用户配额使用状态"""
+    from modules.users.services import get_quota_status
+    return get_quota_status()
+
+
+@router.get("/enforcement")
+async def get_enforcement(user=Depends(require_role("admin"))):
+    """获取处置策略配置"""
+    from modules.users.services import get_enforcement_config
+    return get_enforcement_config()
+
+
+@router.put("/enforcement")
+async def update_enforcement(request: Request, user=Depends(require_role("admin"))):
+    """更新处置策略配置"""
+    from modules.users.services import save_enforcement_config
+    data = await request.json()
+    save_enforcement_config(data)
+    return {"ok": True}
+
+
+@router.get("/violations")
+async def get_violations(
+    limit: int = 50, offset: int = 0,
+    user=Depends(require_role("admin")),
+):
+    """获取配额违规历史"""
+    from database import get_db
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, username, violation_type, mem_gb, quota_mem_gb, usage_pct, action_taken, created_at "
+        "FROM quota_violations ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r[0], "username": r[1], "type": r[2],
+            "mem_gb": r[3], "quota_mem_gb": r[4], "usage_pct": r[5],
+            "action": r[6], "time": r[7],
+        }
+        for r in rows
+    ]
+
+
 # ─── 用户增删改 ───
 
 @router.post("/create")
@@ -264,3 +313,16 @@ async def delete_quota(key: str, user=Depends(require_role("admin"))):
         raise HTTPException(status_code=404, detail=f"配额 {key} 不存在")
     save_quotas(new_quotas)
     return {"ok": True, "message": f"已删除配额 {key}"}
+
+
+# ─── 进程列表 (需要在 /{username} DELETE 之后) ───
+
+@router.get("/{username}/processes")
+async def user_processes(
+    username: str, sort: str = "mem", search: str = "",
+    user=Depends(require_role("admin")),
+):
+    """获取用户完整进程列表"""
+    from modules.users.services import get_user_processes
+    procs = get_user_processes(username, sort_by=sort, search=search)
+    return {"processes": procs, "count": len(procs)}
