@@ -53,8 +53,9 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                 "messages": [{"role": "user", "content": body.message}],
             }
 
-            # 流式获取状态更新
+            # 流式获取状态更新（跟踪已发送消息数，避免重复）
             _prev_todos = None
+            _emitted_count = 0
             async for step in agent.astream(input_state, config, stream_mode="values"):
                 messages = step.get("messages", [])
 
@@ -67,59 +68,61 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                         "data": json.dumps(todos, ensure_ascii=False),
                     }
 
-                if not messages:
+                if not messages or len(messages) <= _emitted_count:
                     continue
 
-                last = messages[-1]
-
-                if isinstance(last, AIMessage):
-                    if hasattr(last, "tool_calls") and last.tool_calls:
-                        for tc in last.tool_calls:
+                # 只处理本步骤新增的消息
+                for msg in messages[_emitted_count:]:
+                    if isinstance(msg, AIMessage):
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                yield {
+                                    "event": "tool_call",
+                                    "data": json.dumps({
+                                        "tool": tc["name"],
+                                        "input": tc["args"],
+                                    }, ensure_ascii=False),
+                                }
+                                # 记录工具调用事件
+                                try:
+                                    from modules.agents.safety import TOOL_RISK_MAP
+                                    await db.execute(
+                                        "INSERT INTO agent_events (conversation_id, event_type, tool_name, tool_input, risk_level, username) "
+                                        "VALUES (?, 'tool_call', ?, ?, ?, ?)",
+                                        (conversation_id, tc["name"], json.dumps(tc["args"], ensure_ascii=False)[:1000],
+                                         TOOL_RISK_MAP.get(tc["name"], "safe"), user["username"]),
+                                    )
+                                except Exception:
+                                    pass
+                        elif msg.content:
                             yield {
-                                "event": "tool_call",
+                                "event": "message",
                                 "data": json.dumps({
-                                    "tool": tc["name"],
-                                    "input": tc["args"],
+                                    "content": msg.content,
+                                    "role": "assistant",
                                 }, ensure_ascii=False),
                             }
-                            # 记录工具调用事件
-                            try:
-                                from modules.agents.safety import TOOL_RISK_MAP
-                                await db.execute(
-                                    "INSERT INTO agent_events (conversation_id, event_type, tool_name, tool_input, risk_level, username) "
-                                    "VALUES (?, 'tool_call', ?, ?, ?, ?)",
-                                    (conversation_id, tc["name"], json.dumps(tc["args"], ensure_ascii=False)[:1000],
-                                     TOOL_RISK_MAP.get(tc["name"], "safe"), user["username"]),
-                                )
-                            except Exception:
-                                pass
-                    elif last.content:
+
+                    elif isinstance(msg, ToolMessage):
                         yield {
-                            "event": "message",
+                            "event": "tool_result",
                             "data": json.dumps({
-                                "content": last.content,
-                                "role": "assistant",
+                                "tool": getattr(msg, "name", ""),
+                                "content": msg.content[:1500] if msg.content else "",
                             }, ensure_ascii=False),
                         }
+                        # 记录工具结果事件
+                        try:
+                            await db.execute(
+                                "INSERT INTO agent_events (conversation_id, event_type, tool_name, tool_output, username) "
+                                "VALUES (?, 'tool_result', ?, ?, ?)",
+                                (conversation_id, getattr(msg, "name", ""),
+                                 (msg.content[:500] if msg.content else ""), user["username"]),
+                            )
+                        except Exception:
+                            pass
 
-                elif isinstance(last, ToolMessage):
-                    yield {
-                        "event": "tool_result",
-                        "data": json.dumps({
-                            "tool": getattr(last, "name", ""),
-                            "content": last.content[:1500] if last.content else "",
-                        }, ensure_ascii=False),
-                    }
-                    # 记录工具结果事件
-                    try:
-                        await db.execute(
-                            "INSERT INTO agent_events (conversation_id, event_type, tool_name, tool_output, username) "
-                            "VALUES (?, 'tool_result', ?, ?, ?)",
-                            (conversation_id, getattr(last, "name", ""),
-                             (last.content[:500] if last.content else ""), user["username"]),
-                        )
-                    except Exception:
-                        pass
+                _emitted_count = len(messages)
 
             # 检查 interrupt（审批请求）
             snapshot = await agent.aget_state(config)
@@ -267,18 +270,13 @@ async def resolve_approval(approval_id: str, body: ApprovalAction, user=Depends(
 
 @router.get("/conversations")
 async def list_conversations(user=Depends(get_current_user)):
+    """每个用户只看自己的对话历史"""
     db = await get_db()
-    if user["role"] == "admin":
-        cursor = await db.execute(
-            "SELECT id, title, username, safety_mode, created_at, updated_at, message_count "
-            "FROM agent_conversations WHERE is_archived = 0 ORDER BY updated_at DESC LIMIT 50"
-        )
-    else:
-        cursor = await db.execute(
-            "SELECT id, title, username, safety_mode, created_at, updated_at, message_count "
-            "FROM agent_conversations WHERE is_archived = 0 AND username = ? ORDER BY updated_at DESC LIMIT 50",
-            (user["username"],),
-        )
+    cursor = await db.execute(
+        "SELECT id, title, username, safety_mode, created_at, updated_at, message_count "
+        "FROM agent_conversations WHERE is_archived = 0 AND username = ? ORDER BY updated_at DESC LIMIT 50",
+        (user["username"],),
+    )
     rows = await cursor.fetchall()
     return [
         {"id": r[0], "title": r[1], "username": r[2], "safety_mode": r[3],
@@ -289,18 +287,17 @@ async def list_conversations(user=Depends(get_current_user)):
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str, user=Depends(get_current_user)):
-    # 非管理员验证对话归属
-    if user["role"] != "admin":
-        db = await get_db()
-        cursor = await db.execute(
-            "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
-        )
-        row = await cursor.fetchone()
-        if not row or row[0] != user["username"]:
-            raise HTTPException(403, "无权查看此对话")
+    # 验证对话归属（所有用户只能看自己的对话）
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
+    )
+    row = await cursor.fetchone()
+    if not row or row[0] != user["username"]:
+        raise HTTPException(status_code=403, detail="无权查看此对话")
     try:
         from modules.agents.deep_agent import build_agent
-        agent = await build_agent()
+        agent = await build_agent(user_role=user["role"])
         config = {"configurable": {"thread_id": conversation_id}}
         snapshot = await agent.aget_state(config)
 
@@ -326,14 +323,13 @@ async def get_conversation(conversation_id: str, user=Depends(get_current_user))
 @router.delete("/conversations/{conversation_id}")
 async def archive_conversation(conversation_id: str, user=Depends(get_current_user)):
     db = await get_db()
-    # 非管理员验证对话归属
-    if user["role"] != "admin":
-        cursor = await db.execute(
-            "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
-        )
-        row = await cursor.fetchone()
-        if not row or row[0] != user["username"]:
-            raise HTTPException(403, "无权操作此对话")
+    # 验证对话归属（所有用户只能删除自己的对话）
+    cursor = await db.execute(
+        "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
+    )
+    row = await cursor.fetchone()
+    if not row or row[0] != user["username"]:
+        raise HTTPException(status_code=403, detail="无权操作此对话")
     await db.execute("UPDATE agent_conversations SET is_archived = 1 WHERE id = ?", (conversation_id,))
     await db.commit()
     return {"ok": True}
@@ -1041,6 +1037,53 @@ async def trigger_reindex(user=Depends(require_role("admin"))):
         return {"ok": True, "stats": stats}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ─── 后台异步任务 ───
+
+@router.get("/async-tasks")
+async def list_async_tasks(user=Depends(require_role("admin"))):
+    """列出所有后台异步任务"""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, task_type, instruction, status, created_at, completed_at "
+        "FROM async_agent_tasks ORDER BY created_at DESC LIMIT 50"
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r[0], "task_type": r[1], "instruction": (r[2] or "")[:200],
+            "status": r[3], "created_at": r[4], "completed_at": r[5],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/async-tasks/{task_id}")
+async def get_async_task(task_id: str, user=Depends(require_role("admin"))):
+    """查看后台任务详情"""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, task_type, instruction, status, result, created_at, completed_at "
+        "FROM async_agent_tasks WHERE id = ?",
+        (task_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {
+        "id": row[0], "task_type": row[1], "instruction": row[2],
+        "status": row[3], "result": row[4],
+        "created_at": row[5], "completed_at": row[6],
+    }
+
+
+@router.delete("/async-tasks/{task_id}")
+async def cancel_async_task_api(task_id: str, user=Depends(require_role("admin"))):
+    """取消后台任务"""
+    from modules.agents.async_tasks import cancel_task
+    result = await cancel_task(task_id)
+    return {"ok": True, "message": result}
 
 
 # ─── WebSocket 终端 ───

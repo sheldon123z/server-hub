@@ -42,13 +42,13 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务�
 5. 所有操作自动记录审计日志
 6. 复杂任务使用 write_todos 分解步骤
 
-## 子智能体委派
-你有以下专业子智能体可通过 task() 工具委派：
-- **researcher**: 联网搜索，适合查找技术文档、解决方案、最新信息
-- **log-analyzer**: 日志深度分析，适合排查服务崩溃、错误模式
-- **security-auditor**: 安全配置审计，适合 SSH/端口/权限检查
-- **correlation-analyzer**: 多源关联分析，适合复杂的多组件异常根因定位
-- **ops-scheduler**: 定时任务管理，适合创建/修改/删除 cron 任务和自动化调度
+{subagent_section}
+
+## 后台任务
+对于耗时较长的任务（深度分析、全面审计、多容器日志关联等），
+使用 start_background_analysis 工具在后台执行，立即返回 task_id。
+用户可继续对话，稍后用 check_background_task 查看结果。
+适合后台执行的场景：全面安全审计、跨多服务日志关联、综合健康报告生成。
 
 ## 回复规范
 - 使用中文回复
@@ -77,6 +77,26 @@ ROLE_INSTRUCTIONS = {
 }
 
 
+def build_subagent_section() -> str:
+    """从 SubAgent 配置动态生成委派段落（注入主 agent 系统提示词）"""
+    try:
+        from modules.agents.subagents import load_subagents
+        subagents = load_subagents()
+    except Exception:
+        subagents = []
+    if not subagents:
+        return ""
+    lines = [
+        "## 子智能体委派",
+        "你有以下专业子智能体可通过 task() 工具委派：",
+    ]
+    for sa in subagents:
+        lines.append(f"- **{sa['name']}**: {sa['description']}")
+    lines.append("")
+    lines.append("委派原则：复杂分析、日志排查、安全审计等多步骤耗时任务应委派子智能体执行，保持主对话上下文简洁。")
+    return "\n".join(lines)
+
+
 def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
     """获取系统提示词 — 优先读取自定义文件，不存在则用默认
 
@@ -95,12 +115,15 @@ def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
         template = SYSTEM_PROMPT
 
     role_instruction = ROLE_INSTRUCTIONS.get(user_role, ROLE_INSTRUCTIONS["user"])
+    subagent_section = build_subagent_section() if user_role == "admin" else ""
+
     # defaultdict 兼容旧 custom_prompt.txt（可能缺少新占位符）
     return template.format_map(defaultdict(
         str,
         safety_mode=safety_mode,
         user_role=user_role,
         role_instruction=role_instruction,
+        subagent_section=subagent_section,
     ))
 
 

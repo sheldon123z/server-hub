@@ -62,6 +62,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("[ServerHub] RAG 知识库构建失败 (非致命): %s", e)
 
+    # 清理残留的异步任务
+    try:
+        from modules.agents.async_tasks import cleanup_stale_tasks
+        await cleanup_stale_tasks()
+    except Exception as e:
+        logger.warning("[ServerHub] 异步任务清理失败: %s", e)
+
     # 启动 AI 巡检调度器
     try:
         from modules.agents.patrol import start_patrol_scheduler

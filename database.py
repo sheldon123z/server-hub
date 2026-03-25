@@ -295,6 +295,16 @@ async def init_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_cron_job_log_user
             ON cron_job_log(cron_user);
+
+        CREATE TABLE IF NOT EXISTS async_agent_tasks (
+            id TEXT PRIMARY KEY,
+            task_type TEXT NOT NULL,
+            instruction TEXT,
+            status TEXT DEFAULT 'running',
+            result TEXT,
+            created_at TEXT,
+            completed_at TEXT
+        );
     """)
 
     try:
