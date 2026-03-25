@@ -49,9 +49,19 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                 "messages": [{"role": "user", "content": body.message}],
             }
 
-            # 流式获取状态更新（跟踪已发送消息数，避免重复）
+            # 从 checkpoint 获取已有消息数，避免历史消息被重新 yield
+            # astream(stream_mode="values") 每个 step 返回完整消息列表（含历史），
+            # 必须跳过 checkpoint 中已存在的消息，只 yield 本轮新增的。
             _prev_todos = None
-            _emitted_count = 0
+            try:
+                snapshot = await agent.aget_state(config)
+                _emitted_count = len(snapshot.values.get("messages", []))
+            except Exception:
+                _emitted_count = 0
+            # +1 跳过本轮用户消息（前端已经 push 过 user 消息）
+            _emitted_count = max(_emitted_count, 0)
+            _emitted_ids = set()  # 追踪已发送消息的 id，防止同一消息被 yield 多次
+
             async for step in agent.astream(input_state, config, stream_mode="values"):
                 messages = step.get("messages", [])
 
@@ -67,16 +77,29 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                 if not messages or len(messages) <= _emitted_count:
                     continue
 
-                # 只处理本步骤新增的消息
+                # 只处理本步骤新增的消息（基于列表位置 + ID 双重去重）
                 for msg in messages[_emitted_count:]:
+                    # 使用消息 id 去重（LangGraph 为每条消息分配唯一 id）
+                    msg_id = getattr(msg, "id", None)
+                    if msg_id and msg_id in _emitted_ids:
+                        continue
+                    if msg_id:
+                        _emitted_ids.add(msg_id)
+
                     if isinstance(msg, AIMessage):
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
                             for tc in msg.tool_calls:
+                                tc_id = tc.get("id", "")
+                                if tc_id and tc_id in _emitted_ids:
+                                    continue
+                                if tc_id:
+                                    _emitted_ids.add(tc_id)
                                 yield {
                                     "event": "tool_call",
                                     "data": json.dumps({
                                         "tool": tc["name"],
                                         "input": tc["args"],
+                                        "id": tc_id,
                                     }, ensure_ascii=False),
                                 }
                                 # 记录工具调用事件
@@ -96,6 +119,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                                 "data": json.dumps({
                                     "content": msg.content,
                                     "role": "assistant",
+                                    "id": msg_id or "",
                                 }, ensure_ascii=False),
                             }
 
@@ -105,6 +129,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                             "data": json.dumps({
                                 "tool": getattr(msg, "name", ""),
                                 "content": msg.content[:1500] if msg.content else "",
+                                "id": msg_id or "",
                             }, ensure_ascii=False),
                         }
                         # 记录工具结果事件
