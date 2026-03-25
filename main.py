@@ -428,7 +428,7 @@ async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", ctx)
 
 
-# ─── AI 助手页面 ───
+# ─── OpsAgent 页面 ───
 
 @app.get("/assets", response_class=HTMLResponse)
 async def assets_page(request: Request):

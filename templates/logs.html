@@ -3,58 +3,148 @@
 {% block page_title %}日志查看{% endblock %}
 
 {% block content %}
-<div x-data="{ selectedFile: '', logContent: '', searchQ: '' }">
+<div x-data="logViewer()">
 
-<div style="display:grid;grid-template-columns:280px 1fr;gap:16px">
+<!-- 统计卡片 -->
+<div class="page-stats">
+  <div class="page-stat-card">
+    <div class="stat-label">日志文件</div>
+    <div class="stat-value">{{ files|length }}</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">实时追踪</div>
+    <div class="stat-value" style="font-size:16px">
+      <template x-if="streaming">
+        <span class="text-green"><span class="status-dot status-dot-ok"></span> 已连接</span>
+      </template>
+      <template x-if="!streaming">
+        <span class="text-muted">未连接</span>
+      </template>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:260px 1fr;gap:16px">
   <!-- 文件列表 -->
-  <div class="data-table-wrapper" style="max-height:70vh;overflow-y:auto">
+  <div class="data-table-wrapper" style="max-height:72vh;overflow-y:auto">
     <div class="data-table-header"><h3>日志文件</h3></div>
     {% for f in files %}
-    <div class="nav-item" style="border-left:none;padding:8px 14px"
-         :class="selectedFile==='{{ f.path }}'?'active':''"
-         @click="selectedFile='{{ f.path }}'; loadLog()">
-      <div>
-        <div class="text-sm">{{ f.name }}</div>
-        <div class="text-xs text-muted">{{ f.size_human }} | {{ f.modified }}</div>
+    <div style="padding:10px 14px;cursor:pointer;border-bottom:1px solid rgba(51,65,85,0.3);transition:background 0.15s"
+         :style="selectedFile==='{{ f.path }}'?'background:var(--accent-dim);border-left:3px solid var(--accent)':'border-left:3px solid transparent'"
+         @click="selectFile('{{ f.path }}')">
+      <div class="text-sm" style="font-weight:500">
+        <i class="ti ti-file-text" style="font-size:14px;opacity:0.5;margin-right:4px"></i>
+        {{ f.name }}
       </div>
+      <div class="text-xs text-muted" style="margin-top:2px;padding-left:22px">{{ f.size_human }} &middot; {{ f.modified }}</div>
     </div>
     {% else %}
-    <div class="empty-state text-sm">无日志文件</div>
+    <div class="empty-state text-sm">
+      <i class="ti ti-file-off"></i>
+      无日志文件
+    </div>
     {% endfor %}
   </div>
 
-  <!-- 日志内容 -->
+  <!-- 日志内容区 -->
   <div>
-    <div class="flex gap-2 mb-2">
-      <input class="form-input" x-model="searchQ" placeholder="搜索..." style="width:300px" @keyup.enter="searchLog()">
-      <button class="btn btn-sm" @click="searchLog()">搜索</button>
-      <button class="btn btn-sm" @click="loadLog()">刷新</button>
+    <!-- 工具栏 -->
+    <div class="flex gap-2 mb-2 items-center">
+      <input class="form-input" x-model="searchQ" placeholder="搜索关键词..." style="max-width:250px;padding:5px 10px;font-size:12px" @keyup.enter="doSearch()">
+      <button class="btn btn-sm" @click="doSearch()">搜索</button>
+      <select class="form-input" x-model="levelFilter" @change="applyFilter()" style="max-width:120px;padding:4px 10px;font-size:12px">
+        <option value="">全部级别</option>
+        <option value="error">ERROR</option>
+        <option value="warn">WARN</option>
+        <option value="info">INFO</option>
+      </select>
+      <div style="margin-left:auto" class="flex gap-2">
+        <button class="btn btn-sm" :class="streaming?'btn-danger':''" @click="toggleStream()" x-text="streaming?'停止追踪':'实时追踪'"></button>
+        <button class="btn btn-sm" @click="doLoad()">刷新</button>
+      </div>
     </div>
-    <div class="log-viewer" style="max-height:65vh" x-text="logContent || '选择左侧文件查看日志'"></div>
+
+    <!-- 日志内容 -->
+    <div class="log-viewer" x-ref="logBox" style="max-height:65vh" x-html="displayHtml || '<span style=\'color:var(--text-3)\'>选择左侧文件查看日志</span>'"></div>
   </div>
 </div>
 
 </div>
 
 <script>
-async function loadLog() {
-  const path = document.querySelector('[x-data]')?._x_dataStack?.[0]?.selectedFile;
-  if (!path) return;
-  try {
-    const resp = await fetch(`/api/logs/tail?path=${encodeURIComponent(path)}&lines=300`);
-    const data = await resp.json();
-    document.querySelector('[x-data]')._x_dataStack[0].logContent = data.content || '';
-  } catch(e) { showToast('读取失败', 'err'); }
-}
+function logViewer() {
+  return {
+    selectedFile: '',
+    rawContent: '',
+    displayHtml: '',
+    searchQ: '',
+    levelFilter: '',
+    streaming: false,
+    _sse: null,
 
-async function searchLog() {
-  const ds = document.querySelector('[x-data]')?._x_dataStack?.[0];
-  if (!ds?.selectedFile || !ds?.searchQ) return;
-  try {
-    const resp = await fetch(`/api/logs/search?path=${encodeURIComponent(ds.selectedFile)}&q=${encodeURIComponent(ds.searchQ)}`);
-    const data = await resp.json();
-    ds.logContent = data.content || '无匹配结果';
-  } catch(e) { showToast('搜索失败', 'err'); }
+    selectFile(path) {
+      this.selectedFile = path;
+      this.stopStream();
+      this.doLoad();
+    },
+
+    async doLoad() {
+      if (!this.selectedFile) return;
+      try {
+        const resp = await fetch(`/api/logs/tail?path=${encodeURIComponent(this.selectedFile)}&lines=300`);
+        const data = await resp.json();
+        this.rawContent = data.content || '';
+        this.render();
+      } catch(e) { showToast('读取失败', 'err'); }
+    },
+
+    async doSearch() {
+      if (!this.selectedFile || !this.searchQ) return;
+      try {
+        const resp = await fetch(`/api/logs/search?path=${encodeURIComponent(this.selectedFile)}&q=${encodeURIComponent(this.searchQ)}`);
+        const data = await resp.json();
+        this.rawContent = data.content || '无匹配结果';
+        this.render();
+      } catch(e) { showToast('搜索失败', 'err'); }
+    },
+
+    applyFilter() { this.render(); },
+
+    render() {
+      const lines = this.rawContent.split('\n');
+      const filtered = this.levelFilter
+        ? lines.filter(l => new RegExp(this.levelFilter, 'i').test(l))
+        : lines;
+      this.displayHtml = filtered.map((line, i) => {
+        const num = `<span style="color:var(--text3);user-select:none;display:inline-block;width:40px;text-align:right;margin-right:12px;opacity:0.5">${i+1}</span>`;
+        const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        if (/error|fatal|fail/i.test(line)) return num + `<span class="log-line-error">${esc}</span>`;
+        if (/warn/i.test(line)) return num + `<span class="log-line-warn">${esc}</span>`;
+        if (/info/i.test(line)) return num + `<span class="log-line-info">${esc}</span>`;
+        return num + esc;
+      }).join('\n');
+    },
+
+    toggleStream() {
+      if (this.streaming) { this.stopStream(); return; }
+      if (!this.selectedFile) { showToast('请先选择日志文件', 'info'); return; }
+      try {
+        this._sse = new EventSource(`/api/logs/stream?path=${encodeURIComponent(this.selectedFile)}`);
+        this.streaming = true;
+        this._sse.onmessage = (e) => {
+          this.rawContent += e.data + '\n';
+          this.render();
+          this.$refs.logBox.scrollTop = this.$refs.logBox.scrollHeight;
+        };
+        this._sse.onerror = () => { this.stopStream(); };
+      } catch(e) { showToast('连接失败', 'err'); }
+    },
+
+    stopStream() {
+      if (this._sse) { this._sse.close(); this._sse = null; }
+      this.streaming = false;
+    },
+  };
 }
 </script>
 {% endblock %}

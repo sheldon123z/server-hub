@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}{% endblock %} - ServerHub</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="/static/css/app.css">
 <script src="/static/js/htmx.min.js"></script>
 <script src="/static/js/htmx-sse.js"></script>
@@ -30,6 +32,7 @@
       {% endif %}
       <a class="nav-item {% if active_module == item.name %}active{% endif %}"
          href="/{{ item.name }}">
+        <i class="ti ti-{{ item.icon }}"></i>
         {{ item.display_name }}
       </a>
     {% endfor %}

@@ -3,25 +3,52 @@
 {% block page_title %}网络管理{% endblock %}
 
 {% block content %}
-<div x-data="{ tab: 'ports' }">
+<div x-data="networkManager()">
 
-<div class="flex gap-2 mb-4">
-  <button class="btn btn-sm" :class="tab==='ports'?'btn-primary':''" @click="tab='ports'">端口监听</button>
-  <button class="btn btn-sm" :class="tab==='proxy'?'btn-primary':''" @click="tab='proxy'">代理</button>
-  <button class="btn btn-sm" :class="tab==='connections'?'btn-primary':''" @click="tab='connections'">连接统计</button>
+<!-- 统计卡片 -->
+<div class="page-stats">
+  <div class="page-stat-card">
+    <div class="stat-label">监听端口</div>
+    <div class="stat-value">{{ ports|length }}</div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">代理状态</div>
+    <div class="stat-value" style="font-size:16px">
+      {% if proxy.clash_running %}
+        <span class="status-dot status-dot-ok"></span> <span class="text-green">运行中</span>
+      {% else %}
+        <span class="status-dot status-dot-idle"></span> <span class="text-muted">未运行</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="page-stat-card">
+    <div class="stat-label">HTTP 代理</div>
+    <div class="stat-value font-mono" style="font-size:13px">{{ proxy.http_proxy or '未设置' }}</div>
+  </div>
 </div>
 
+<!-- 标签栏 -->
+<div class="tab-bar">
+  <button class="tab-item" :class="tab==='ports'?'active':''" @click="tab='ports'">端口监听</button>
+  <button class="tab-item" :class="tab==='proxy'?'active':''" @click="tab='proxy'">代理配置</button>
+  <button class="tab-item" :class="tab==='connections'?'active':''" @click="tab='connections'">连接统计</button>
+</div>
+
+<!-- 端口标签 -->
 <div x-show="tab==='ports'">
   <div class="data-table-wrapper">
     <div class="data-table-header">
       <h3>端口监听</h3>
-      <button class="btn btn-sm" hx-get="/network" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+      <div class="flex gap-2">
+        <input class="form-input" style="max-width:220px;padding:4px 10px;font-size:12px" placeholder="搜索端口或进程..." x-model="portSearch">
+        <button class="btn btn-sm" hx-get="/network" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+      </div>
     </div>
     <table>
       <thead><tr><th>端口</th><th>地址</th><th>进程</th><th>PID</th></tr></thead>
       <tbody>
       {% for p in ports %}
-        <tr>
+        <tr x-show="!portSearch || '{{ p.port }} {{ p.process }} {{ p.local_addr }}'.toLowerCase().includes(portSearch.toLowerCase())">
           <td><strong class="text-accent">{{ p.port }}</strong></td>
           <td class="font-mono text-xs">{{ p.local_addr }}</td>
           <td>{{ p.process }}</td>
@@ -35,36 +62,49 @@
   </div>
 </div>
 
+<!-- 代理标签 -->
 <div x-show="tab==='proxy'">
-  <div class="data-table-wrapper">
-    <div class="data-table-header"><h3>代理状态</h3></div>
-    <div style="padding:20px">
-      <div class="flex items-center gap-3 mb-4">
-        <span>Clash 进程:</span>
+  <div class="page-stats" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+    <div class="page-stat-card">
+      <div class="stat-label">Clash 进程</div>
+      <div style="margin-top:8px">
         {% if proxy.clash_running %}
           <span class="badge badge-ok">运行中</span>
         {% else %}
           <span class="badge badge-idle">未运行</span>
         {% endif %}
       </div>
-      <div class="flex items-center gap-3 mb-4">
-        <span>HTTP 代理:</span>
-        <span class="font-mono text-sm">{{ proxy.http_proxy or '未设置' }}</span>
-      </div>
-      <div class="flex items-center gap-3">
-        <span>HTTPS 代理:</span>
-        <span class="font-mono text-sm">{{ proxy.https_proxy or '未设置' }}</span>
-      </div>
+    </div>
+    <div class="page-stat-card">
+      <div class="stat-label">HTTP 代理</div>
+      <div class="font-mono text-sm" style="margin-top:8px;word-break:break-all">{{ proxy.http_proxy or '未设置' }}</div>
+    </div>
+    <div class="page-stat-card">
+      <div class="stat-label">HTTPS 代理</div>
+      <div class="font-mono text-sm" style="margin-top:8px;word-break:break-all">{{ proxy.https_proxy or '未设置' }}</div>
     </div>
   </div>
 </div>
 
+<!-- 连接标签 -->
 <div x-show="tab==='connections'">
   <div class="data-table-wrapper">
-    <div class="data-table-header"><h3>连接统计</h3></div>
-    <div class="log-viewer" style="padding:16px">{{ connections }}</div>
+    <div class="data-table-header">
+      <h3>连接统计</h3>
+      <button class="btn btn-sm" hx-get="/network" hx-target="#main-content" hx-swap="innerHTML">刷新</button>
+    </div>
+    <div class="log-viewer" style="padding:16px;max-height:60vh">{{ connections }}</div>
   </div>
 </div>
 
 </div>
+
+<script>
+function networkManager() {
+  return {
+    tab: 'ports',
+    portSearch: '',
+  };
+}
+</script>
 {% endblock %}

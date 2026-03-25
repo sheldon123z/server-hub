@@ -4,22 +4,12 @@
 
 {% block content %}
 <style>
-.notif-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-.notif-tab { padding: 10px 20px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: var(--text2); transition: all 0.15s; }
-.notif-tab:hover { color: var(--text); }
-.notif-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .channel-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
 .cb-telegram { background: var(--accent-dim); color: var(--accent); }
 .cb-wecom { background: var(--green-dim); color: var(--green); }
 .cb-dingtalk { background: var(--yellow-dim); color: var(--yellow); }
 .cb-qqbot { background: rgba(167,139,250,0.12); color: var(--purple); }
 .cb-email { background: rgba(148,163,184,0.12); color: var(--text3); }
-.toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
-.toggle input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 10px; cursor: pointer; transition: 0.2s; }
-.toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: var(--text3); border-radius: 50%; transition: 0.2s; }
-.toggle input:checked + .toggle-slider { background: var(--accent-dim); }
-.toggle input:checked + .toggle-slider::before { transform: translateX(16px); background: var(--accent); }
 .result-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 12px; background: var(--bg); margin-top: 6px; }
 .edit-form { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-top: 12px; }
 .edit-form .form-group { margin-bottom: 10px; }
@@ -29,10 +19,10 @@
 <div x-data="notificationManager()">
 
 <!-- Tab -->
-<div class="notif-tabs">
-  <div class="notif-tab" :class="{ active: tab === 'send' }" @click="tab='send'">发送通知</div>
-  <div class="notif-tab" :class="{ active: tab === 'channels' }" @click="tab='channels'">渠道配置</div>
-  <div class="notif-tab" :class="{ active: tab === 'history' }" @click="tab='history'; loadHistory()">发送历史</div>
+<div class="tab-bar">
+  <button class="tab-item" :class="tab === 'send' && 'active'" @click="tab='send'"><i class="ti ti-send"></i> 发送通知</button>
+  <button class="tab-item" :class="tab === 'channels' && 'active'" @click="tab='channels'"><i class="ti ti-plug"></i> 渠道配置</button>
+  <button class="tab-item" :class="tab === 'history' && 'active'" @click="tab='history'; loadHistory()"><i class="ti ti-history"></i> 发送历史</button>
 </div>
 
 <!-- Tab 1: 发送通知 -->
@@ -95,7 +85,7 @@
             <td><strong x-text="ch.display_name"></strong></td>
             <td><span class="channel-badge" :class="'cb-'+ch.channel_type" x-text="typeDisplayName(ch.channel_type)"></span></td>
             <td>
-              <label class="toggle">
+              <label class="toggle-switch">
                 <input type="checkbox" :checked="ch.enabled" @change="toggleChannel(ch.id, $event.target.checked)">
                 <span class="toggle-slider"></span>
               </label>
