@@ -123,3 +123,41 @@ def kill_single_process_tool(pid: int, username: str) -> str:
     if result["ok"]:
         return f"已终止进程 {pid} (用户: {username})"
     return f"终止失败: {result['error']}"
+
+
+@tool
+def get_user_full_processes(username: str) -> str:
+    """获取指定用户的完整进程列表，包含 PID、命令、CPU%、内存、运行时长。"""
+    from modules.users.services import get_user_processes
+    procs = get_user_processes(username)
+    if not procs:
+        return f"用户 {username} 无运行中的进程"
+    lines = [f"用户 {username} 的进程列表 ({len(procs)} 个):", ""]
+    lines.append("| PID | 进程名 | 内存(MB) | CPU% | 运行时长 |")
+    lines.append("|-----|--------|---------|------|---------|")
+    for p in procs[:50]:
+        lines.append(f"| {p['pid']} | {p['name'][:20]} | {p['mem_mb']} | {p['cpu_percent']:.1f} | {p['elapsed']} |")
+    if len(procs) > 50:
+        lines.append(f"\n... 共 {len(procs)} 个进程，仅显示前 50 个")
+    return "\n".join(lines)
+
+
+@tool
+def check_quota_violations() -> str:
+    """检查所有用户的配额使用情况，返回超配额和接近配额的用户列表。"""
+    from modules.users.services import get_quota_status
+    qs = get_quota_status()
+    lines = [f"配额状态概览: 超配额 {qs['over_quota_count']} 人, 预警 {qs['warning_count']} 人, 总内存 {qs['total_mem_gb']} GB", ""]
+
+    abnormal = [u for u in qs["users"] if u["status"] != "normal"]
+    if not abnormal:
+        lines.append("所有用户配额使用正常。")
+        return "\n".join(lines)
+
+    lines.append("| 用户 | 内存使用 | 配额 | 使用率 | 状态 |")
+    lines.append("|------|---------|------|-------|------|")
+    for u in abnormal:
+        q = u.get("quota")
+        quota_str = f"{q['mem_gb']}GB" if q else "-"
+        lines.append(f"| {u['name']} | {u['mem_gb']}GB | {quota_str} | {u['mem_usage_pct']}% | {u['status']} |")
+    return "\n".join(lines)

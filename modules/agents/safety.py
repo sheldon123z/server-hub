@@ -76,6 +76,9 @@ TOOL_RISK_MAP = {
     "reindex_knowledge_base": RiskLevel.SAFE,
     # 页面上下文
     "get_page_data": RiskLevel.SAFE,
+    # 用户深度管理
+    "get_user_full_processes": RiskLevel.SAFE,
+    "check_quota_violations": RiskLevel.SAFE,
 }
 
 

@@ -8,6 +8,7 @@ import grp
 import logging
 import os
 import pwd
+from pathlib import Path
 import re
 import subprocess
 
@@ -464,3 +465,228 @@ def kill_single_process(pid: int, username: str) -> dict:
         return {"ok": True, "error": None}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ─── 进程列表 & 配额状态 & 处置引擎 ───
+
+def get_user_processes(username: str, sort_by: str = "mem", search: str = "") -> list[dict]:
+    """获取指定用户的完整进程列表"""
+    import time
+
+    procs = []
+    now = time.time()
+    for p in psutil.process_iter(["pid", "username", "memory_info", "cpu_percent", "name", "cmdline", "create_time"]):
+        try:
+            info = p.info
+            if (info.get("username") or "") != username:
+                continue
+            rss = info["memory_info"].rss if info.get("memory_info") else 0
+            create_time = info.get("create_time") or now
+            elapsed_sec = max(0, now - create_time)
+            # 人类可读时长
+            if elapsed_sec < 60:
+                elapsed = f"{int(elapsed_sec)}s"
+            elif elapsed_sec < 3600:
+                elapsed = f"{int(elapsed_sec // 60)}m"
+            elif elapsed_sec < 86400:
+                elapsed = f"{int(elapsed_sec // 3600)}h{int((elapsed_sec % 3600) // 60)}m"
+            else:
+                elapsed = f"{int(elapsed_sec // 86400)}d{int((elapsed_sec % 86400) // 3600)}h"
+
+            cmdline = " ".join(info.get("cmdline") or [])[:200]
+            name = info.get("name") or ""
+
+            if search and search.lower() not in name.lower() and search.lower() not in cmdline.lower():
+                continue
+
+            procs.append({
+                "pid": info["pid"],
+                "name": name,
+                "cmdline": cmdline,
+                "mem_mb": round(rss / 1024 / 1024, 1),
+                "cpu_percent": info.get("cpu_percent") or 0.0,
+                "elapsed": elapsed,
+                "elapsed_sec": elapsed_sec,
+            })
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+
+    sort_key = {"mem": "mem_mb", "cpu": "cpu_percent", "time": "elapsed_sec", "name": "name"}.get(sort_by, "mem_mb")
+    reverse = sort_by != "name"
+    procs.sort(key=lambda x: x.get(sort_key, 0), reverse=reverse)
+    return procs
+
+
+def get_quota_status() -> dict:
+    """获取所有用户的配额使用状态（含聚合统计）"""
+    users = get_user_stats()
+    quotas = read_quotas()
+
+    results = []
+    over_quota_count = 0
+    warning_count = 0
+    total_mem_gb = 0.0
+
+    for u in users:
+        total_mem_gb += u["mem_gb"]
+        q = get_user_quota(u["name"], quotas)
+        mem_limit = q.get("mem_gb", 0) if q else 0
+        proc_limit = q.get("proc_limit", 0) if q else 0
+
+        mem_pct = round(u["mem_gb"] / mem_limit * 100, 1) if mem_limit > 0 else 0
+        proc_pct = round(u["proc_count"] / proc_limit * 100, 1) if proc_limit > 0 else 0
+        max_pct = max(mem_pct, proc_pct)
+
+        if max_pct >= 100:
+            status = "critical"
+            over_quota_count += 1
+        elif max_pct >= 75:
+            status = "warning"
+            warning_count += 1
+        else:
+            status = "normal"
+
+        results.append({
+            **u,
+            "mem_usage_pct": mem_pct,
+            "proc_usage_pct": proc_pct,
+            "status": status,
+            "quota": q,
+        })
+
+    return {
+        "users": results,
+        "over_quota_count": over_quota_count,
+        "warning_count": warning_count,
+        "total_mem_gb": round(total_mem_gb, 1),
+    }
+
+
+def get_enforcement_config() -> dict:
+    """读取处置策略配置"""
+    import json
+    config_path = Path(settings.db_path).parent / "enforcement-config.json"
+    defaults = {
+        "enabled": True,
+        "mode": "notify",
+        "warning_pct": 75,
+        "critical_pct": 100,
+        "kill_pct": 120,
+        "grace_minutes": 5,
+        "cooldown_minutes": 30,
+    }
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            defaults.update(data)
+        except Exception:
+            pass
+    return defaults
+
+
+def save_enforcement_config(config: dict):
+    """保存处置策略配置"""
+    import json
+    config_path = Path(settings.db_path).parent / "enforcement-config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+async def check_and_enforce_quotas():
+    """配额处置引擎 — 由调度器每 60s 调用"""
+    import json
+    from datetime import datetime, timedelta
+    from database import get_db
+
+    config = get_enforcement_config()
+    if not config.get("enabled"):
+        return
+
+    users = get_user_stats()
+    quotas = read_quotas()
+    db = await get_db()
+    now = datetime.now()
+
+    for u in users:
+        username = u["name"]
+        if username in settings.admin_linux_users:
+            continue
+
+        q = get_user_quota(username, quotas)
+        if not q:
+            continue
+
+        mem_limit = q.get("mem_gb", 0)
+        if mem_limit <= 0:
+            continue
+
+        mem_pct = u["mem_gb"] / mem_limit * 100
+        violation_type = None
+
+        if mem_pct >= config.get("kill_pct", 120):
+            violation_type = "kill"
+        elif mem_pct >= config.get("critical_pct", 100):
+            violation_type = "critical"
+        elif mem_pct >= config.get("warning_pct", 75):
+            violation_type = "warning"
+
+        if not violation_type:
+            continue
+
+        # 检查冷却期
+        cooldown = config.get("cooldown_minutes", 30)
+        cursor = await db.execute(
+            "SELECT notified_at, first_detected_at FROM quota_violations "
+            "WHERE username = ? AND violation_type = ? ORDER BY created_at DESC LIMIT 1",
+            (username, violation_type),
+        )
+        last = await cursor.fetchone()
+
+        in_cooldown = False
+        first_detected = now
+        if last:
+            if last[0]:
+                notified_time = datetime.fromisoformat(last[0])
+                if now - notified_time < timedelta(minutes=cooldown):
+                    in_cooldown = True
+            if last[1]:
+                first_detected = datetime.fromisoformat(last[1])
+
+        action_taken = None
+
+        # Level 3: 自动 kill（仅 auto_kill 模式 + 超过 grace period）
+        if violation_type == "kill" and config.get("mode") == "auto_kill":
+            grace = config.get("grace_minutes", 5)
+            if (now - first_detected).total_seconds() >= grace * 60:
+                # Kill 最耗内存的进程
+                top_procs = u.get("top_procs", [])
+                if top_procs:
+                    top_pid = top_procs[0]["pid"]
+                    result = kill_single_process(top_pid, username)
+                    action_taken = f"killed_pid:{top_pid}" if result.get("ok") else f"kill_failed:{top_pid}"
+
+        # 发送通知（不在冷却期内）
+        if not in_cooldown:
+            try:
+                from modules.notifications.services import send_to_all_channels
+                level_names = {"warning": "预警", "critical": "告警", "kill": "强制处置"}
+                msg = (
+                    f"[配额{level_names.get(violation_type, '通知')}] 用户 {username} "
+                    f"内存使用 {u['mem_gb']:.1f}GB / 配额 {mem_limit}GB ({mem_pct:.0f}%)"
+                )
+                if action_taken and action_taken.startswith("killed"):
+                    msg += f"\n已自动终止进程 PID {top_procs[0]['pid']} ({top_procs[0]['name']})"
+                await send_to_all_channels(msg)
+                action_taken = action_taken or "notified"
+            except Exception as e:
+                logger.warning(f"配额通知发送失败: {e}")
+                action_taken = action_taken or "notify_failed"
+
+        # 记录违规
+        await db.execute(
+            "INSERT INTO quota_violations (username, violation_type, mem_gb, quota_mem_gb, usage_pct, action_taken, first_detected_at, notified_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (username, violation_type, u["mem_gb"], mem_limit, round(mem_pct, 1),
+             action_taken, first_detected.isoformat(), now.isoformat() if not in_cooldown else None),
+        )
+        await db.commit()

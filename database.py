@@ -305,6 +305,22 @@ async def init_tables(db: aiosqlite.Connection):
             created_at TEXT,
             completed_at TEXT
         );
+
+        -- 配额违规记录
+        CREATE TABLE IF NOT EXISTS quota_violations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            violation_type TEXT NOT NULL,
+            mem_gb REAL,
+            quota_mem_gb REAL,
+            usage_pct REAL,
+            action_taken TEXT,
+            first_detected_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notified_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_quota_violations_user
+            ON quota_violations(username, created_at);
     """)
 
     try:

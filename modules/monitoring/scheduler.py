@@ -58,8 +58,17 @@ async def _cleanup_old_metrics():
         logger.error(f"清理过期指标失败: {e}")
 
 
+async def _check_quota_enforcement():
+    """配额处置检查（非阻塞，异常不影响主循环）"""
+    try:
+        from modules.users.services import check_and_enforce_quotas
+        await check_and_enforce_quotas()
+    except Exception as e:
+        logger.debug(f"配额处置检查跳过: {e}")
+
+
 async def _scheduler_loop():
-    """调度器主循环 - 60s 全量采集存库"""
+    """调度器主循环 - 60s 全量采集存库 + 配额处置"""
     logger.info(
         f"指标采集调度器已启动 (间隔: {settings.metrics_interval_seconds}s, "
         f"保留: {settings.metrics_retention_days}天)"
@@ -67,6 +76,7 @@ async def _scheduler_loop():
     while True:
         await _collect_and_store()
         await _cleanup_old_metrics()
+        await _check_quota_enforcement()
         await asyncio.sleep(settings.metrics_interval_seconds)
 
 
