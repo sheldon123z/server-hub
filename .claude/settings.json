@@ -11,5 +11,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "machine-learning-ops@claude-code-workflows": false
   }
 }

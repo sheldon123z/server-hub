@@ -529,7 +529,7 @@ def get_quota_status() -> dict:
 
     for u in users:
         total_mem_gb += u["mem_gb"]
-        q = get_user_quota(u["name"], quotas)
+        q = get_user_quota(u["name"], u.get("groups", ""), quotas)
         mem_limit = q.get("mem_gb", 0) if q else 0
         proc_limit = q.get("proc_limit", 0) if q else 0
 
