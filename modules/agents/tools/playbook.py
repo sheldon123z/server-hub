@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # SSH 命令黑名单
 SSH_COMMAND_BLACKLIST = [
-    r"\brm\s+-rf\s+/\b", r"\bmkfs\b", r"\bdd\s+if=", r"\bformat\b",
+    r"\brm\s+-rf\s+/", r"\bmkfs\b", r"\bdd\s+if=", r"\bformat\b",
     r"\berase\b", r">\s*/dev/sd", r"\breboot\b", r"\bshutdown\b",
     r"\binit\s+0\b", r"\bpoweroff\b",
 ]
