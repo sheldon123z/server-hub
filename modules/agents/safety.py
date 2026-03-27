@@ -79,6 +79,12 @@ TOOL_RISK_MAP = {
     # 用户深度管理
     "get_user_full_processes": RiskLevel.SAFE,
     "check_quota_violations": RiskLevel.SAFE,
+    # 运维剧本工具
+    "ssh_execute_command": RiskLevel.DANGER,
+    "playbook_create": RiskLevel.MODERATE,
+    "playbook_execute": RiskLevel.MODERATE,
+    "playbook_list": RiskLevel.SAFE,
+    "playbook_search": RiskLevel.SAFE,
 }
 
 
@@ -107,6 +113,7 @@ def build_interrupt_config(safety_mode: str, user_role: str = "admin") -> dict:
         "execute_ops_script": True,
         "delete_cron_job_tool": True,
         "manage_linux_user": True,
+        "ssh_execute_command": True,
         # 单进程终止 — 审批
         "kill_single_process_tool": {"allowed_decisions": ["approve", "reject"]},
         "docker_prune": True,

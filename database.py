@@ -321,6 +321,56 @@ async def init_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_quota_violations_user
             ON quota_violations(username, created_at);
+
+        -- 运维剧本
+        CREATE TABLE IF NOT EXISTS playbooks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            category TEXT DEFAULT 'general',
+            system_prompt TEXT NOT NULL,
+            parameters TEXT NOT NULL DEFAULT '[]',
+            tools_required TEXT NOT NULL DEFAULT '',
+            validation_rules TEXT DEFAULT '{}',
+            trigger_config TEXT DEFAULT '{"type":"manual"}',
+            safety_mode TEXT,
+            steps_visual TEXT,
+            is_builtin INTEGER DEFAULT 0,
+            tags TEXT DEFAULT '',
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_playbooks_category ON playbooks(category);
+
+        -- 剧本执行记录
+        CREATE TABLE IF NOT EXISTS playbook_executions (
+            id TEXT PRIMARY KEY,
+            playbook_id TEXT NOT NULL,
+            parameters_json TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'pending',
+            report TEXT,
+            triggered_by TEXT NOT NULL,
+            trigger_type TEXT DEFAULT 'manual',
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            duration_seconds REAL,
+            thread_id TEXT,
+            tool_calls_count INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_pb_exec_playbook
+            ON playbook_executions(playbook_id, started_at);
+
+        -- 剧本凭据存储
+        CREATE TABLE IF NOT EXISTS playbook_credentials (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            encrypted_value TEXT NOT NULL,
+            credential_type TEXT DEFAULT 'generic',
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     try:

@@ -80,6 +80,15 @@ from modules.agents.tools.knowledge import (
 # ─── 页面上下文 ───
 from modules.agents.tools.page_context_tool import get_page_data
 
+# ─── 运维剧本 ───
+from modules.agents.tools.playbook import (
+    ssh_execute_command,
+    playbook_create,
+    playbook_execute,
+    playbook_list,
+    playbook_search,
+)
+
 
 # ─── 工具注册表 ───
 
@@ -139,6 +148,12 @@ def get_server_tools(user_role: str = "admin") -> list:
         reindex_knowledge_base,
         # 页面上下文
         get_page_data,
+        # 运维剧本
+        ssh_execute_command,
+        playbook_create,
+        playbook_execute,
+        playbook_list,
+        playbook_search,
     ]
 
     if user_role == "admin":

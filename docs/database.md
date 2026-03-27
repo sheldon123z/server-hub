@@ -343,6 +343,68 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 
 ---
 
+### playbooks — 运维剧本
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 剧本 ID（snake_case）|
+| name | TEXT NOT NULL | 显示名称 |
+| description | TEXT | 功能描述 |
+| category | TEXT DEFAULT 'general' | 分类：network/system/docker/security/general |
+| system_prompt | TEXT NOT NULL | 执行提示词模板（含 `{param}` 占位符）|
+| parameters | TEXT DEFAULT '[]' | 参数定义 JSON 数组 |
+| tools_required | TEXT | 需要的工具（逗号分隔）|
+| validation_rules | TEXT DEFAULT '{}' | 执行约束 JSON |
+| trigger_config | TEXT DEFAULT '{"type":"manual"}' | 触发配置 JSON |
+| safety_mode | TEXT | 安全模式覆盖（null=继承）|
+| steps_visual | TEXT | 前端可视化布局 JSON（后端不解析）|
+| is_builtin | INTEGER DEFAULT 0 | 是否内置 |
+| tags | TEXT | 标签 |
+| created_by | TEXT NOT NULL | 创建者 |
+| created_at | TIMESTAMP | 创建时间 |
+| updated_at | TIMESTAMP | 更新时间 |
+
+**索引**：`idx_playbooks_category`（category）
+
+---
+
+### playbook_executions — 剧本执行历史
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 执行记录 ID |
+| playbook_id | TEXT NOT NULL | 关联剧本 ID |
+| parameters_json | TEXT DEFAULT '{}' | 运行参数（secret 已脱敏）|
+| status | TEXT DEFAULT 'pending' | 状态：pending/running/success/warning/error/timeout/cancelled |
+| report | TEXT | 完整报告 |
+| triggered_by | TEXT NOT NULL | 触发者 |
+| trigger_type | TEXT DEFAULT 'manual' | 触发方式 |
+| started_at | TIMESTAMP | 开始时间 |
+| completed_at | TIMESTAMP | 完成时间 |
+| duration_seconds | REAL | 耗时（秒）|
+| thread_id | TEXT | Agent 会话 thread_id |
+| tool_calls_count | INTEGER DEFAULT 0 | 工具调用次数 |
+
+**索引**：`idx_pb_exec_playbook`（playbook_id, started_at）
+
+---
+
+### playbook_credentials — 加密凭据
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 凭据 ID |
+| name | TEXT NOT NULL UNIQUE | 凭据名称（用于参数 credential_ref 引用）|
+| description | TEXT | 描述 |
+| encrypted_value | TEXT NOT NULL | Fernet 加密值 |
+| credential_type | TEXT DEFAULT 'generic' | 类型：ssh_password/api_key/generic |
+| created_by | TEXT NOT NULL | 创建者 |
+| created_at | TIMESTAMP | 创建时间 |
+
+**加密方式**：Fernet 对称加密，密钥从 `settings.secret_key` 通过 SHA-256 派生。
+
+---
+
 ## FTS5 虚拟表
 
 ### fault_cases_fts

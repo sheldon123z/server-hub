@@ -91,9 +91,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("[ServerHub] AI 巡检调度器启动失败: %s", e)
 
+    # 初始化运维剧本系统
+    try:
+        from modules.playbooks.seed import seed_builtin_playbooks
+        await seed_builtin_playbooks()
+        from modules.playbooks.scheduler import start_playbook_scheduler
+        await start_playbook_scheduler()
+        logger.info("[ServerHub] 运维剧本系统已启动")
+    except Exception as e:
+        logger.warning("[ServerHub] 运维剧本系统启动失败 (非致命): %s", e)
+
     yield
 
     # 关闭
+    try:
+        from modules.playbooks.scheduler import stop_playbook_scheduler
+        await stop_playbook_scheduler()
+    except Exception:
+        pass
     try:
         from modules.agents.lg_compat import stop_cleanup
         await stop_cleanup()

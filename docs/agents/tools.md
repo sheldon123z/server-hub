@@ -1,6 +1,6 @@
 # Agent 工具详细说明
 
-工具按功能领域拆分为 10 个子模块，存放在 `modules/agents/tools/` 目录下：
+工具按功能领域拆分为 11 个子模块，存放在 `modules/agents/tools/` 目录下：
 
 ```
 modules/agents/tools/
@@ -14,11 +14,12 @@ modules/agents/tools/
 ├── knowledge.py         # RAG 知识库（2 个工具）
 ├── security.py          # 安全合规（2 个工具）
 ├── notifications.py     # 通知推送（1 个工具）
-└── scripts.py           # 运维脚本桥接（1 个工具）
+├── scripts.py           # 运维脚本桥接（1 个工具）
+└── playbook.py          # 运维剧本 + SSH（5 个工具）
 ```
 
 通过 `get_server_tools(user_role)` 注册到主 Agent：
-- **admin**: 返回全部 39 个工具
+- **admin**: 返回全部 44 个工具（含 5 个剧本工具）
 - **user**: 仅返回 SAFE 级别的只读工具
 
 工具使用 LangChain `@tool` 装饰器，框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
@@ -512,9 +513,28 @@ modules/agents/tools/
 
 | 风险级别 | 自定义工具 | 框架内置 | SubAgent 专属 | 合计 |
 |---------|-----------|---------|-------------|------|
-| safe | 23 | 5 | 2 | 30 |
-| moderate | 10 | 2 | 0 | 12 |
-| danger | 6 | 1 | 0 | 7 |
-| **合计** | **39** | **8** | **2** | **49** |
+| safe | 25 | 5 | 2 | 32 |
+| moderate | 12 | 2 | 0 | 14 |
+| danger | 7 | 1 | 0 | 8 |
+| **合计** | **44** | **8** | **2** | **54** |
 
-> 注：自定义工具从 37 增至 39（新增 retrieve_knowledge 和 reindex_knowledge_base）。TOOL_RISK_MAP 包含全部工具的风险标签。
+> 注：自定义工具 44 个（含 5 个剧本工具）。TOOL_RISK_MAP 包含全部工具的风险标签。
+
+---
+
+## 运维剧本工具 — playbook.py（5 个）
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `ssh_execute_command` | danger | SSH 连接远程设备执行命令，支持密码/密钥认证，内置命令黑名单 |
+| `playbook_create` | moderate | 从对话创建新剧本模板（参数化工作流） |
+| `playbook_execute` | moderate | 执行已保存的剧本，自动解析参数和解密凭据 |
+| `playbook_list` | safe | 列出可用剧本，支持按类别筛选 |
+| `playbook_search` | safe | 按关键词搜索剧本 |
+
+`ssh_execute_command` 使用 `asyncssh` 库，支持:
+- 密码或 SSH 私钥认证
+- 每条命令独立超时（默认 30s）
+- 输出截断（10000 字符/命令）+ ANSI 转义码清理
+- 命令黑名单（rm -rf /, mkfs, dd, reboot, shutdown 等）
+- supervised 模式下需要用户审批
