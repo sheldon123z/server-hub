@@ -11,6 +11,7 @@ sse-starlette>=2.0.0
 tavily-python>=0.7.0
 croniter>=2.0.0
 httpx>=0.28
+PyYAML>=6.0
 chromadb>=0.6.0
 langchain-chroma>=0.2.0
 langchain-ollama>=0.2.0

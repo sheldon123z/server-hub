@@ -21,6 +21,7 @@ const AuditPage = lazy(() => import('@/pages/AuditPage'))
 const PanelUsersPage = lazy(() => import('@/pages/PanelUsersPage'))
 const AssetsPage = lazy(() => import('@/pages/AssetsPage'))
 const AgentsPage = lazy(() => import('@/pages/agents/AgentsPage'))
+const AgentStudioPage = lazy(() => import('@/pages/agents/AgentStudioPage'))
 const PlaybooksPage = lazy(() => import('@/pages/PlaybooksPage'))
 const ServersPage = lazy(() => import('@/pages/ServersPage'))
 const FleetDashboardPage = lazy(() => import('@/pages/FleetDashboardPage'))
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/panel_users" element={<PanelUsersPage />} />
           <Route path="/assets" element={<AssetsPage />} />
           <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/agents/studio" element={<AgentStudioPage />} />
           <Route path="/playbooks" element={<PlaybooksPage />} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/fleet" element={<FleetDashboardPage />} />

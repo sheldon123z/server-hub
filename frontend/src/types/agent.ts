@@ -12,6 +12,13 @@ export interface ChatMessage {
   _serverId?: string
 }
 
+export interface AgentRunSummary {
+  id: string
+  status: string
+  created_at: string
+  completed_at?: string | null
+}
+
 export interface TodoItem {
   content: string
   status: 'pending' | 'in_progress' | 'completed'
@@ -26,6 +33,7 @@ export interface Conversation {
   created_at: string
   updated_at: string
   message_count: number
+  latest_run_status?: string | null
 }
 
 export interface Patrol {
@@ -39,4 +47,47 @@ export interface Patrol {
   next_run: string | null
   prompt: string
   check_tools: string
+}
+
+export interface SkillRecommendation {
+  id: string
+  name: string
+  summary: string
+  score: number
+  reasons: string[]
+}
+
+export interface InstalledSkill {
+  id: string
+  version: string
+  name: string
+  summary: string
+  enabled: boolean
+  source_type: string
+  source_ref?: string | null
+  install_path: string
+  manifest: Record<string, unknown>
+  skill_markdown?: string
+}
+
+export interface AgentRun {
+  id: string
+  conversation_id: string
+  username: string
+  status: string
+  safety_mode: string
+  page_context?: string | null
+  skill_id?: string | null
+  user_message: string
+  error?: string | null
+  created_at: string
+  updated_at: string
+  completed_at?: string | null
+}
+
+export interface AgentRunEvent {
+  id: string
+  event_type: string
+  payload: Record<string, unknown>
+  created_at: string
 }

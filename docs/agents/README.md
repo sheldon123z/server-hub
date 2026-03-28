@@ -2,6 +2,8 @@
 
 ServerHub 的 AI 智能体子系统基于 **Deep Agents 框架**（deepagents + LangGraph）构建，提供对话式运维助手、定时巡检、告警规则引擎、故障诊断等能力。
 
+关于新的 `run` 生命周期、Skill 安装体系和独立 Agent Studio 入口，见 [studio-runtime.md](./studio-runtime.md)。
+
 ---
 
 ## Deep Agents 框架简介

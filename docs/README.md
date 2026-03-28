@@ -42,6 +42,7 @@ ServerHub 的核心特色 — 基于 Deep Agents 框架的 AI 运维智能体。
 | 文档 | 说明 |
 |------|------|
 | [智能体总览](agents/README.md) | 架构、Middleware 栈、组件清单 |
+| [Agent Studio 与 Skill Runtime](agents/studio-runtime.md) | run 生命周期、Skill 安装、Studio 入口 |
 | [Agent 工具](agents/tools.md) | 22 个自定义工具 + 9 个内置工具 |
 | [子智能体](agents/subagents.md) | 4 个 SubAgent 定义和使用 |
 | [巡检系统](agents/patrol.md) | 8 个任务、11 个模板、调度机制 |

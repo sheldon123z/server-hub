@@ -11,6 +11,8 @@ from modules.agents.routes.fault import router as fault_router
 from modules.agents.routes.config import router as config_router
 from modules.agents.routes.async_tasks import router as async_tasks_router
 from modules.agents.routes.terminal import router as terminal_router
+from modules.agents.routes.runs import router as runs_router
+from modules.agents.routes.skills import router as skills_router
 
 router = APIRouter(prefix="/api/agents", tags=["AI Agent"])
 
@@ -23,3 +25,5 @@ router.include_router(fault_router)
 router.include_router(config_router)
 router.include_router(async_tasks_router)
 router.include_router(terminal_router)
+router.include_router(runs_router)
+router.include_router(skills_router)

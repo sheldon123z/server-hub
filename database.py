@@ -154,6 +154,7 @@ async def init_tables(db: aiosqlite.Connection):
         CREATE TABLE IF NOT EXISTS agent_approvals (
             id TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL,
+            run_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             tool_name TEXT NOT NULL,
             tool_input TEXT NOT NULL,
@@ -307,6 +308,83 @@ async def init_tables(db: aiosqlite.Connection):
             completed_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'running',
+            safety_mode TEXT DEFAULT 'supervised',
+            page_context TEXT,
+            skill_id TEXT,
+            user_message TEXT NOT NULL,
+            error TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation
+            ON agent_runs(conversation_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS agent_run_events (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_run_events_run
+            ON agent_run_events(run_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS agent_skills (
+            id TEXT PRIMARY KEY,
+            version TEXT NOT NULL,
+            name TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            source_type TEXT NOT NULL,
+            source_ref TEXT,
+            install_path TEXT NOT NULL,
+            manifest_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_skill_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            skill_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            manifest_json TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_ref TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_skill_versions_skill
+            ON agent_skill_versions(skill_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS agent_skill_installs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            skill_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            status TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}',
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_skill_installs_skill
+            ON agent_skill_installs(skill_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS agent_skill_bindings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            skill_id TEXT NOT NULL,
+            binding_type TEXT NOT NULL,
+            binding_target TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_skill_bindings_skill
+            ON agent_skill_bindings(skill_id, binding_type, binding_target);
+
         -- 配额违规记录
         CREATE TABLE IF NOT EXISTS quota_violations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -428,6 +506,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "notifications", "channel_id", "TEXT")
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
+    await _ensure_column(db, "agent_approvals", "run_id", "TEXT")
     # server_id 列就绪后才能创建复合索引
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)"

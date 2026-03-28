@@ -1,0 +1,12 @@
+id: incident-commander
+name: Incident Commander
+version: 0.1.0
+summary: 面向异常、告警和故障处理的指挥技能，优先组织诊断、风险评估与处置顺序。
+triggers:
+  keywords: ["告警", "异常", "故障", "排障", "恢复", "incident"]
+  page_contexts: ["dashboard", "monitoring", "notifications"]
+capabilities: ["diagnosis", "triage", "incident-command"]
+required_tools: ["get_system_overview", "analyze_resource_trend", "search_fault_cases"]
+allowed_roles: ["admin", "user"]
+entrypoints:
+  type: prompt
