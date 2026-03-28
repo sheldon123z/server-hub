@@ -85,6 +85,9 @@ TOOL_RISK_MAP = {
     "playbook_execute": RiskLevel.MODERATE,
     "playbook_list": RiskLevel.SAFE,
     "playbook_search": RiskLevel.SAFE,
+    # 服务器舰队管理工具（非 SAFE，防止非 admin 用户通过 Agent 访问服务器信息）
+    "server_list": RiskLevel.MODERATE,
+    "server_test_connectivity": RiskLevel.MODERATE,
 }
 
 

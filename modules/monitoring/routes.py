@@ -104,16 +104,38 @@ async def metrics_ws(websocket: WebSocket):
 # ---------------------------------------------------------------------------
 
 @router.get("/realtime")
-async def get_realtime(user=Depends(get_current_user)):
-    """获取当前系统指标快照"""
-    snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
-    return snapshot
+async def get_realtime(
+    server_id: str = Query(default="local", description="服务器ID，默认 local 表示本机"),
+    user=Depends(get_current_user),
+):
+    """获取当前系统指标快照，支持指定远程服务器"""
+    if server_id == "local":
+        snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
+        return snapshot  # 保持向后兼容：本机直接返回原始快照格式
+
+    # 远程服务器 — 通过 AgentClient 获取
+    from modules.servers.services import get_server
+    from modules.servers.agent_client import AgentClient
+
+    server = await get_server(server_id)
+    if server is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"服务器 {server_id} 不存在")
+
+    try:
+        client = AgentClient(server)
+        snapshot = await asyncio.wait_for(client.get_metrics(), timeout=10)
+        return {"server_id": server_id, "data": snapshot}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"远程指标获取失败: {e}")
 
 
 @router.get("/history")
 async def get_history(
     metric: str,
     hours: int = Query(default=24, ge=1, le=720),
+    server_id: str = Query(default="local", description="服务器ID，默认只查本机数据"),
     user=Depends(get_current_user),
 ):
     """
@@ -122,12 +144,14 @@ async def get_history(
     Args:
         metric: 指标名称 (cpu, memory, gpu, disk, network, disk_io, docker, all)
         hours: 查询最近多少小时的数据，默认 24
+        server_id: 服务器ID，默认 "local" 只返回本机数据
     """
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
     db = await get_db()
     cursor = await db.execute(
-        "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' AND timestamp >= ? ORDER BY timestamp ASC",
-        (cutoff,),
+        "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
+        "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? ORDER BY timestamp ASC",
+        (server_id, cutoff),
     )
     rows = await cursor.fetchall()
 

@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { cn, formatDate, formatBytes } from '@/lib/utils'
+import { useServerStore } from '@/stores/serverStore'
 
 /* ── Types ────────────────────────────────────────── */
 
@@ -67,6 +68,7 @@ function containerStateColor(state: string) {
 
 export default function DockerPage() {
   const queryClient = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [tab, setTab] = useState<Tab>('容器')
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null)
   const [execCmd, setExecCmd] = useState('')
@@ -75,98 +77,98 @@ export default function DockerPage() {
 
   /* Queries */
   const { data: containers = [], isLoading: loadingContainers } = useQuery<Container[]>({
-    queryKey: ['docker-containers'],
-    queryFn: () => client.get('/api/docker/containers').then((r) => r.data),
+    queryKey: ['docker-containers', serverId],
+    queryFn: () => client.get('/api/docker/containers', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 10000,
     enabled: tab === '容器',
   })
 
   const { data: stacks = [] } = useQuery<Stack[]>({
-    queryKey: ['docker-stacks'],
-    queryFn: () => client.get('/api/docker/stacks').then((r) => r.data),
+    queryKey: ['docker-stacks', serverId],
+    queryFn: () => client.get('/api/docker/stacks', { params: { server_id: serverId } }).then((r) => r.data),
     enabled: tab === '堆栈',
   })
 
   const { data: images = [] } = useQuery<DockerImage[]>({
-    queryKey: ['docker-images'],
-    queryFn: () => client.get('/api/docker/images').then((r) => r.data),
+    queryKey: ['docker-images', serverId],
+    queryFn: () => client.get('/api/docker/images', { params: { server_id: serverId } }).then((r) => r.data),
     enabled: tab === '镜像',
   })
 
   const { data: networksData } = useQuery<{ networks: Network[] }>({
-    queryKey: ['docker-networks'],
-    queryFn: () => client.get('/api/docker/networks').then((r) => r.data),
+    queryKey: ['docker-networks', serverId],
+    queryFn: () => client.get('/api/docker/networks', { params: { server_id: serverId } }).then((r) => r.data),
     enabled: tab === '网络',
   })
 
   const { data: volumesData } = useQuery<{ volumes: Volume[] }>({
-    queryKey: ['docker-volumes'],
-    queryFn: () => client.get('/api/docker/volumes').then((r) => r.data),
+    queryKey: ['docker-volumes', serverId],
+    queryFn: () => client.get('/api/docker/volumes', { params: { server_id: serverId } }).then((r) => r.data),
     enabled: tab === '卷',
   })
 
   const { data: containerLogs } = useQuery<{ name: string; logs: string }>({
-    queryKey: ['docker-logs', expandedContainer],
+    queryKey: ['docker-logs', expandedContainer, serverId],
     queryFn: () =>
-      client.get(`/api/docker/containers/${expandedContainer}/logs?tail=200`).then((r) => r.data),
+      client.get(`/api/docker/containers/${expandedContainer}/logs`, { params: { tail: 200, server_id: serverId } }).then((r) => r.data),
     enabled: !!expandedContainer,
   })
 
   /* Mutations */
   const containerAction = useMutation({
     mutationFn: ({ name, action }: { name: string; action: string }) =>
-      client.post(`/api/docker/containers/${name}/${action}`).then((r) => r.data),
+      client.post(`/api/docker/containers/${name}/${action}`, null, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: (data) => {
       toast.success(data.output || '操作成功')
-      queryClient.invalidateQueries({ queryKey: ['docker-containers'] })
+      queryClient.invalidateQueries({ queryKey: ['docker-containers', serverId] })
     },
     onError: () => toast.error('操作失败'),
   })
 
   const stackAction = useMutation({
     mutationFn: ({ name, action }: { name: string; action: string }) =>
-      client.post(`/api/docker/stacks/${name}/${action}`).then((r) => r.data),
+      client.post(`/api/docker/stacks/${name}/${action}`, null, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => {
       toast.success('操作成功')
-      queryClient.invalidateQueries({ queryKey: ['docker-stacks'] })
+      queryClient.invalidateQueries({ queryKey: ['docker-stacks', serverId] })
     },
     onError: () => toast.error('操作失败'),
   })
 
   const deleteImage = useMutation({
-    mutationFn: (id: string) => client.delete(`/api/docker/images/${id}`).then((r) => r.data),
+    mutationFn: (id: string) => client.delete(`/api/docker/images/${id}`, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => {
       toast.success('镜像已删除')
-      queryClient.invalidateQueries({ queryKey: ['docker-images'] })
+      queryClient.invalidateQueries({ queryKey: ['docker-images', serverId] })
     },
     onError: () => toast.error('删除失败'),
   })
 
   const execMut = useMutation({
     mutationFn: ({ name, command }: { name: string; command: string }) =>
-      client.post(`/api/docker/containers/${name}/exec`, { command }).then((r) => r.data),
+      client.post(`/api/docker/containers/${name}/exec`, { command }, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: (data) => toast.success(data.output?.slice(0, 200) || '执行完成'),
     onError: () => toast.error('执行失败'),
   })
 
   const pruneMut = useMutation({
-    mutationFn: (type: string) => client.post(`/api/docker/prune/${type}`).then((r) => r.data),
+    mutationFn: (type: string) => client.post(`/api/docker/prune/${type}`, null, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: (data) => {
       toast.success(data.output || '清理完成')
-      queryClient.invalidateQueries({ queryKey: ['docker-containers'] })
-      queryClient.invalidateQueries({ queryKey: ['docker-images'] })
-      queryClient.invalidateQueries({ queryKey: ['docker-volumes'] })
-      queryClient.invalidateQueries({ queryKey: ['docker-networks'] })
+      queryClient.invalidateQueries({ queryKey: ['docker-containers', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['docker-images', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['docker-volumes', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['docker-networks', serverId] })
     },
     onError: () => toast.error('清理失败'),
   })
 
   const pullMut = useMutation({
     mutationFn: (image: string) =>
-      client.post('/api/docker/images/pull', { image }).then((r) => r.data),
+      client.post('/api/docker/images/pull', { image }, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: (data) => {
       toast.success(data.output || '镜像拉取成功')
-      queryClient.invalidateQueries({ queryKey: ['docker-images'] })
+      queryClient.invalidateQueries({ queryKey: ['docker-images', serverId] })
       setPullImage('')
     },
     onError: () => toast.error('镜像拉取失败'),
@@ -174,18 +176,18 @@ export default function DockerPage() {
 
   // Always-on queries for stat summary (not gated by tab)
   const { data: allContainers = [] } = useQuery<Container[]>({
-    queryKey: ['docker-containers-all'],
-    queryFn: () => client.get('/api/docker/containers').then((r) => r.data),
+    queryKey: ['docker-containers-all', serverId],
+    queryFn: () => client.get('/api/docker/containers', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 15000,
   })
   const { data: allImages = [] } = useQuery<DockerImage[]>({
-    queryKey: ['docker-images-all'],
-    queryFn: () => client.get('/api/docker/images').then((r) => r.data),
+    queryKey: ['docker-images-all', serverId],
+    queryFn: () => client.get('/api/docker/images', { params: { server_id: serverId } }).then((r) => r.data),
     staleTime: 30000,
   })
   const { data: allStacks = [] } = useQuery<Stack[]>({
-    queryKey: ['docker-stacks-all'],
-    queryFn: () => client.get('/api/docker/stacks').then((r) => r.data),
+    queryKey: ['docker-stacks-all', serverId],
+    queryFn: () => client.get('/api/docker/stacks', { params: { server_id: serverId } }).then((r) => r.data),
     staleTime: 30000,
   })
 

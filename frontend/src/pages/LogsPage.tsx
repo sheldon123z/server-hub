@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
 import { cn, formatBytes, formatDate } from '@/lib/utils'
+import { useServerStore } from '@/stores/serverStore'
 
 interface LogFile {
   path: string
@@ -42,6 +43,7 @@ function filterLines(content: string, level: LogLevel): string {
 }
 
 export default function LogsPage() {
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [selectedFile, setSelectedFile] = useState<string>('')
   const [lines, setLines] = useState(100)
   const [searchPattern, setSearchPattern] = useState('')
@@ -59,8 +61,8 @@ export default function LogsPage() {
     files: LogFile[]
     count: number
   }>({
-    queryKey: ['log-files'],
-    queryFn: () => client.get('/api/logs/files').then((r) => r.data),
+    queryKey: ['log-files', serverId],
+    queryFn: () => client.get('/api/logs/files', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const { data: tailData, isLoading: tailLoading } = useQuery<{
@@ -68,9 +70,9 @@ export default function LogsPage() {
     lines: number
     content: string
   }>({
-    queryKey: ['log-tail', selectedFile, lines],
+    queryKey: ['log-tail', selectedFile, lines, serverId],
     queryFn: () =>
-      client.get('/api/logs/tail', { params: { path: selectedFile, lines } }).then((r) => r.data),
+      client.get('/api/logs/tail', { params: { path: selectedFile, lines, server_id: serverId } }).then((r) => r.data),
     enabled: !!selectedFile && !streaming,
   })
 
@@ -80,10 +82,10 @@ export default function LogsPage() {
     results: string
     count: number
   }>({
-    queryKey: ['log-search', selectedFile, activeSearch],
+    queryKey: ['log-search', selectedFile, activeSearch, serverId],
     queryFn: () =>
       client
-        .get('/api/logs/search', { params: { path: selectedFile, pattern: activeSearch } })
+        .get('/api/logs/search', { params: { path: selectedFile, pattern: activeSearch, server_id: serverId } })
         .then((r) => r.data),
     enabled: !!selectedFile && !!activeSearch && !streaming,
   })
@@ -112,7 +114,7 @@ export default function LogsPage() {
     setStreamContent(tailData?.content ?? '')
     setSseConnected(false)
 
-    const es = new EventSource(`/api/logs/stream?path=${encodeURIComponent(selectedFile)}`)
+    const es = new EventSource(`/api/logs/stream?path=${encodeURIComponent(selectedFile)}&server_id=${encodeURIComponent(serverId)}`)
     eventSourceRef.current = es
 
     es.onopen = () => {
@@ -130,7 +132,7 @@ export default function LogsPage() {
         setStreaming(false)
       }
     }
-  }, [selectedFile, tailData?.content])
+  }, [selectedFile, tailData?.content, serverId])
 
   const stopStreaming = useCallback(() => {
     eventSourceRef.current?.close()

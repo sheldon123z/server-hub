@@ -371,6 +371,42 @@ async def init_tables(db: aiosqlite.Connection):
             created_by TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 多服务器管理
+        CREATE TABLE IF NOT EXISTS servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            hostname TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            agent_port INTEGER DEFAULT 9901,
+            agent_token_hash TEXT,
+            ssh_user TEXT,
+            ssh_port INTEGER DEFAULT 22,
+            ssh_key_credential TEXT,
+            os_info TEXT,
+            tags TEXT DEFAULT '[]',
+            is_local INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'unknown',
+            last_heartbeat TIMESTAMP,
+            agent_version TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
+
+        CREATE TABLE IF NOT EXISTS server_groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            color TEXT DEFAULT '#38bdf8',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS server_group_members (
+            group_id TEXT NOT NULL,
+            server_id TEXT NOT NULL,
+            PRIMARY KEY (group_id, server_id)
+        );
     """)
 
     try:
@@ -389,4 +425,16 @@ async def init_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "agent_patrol_history", "report_json", "TEXT")
     await _ensure_column(db, "agent_patrol_history", "triggered_by", "TEXT DEFAULT 'scheduler'")
     await _ensure_column(db, "notifications", "channel_id", "TEXT")
+    await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
+    await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
+
+    # 确保本机服务器记录存在
+    import socket as _socket
+    _hostname = _socket.gethostname()
+    await db.execute(
+        "INSERT OR IGNORE INTO servers (id, name, hostname, ip_address, is_local, status) "
+        "VALUES ('local', ?, ?, '127.0.0.1', 1, 'online')",
+        (_hostname, _hostname),
+    )
+
     await db.commit()

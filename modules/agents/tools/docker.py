@@ -5,8 +5,21 @@ from config import settings
 
 
 @tool
-async def list_docker_containers() -> str:
-    """列出所有 Docker 容器及其运行状态。"""
+async def list_docker_containers(server_id: str = "local") -> str:
+    """列出所有 Docker 容器及其运行状态。
+
+    Args:
+        server_id: 目标服务器ID。'local' 表示本机。
+    """
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.get_docker_containers()
+        if not result.get("ok"):
+            return f"远程获取失败: {result.get('error', '未知')}"
+        import json
+        return json.dumps(result["data"], ensure_ascii=False, indent=2)
+
     from modules.docker.services import list_containers
     containers = await list_containers(all=True)
     if not containers:
@@ -21,13 +34,28 @@ async def list_docker_containers() -> str:
 
 
 @tool
-async def get_container_logs(name: str, tail: int = 50) -> str:
+async def get_container_logs(name: str, tail: int = 50, server_id: str = "local") -> str:
     """获取指定 Docker 容器的最近日志。
 
     Args:
         name: 容器名称
         tail: 获取最后多少行，默认50
+        server_id: 目标服务器ID。'local' 表示本机。
     """
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(
+            f"docker logs {name} --tail {min(tail, 200)}", timeout=15
+        )
+        if not result.get("ok"):
+            return f"远程获取失败: {result.get('error', '未知')}"
+        data = result["data"]
+        output = data.get("stdout", "") + data.get("stderr", "")
+        if not output.strip():
+            return f"容器 {name} 没有日志输出。"
+        return f"## {name} 日志 (最后{tail}行)\n```\n{output[-3000:]}\n```"
+
     from modules.docker.services import container_logs
     logs = await container_logs(name, tail=min(tail, 200))
     if not logs:
@@ -36,15 +64,25 @@ async def get_container_logs(name: str, tail: int = 50) -> str:
 
 
 @tool
-async def docker_container_action(name: str, action: str) -> str:
+async def docker_container_action(name: str, action: str, server_id: str = "local") -> str:
     """对 Docker 容器执行操作。
 
     Args:
         name: 容器名称
         action: 操作类型，可选 start, stop, restart
+        server_id: 目标服务器ID。'local' 表示本机。
     """
     if action not in ("start", "stop", "restart"):
         return f"不支持的操作: {action}。可选: start, stop, restart"
+
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"docker {action} {name}", timeout=30)
+        if not result.get("ok"):
+            return f"远程执行失败: {result.get('error', '未知')}"
+        return f"容器 {name} 已在远程服务器 {server_id} 上执行 {action}。"
+
     from modules.docker.services import container_action
     result = await container_action(name, action)
     return f"容器 {name} 已执行 {action}。{result}"

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { cn, formatDate, formatBytes } from '@/lib/utils'
+import { useServerStore } from '@/stores/serverStore'
 
 /* ---------- types ---------- */
 
@@ -84,21 +85,23 @@ interface QuotaStatus {
 }
 
 function StatSummaryCards() {
+  const serverId = useServerStore((s) => s.selectedServerId)
+
   const { data: stats } = useQuery<UserStat[]>({
-    queryKey: ['user-stats'],
-    queryFn: () => client.get('/api/users/').then((r) => r.data),
+    queryKey: ['user-stats', serverId],
+    queryFn: () => client.get('/api/users/', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 15000,
   })
 
   const { data: sessData } = useQuery<{ sessions: Session[]; count: number }>({
-    queryKey: ['user-sessions'],
-    queryFn: () => client.get('/api/users/sessions').then((r) => r.data),
+    queryKey: ['user-sessions', serverId],
+    queryFn: () => client.get('/api/users/sessions', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 30000,
   })
 
   const { data: quotaStatus } = useQuery<QuotaStatus[]>({
-    queryKey: ['quota-status'],
-    queryFn: () => client.get('/api/users/quota-status').then((r) => r.data).catch(() => []),
+    queryKey: ['quota-status', serverId],
+    queryFn: () => client.get('/api/users/quota-status', { params: { server_id: serverId } }).then((r) => r.data).catch(() => []),
     refetchInterval: 30000,
   })
 
@@ -186,20 +189,22 @@ function UserCard({ user, onExpand }: { user: UserStat; onExpand: () => void }) 
 
 function ProcessList({ username }: { username: string }) {
   const qc = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
+
   const { data, isLoading } = useQuery<{ processes: ProcessInfo[]; count: number }>({
-    queryKey: ['user-processes', username],
-    queryFn: () => client.get(`/api/users/${username}/processes`, { params: { sort: 'mem' } }).then((r) => r.data),
+    queryKey: ['user-processes', username, serverId],
+    queryFn: () => client.get(`/api/users/${username}/processes`, { params: { sort: 'mem', server_id: serverId } }).then((r) => r.data),
   })
 
   const killMut = useMutation({
-    mutationFn: (pid: number) => client.post(`/api/users/${username}/kill/${pid}`).then((r) => r.data),
-    onSuccess: (d: { message: string }) => { toast.success(d.message); qc.invalidateQueries({ queryKey: ['user-processes', username] }) },
+    mutationFn: (pid: number) => client.post(`/api/users/${username}/kill/${pid}`, null, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: (d: { message: string }) => { toast.success(d.message); qc.invalidateQueries({ queryKey: ['user-processes', username, serverId] }) },
     onError: () => toast.error('终止进程失败'),
   })
 
   const killAllMut = useMutation({
-    mutationFn: () => client.post(`/api/users/${username}/kill`).then((r) => r.data),
-    onSuccess: (d: { message: string }) => { toast.success(d.message); qc.invalidateQueries({ queryKey: ['user-processes', username] }); qc.invalidateQueries({ queryKey: ['user-stats'] }) },
+    mutationFn: () => client.post(`/api/users/${username}/kill`, null, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: (d: { message: string }) => { toast.success(d.message); qc.invalidateQueries({ queryKey: ['user-processes', username, serverId] }); qc.invalidateQueries({ queryKey: ['user-stats', serverId] }) },
     onError: () => toast.error('操作失败'),
   })
 
@@ -251,16 +256,17 @@ function ProcessList({ username }: { username: string }) {
 
 function ResourceMonitorTab() {
   const [expandedUser, setExpandedUser] = useState<string | null>(null)
+  const serverId = useServerStore((s) => s.selectedServerId)
 
   const { data: stats, isLoading: statsLoading } = useQuery<UserStat[]>({
-    queryKey: ['user-stats'],
-    queryFn: () => client.get('/api/users/').then((r) => r.data),
+    queryKey: ['user-stats', serverId],
+    queryFn: () => client.get('/api/users/', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 15000,
   })
 
   const { data: sessData } = useQuery<{ sessions: Session[]; count: number }>({
-    queryKey: ['user-sessions'],
-    queryFn: () => client.get('/api/users/sessions').then((r) => r.data),
+    queryKey: ['user-sessions', serverId],
+    queryFn: () => client.get('/api/users/sessions', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 30000,
   })
 
@@ -321,11 +327,12 @@ function ResourceMonitorTab() {
 
 function CreateUserForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [form, setForm] = useState({ username: '', password: '', groups: '', shell: '/bin/bash' })
 
   const createMut = useMutation({
-    mutationFn: () => client.post('/api/users/create', { ...form, groups: form.groups }).then((r) => r.data),
-    onSuccess: () => { toast.success('用户已创建'); qc.invalidateQueries({ queryKey: ['all-users'] }); onDone() },
+    mutationFn: () => client.post('/api/users/create', { ...form, groups: form.groups }, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('用户已创建'); qc.invalidateQueries({ queryKey: ['all-users', serverId] }); onDone() },
     onError: (e: any) => toast.error(e.response?.data?.detail || '创建失败'),
   })
 
@@ -349,9 +356,11 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
 }
 
 function LoginHistory({ username }: { username: string }) {
+  const serverId = useServerStore((s) => s.selectedServerId)
+
   const { data, isLoading } = useQuery<{ entries: LoginEntry[]; count: number }>({
-    queryKey: ['login-history', username],
-    queryFn: () => client.get(`/api/users/${username}/history`, { params: { count: 30 } }).then((r) => r.data),
+    queryKey: ['login-history', username, serverId],
+    queryFn: () => client.get(`/api/users/${username}/history`, { params: { count: 30, server_id: serverId } }).then((r) => r.data),
   })
 
   if (isLoading) return <p className="text-text3 text-xs py-2">加载中...</p>
@@ -383,6 +392,7 @@ function LoginHistory({ username }: { username: string }) {
 
 function UserManagementTab() {
   const qc = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [showCreate, setShowCreate] = useState(false)
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
   const [editingUser, setEditingUser] = useState<UserInfo | null>(null)
@@ -391,24 +401,24 @@ function UserManagementTab() {
   const [newPw, setNewPw] = useState('')
 
   const { data, isLoading } = useQuery<{ users: UserInfo[] }>({
-    queryKey: ['all-users'],
-    queryFn: () => client.get('/api/users/all').then((r) => r.data),
+    queryKey: ['all-users', serverId],
+    queryFn: () => client.get('/api/users/all', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (username: string) => client.delete(`/api/users/${username}`).then((r) => r.data),
-    onSuccess: () => { toast.success('用户已删除'); qc.invalidateQueries({ queryKey: ['all-users'] }) },
+    mutationFn: (username: string) => client.delete(`/api/users/${username}`, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('用户已删除'); qc.invalidateQueries({ queryKey: ['all-users', serverId] }) },
     onError: (e: any) => toast.error(e.response?.data?.detail || '删除失败'),
   })
 
   const updateMut = useMutation({
-    mutationFn: () => client.put(`/api/users/${editingUser!.name}`, { groups: editForm.groups, shell: editForm.shell }).then((r) => r.data),
-    onSuccess: () => { toast.success('已更新'); setEditingUser(null); qc.invalidateQueries({ queryKey: ['all-users'] }) },
+    mutationFn: () => client.put(`/api/users/${editingUser!.name}`, { groups: editForm.groups, shell: editForm.shell }, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('已更新'); setEditingUser(null); qc.invalidateQueries({ queryKey: ['all-users', serverId] }) },
     onError: () => toast.error('更新失败'),
   })
 
   const pwMut = useMutation({
-    mutationFn: () => client.post(`/api/users/${pwUser!}/password`, { password: newPw }).then((r) => r.data),
+    mutationFn: () => client.post(`/api/users/${pwUser!}/password`, { password: newPw }, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => { toast.success('密码已重置'); setPwUser(null); setNewPw('') },
     onError: () => toast.error('重置失败'),
   })
@@ -514,47 +524,48 @@ function UserManagementTab() {
 
 function QuotaManagementTab() {
   const qc = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [newQuota, setNewQuota] = useState({ key: '', mem_gb: 80, proc_limit: 600, comment: '' })
   const [showAdd, setShowAdd] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<{ mem_gb: number; proc_limit: number; comment: string }>({ mem_gb: 0, proc_limit: 0, comment: '' })
 
   const { data: quotas, isLoading: quotasLoading } = useQuery<QuotaEntry[]>({
-    queryKey: ['quotas'],
-    queryFn: () => client.get('/api/users/quotas').then((r) => r.data),
+    queryKey: ['quotas', serverId],
+    queryFn: () => client.get('/api/users/quotas', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const { data: enforcement } = useQuery<EnforcementConfig>({
-    queryKey: ['enforcement'],
-    queryFn: () => client.get('/api/users/enforcement').then((r) => r.data),
+    queryKey: ['enforcement', serverId],
+    queryFn: () => client.get('/api/users/enforcement', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const { data: violations } = useQuery<Violation[]>({
-    queryKey: ['violations'],
-    queryFn: () => client.get('/api/users/violations', { params: { limit: 30 } }).then((r) => r.data),
+    queryKey: ['violations', serverId],
+    queryFn: () => client.get('/api/users/violations', { params: { limit: 30, server_id: serverId } }).then((r) => r.data),
   })
 
   const updateQuotasMut = useMutation({
-    mutationFn: (q: QuotaEntry[]) => client.put('/api/users/quotas', q).then((r) => r.data),
-    onSuccess: () => { toast.success('配额已更新'); setEditingKey(null); qc.invalidateQueries({ queryKey: ['quotas'] }) },
+    mutationFn: (q: QuotaEntry[]) => client.put('/api/users/quotas', q, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('配额已更新'); setEditingKey(null); qc.invalidateQueries({ queryKey: ['quotas', serverId] }) },
     onError: () => toast.error('更新失败'),
   })
 
   const addQuotaMut = useMutation({
-    mutationFn: () => client.post('/api/users/quotas', newQuota).then((r) => r.data),
-    onSuccess: () => { toast.success('已添加'); setShowAdd(false); setNewQuota({ key: '', mem_gb: 80, proc_limit: 600, comment: '' }); qc.invalidateQueries({ queryKey: ['quotas'] }) },
+    mutationFn: () => client.post('/api/users/quotas', newQuota, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('已添加'); setShowAdd(false); setNewQuota({ key: '', mem_gb: 80, proc_limit: 600, comment: '' }); qc.invalidateQueries({ queryKey: ['quotas', serverId] }) },
     onError: () => toast.error('添加失败'),
   })
 
   const deleteQuotaMut = useMutation({
-    mutationFn: (key: string) => client.delete(`/api/users/quotas/${key}`).then((r) => r.data),
-    onSuccess: () => { toast.success('已删除'); qc.invalidateQueries({ queryKey: ['quotas'] }) },
+    mutationFn: (key: string) => client.delete(`/api/users/quotas/${key}`, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('已删除'); qc.invalidateQueries({ queryKey: ['quotas', serverId] }) },
     onError: () => toast.error('删除失败'),
   })
 
   const updateEnforcementMut = useMutation({
-    mutationFn: (cfg: EnforcementConfig) => client.put('/api/users/enforcement', cfg).then((r) => r.data),
-    onSuccess: () => { toast.success('执行策略已更新'); qc.invalidateQueries({ queryKey: ['enforcement'] }) },
+    mutationFn: (cfg: EnforcementConfig) => client.put('/api/users/enforcement', cfg, { params: { server_id: serverId } }).then((r) => r.data),
+    onSuccess: () => { toast.success('执行策略已更新'); qc.invalidateQueries({ queryKey: ['enforcement', serverId] }) },
     onError: () => toast.error('更新失败'),
   })
 

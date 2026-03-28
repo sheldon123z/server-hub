@@ -32,9 +32,17 @@ router = APIRouter(prefix="/api/docker", tags=["Docker"])
 @router.get("/containers")
 async def get_containers(
     all: bool = Query(default=True, description="包含已停止的容器"),
+    server_id: str = Query(default="local", description="目标服务器"),
     user=Depends(get_current_user),
 ):
     """列出所有 Docker 容器"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.get_docker_containers()
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        return result.get("data", [])
     try:
         return await list_containers(all=all)
     except RuntimeError as e:
@@ -45,9 +53,17 @@ async def get_containers(
 async def get_container_logs(
     name: str,
     tail: int = Query(default=100, ge=1, le=5000),
+    server_id: str = Query(default="local", description="目标服务器"),
     user=Depends(get_current_user),
 ):
     """获取容器日志"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"docker logs {name} --tail {tail} 2>&1", timeout=15)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        return {"name": name, "logs": result["data"].get("output", "")}
     try:
         logs = await container_logs(name, tail=tail)
         return {"name": name, "logs": logs}
@@ -90,9 +106,26 @@ async def do_container_action(
     name: str,
     action: str,
     request: Request,
+    server_id: str = Query(default="local", description="目标服务器"),
     user=Depends(require_role("admin")),
 ):
     """对容器执行 start / stop / restart（仅管理员）"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        if action not in ("start", "stop", "restart"):
+            raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"docker {action} {name}", timeout=30)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        await log_audit(
+            username=user["username"],
+            action=f"docker.container.{action}",
+            target=f"{server_id}:{name}",
+            ip=request.client.host if request.client else "unknown",
+            detail=result["data"].get("output", ""),
+        )
+        return {"ok": True, "action": action, "container": name, "output": result["data"].get("output", "")}
     try:
         result = await container_action(name, action)
     except ValueError as e:
@@ -112,8 +145,30 @@ async def do_container_action(
 
 
 @router.get("/images")
-async def get_images(user=Depends(get_current_user)):
+async def get_images(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(get_current_user),
+):
     """列出本地 Docker 镜像"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(
+            'docker images --format \'{"repository":"{{.Repository}}","tag":"{{.Tag}}","id":"{{.ID}}","size":"{{.Size}}","created":"{{.CreatedSince}}"}\'',
+            timeout=15,
+        )
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        import json
+        images = []
+        for line in result["data"].get("output", "").strip().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    images.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+        return images
     try:
         return await list_images()
     except RuntimeError as e:
@@ -146,8 +201,23 @@ async def delete_image(
 
 
 @router.get("/stacks")
-async def get_stacks(user=Depends(get_current_user)):
+async def get_stacks(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(get_current_user),
+):
     """列出 Docker Compose 堆栈"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        import json
+        client = await get_agent_client(server_id)
+        result = await client.execute_command("docker compose ls --format json", timeout=15)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        output = result["data"].get("output", "").strip()
+        try:
+            return json.loads(output) if output else []
+        except json.JSONDecodeError:
+            return []
     try:
         return await list_compose_stacks()
     except RuntimeError as e:

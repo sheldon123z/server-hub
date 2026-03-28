@@ -1,6 +1,6 @@
 """Cron 任务 API — 查看 + CRUD + 备份"""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from auth.dependencies import get_current_user, require_role
@@ -51,7 +51,18 @@ class ValidateRequest(BaseModel):
 # ─── 查询端点 ───
 
 @router.get("/")
-async def list_user_crontab(user=Depends(get_current_user)):
+async def list_user_crontab(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(get_current_user),
+):
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command("crontab -l 2>/dev/null || echo ''", timeout=10)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        # 返回原始文本，让前端或调用者解析
+        return {"jobs_raw": result["data"].get("output", ""), "user": "remote"}
     try:
         entries = await get_user_crontab()
         return {"jobs": entries, "user": "zhengxiaodong"}
@@ -60,7 +71,17 @@ async def list_user_crontab(user=Depends(get_current_user)):
 
 
 @router.get("/root")
-async def list_root_crontab(user=Depends(require_role("admin"))):
+async def list_root_crontab(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(require_role("admin")),
+):
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command("sudo crontab -l 2>/dev/null || echo ''", timeout=10)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        return {"jobs_raw": result["data"].get("output", ""), "user": "root"}
     try:
         entries = await get_root_crontab()
         return {"jobs": entries, "user": "root"}

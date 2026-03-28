@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore'
 // 静态 fallback — 当 /api/sidebar 不可用时使用
 const FALLBACK_ITEMS: SidebarItem[] = [
   { name: 'dashboard', display_name: '仪表盘', icon: 'dashboard', category: '监控', required_role: 'user', order: 1 },
+  { name: 'servers', display_name: '服务器', icon: 'server-2', category: '基础设施', required_role: 'admin', order: 2 },
   { name: 'agents', display_name: 'OpsAgent', icon: 'robot', category: '智能', required_role: 'user', order: 5 },
   { name: 'playbooks', display_name: '运维剧本', icon: 'script', category: '自动化', required_role: 'admin', order: 55 },
   { name: 'docker', display_name: 'Docker', icon: 'brand-docker', category: '管理', required_role: 'admin', order: 10 },

@@ -5,7 +5,7 @@
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from auth.dependencies import get_current_user, require_role
@@ -56,8 +56,33 @@ class SetPasswordRequest(BaseModel):
 # ─── 资源监控 ───
 
 @router.get("/")
-async def list_users(user=Depends(get_current_user)):
+async def list_users(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(get_current_user),
+):
     """获取所有用户资源使用统计"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        # 通过远程命令获取用户资源统计
+        result = await client.execute_command(
+            "ps aux --sort=-%mem | awk 'NR>1{user[$1]+=$4; rss[$1]+=$6} END{for(u in user) print u, user[u], rss[u]}'",
+            timeout=15,
+        )
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        # 解析远程输出为用户统计列表
+        users = []
+        for line in result["data"].get("output", "").strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                users.append({
+                    "username": parts[0],
+                    "mem_percent": float(parts[1]),
+                    "rss_kb": int(parts[2]),
+                    "mem_gb": round(int(parts[2]) / 1024 / 1024, 2),
+                })
+        return users
     stats = await asyncio.get_event_loop().run_in_executor(None, get_user_stats)
     return stats
 
@@ -74,8 +99,29 @@ async def list_all_users(user=Depends(require_role("admin"))):
 # ─── 登录审计 ───
 
 @router.get("/sessions")
-async def active_sessions(user=Depends(get_current_user)):
+async def active_sessions(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(get_current_user),
+):
     """获取当前活跃登录会话"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command("who", timeout=10)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        # 解析 who 输出
+        sessions = []
+        for line in result["data"].get("output", "").strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                sessions.append({
+                    "user": parts[0],
+                    "terminal": parts[1],
+                    "login_time": " ".join(parts[2:4]) if len(parts) >= 4 else parts[2],
+                    "from": parts[4].strip("()") if len(parts) >= 5 else "",
+                })
+        return {"sessions": sessions, "count": len(sessions)}
     sessions = await asyncio.get_event_loop().run_in_executor(None, get_active_sessions)
     return {"sessions": sessions, "count": len(sessions)}
 
@@ -260,8 +306,27 @@ async def kill_user(username: str, request: Request, user=Depends(require_role("
 
 
 @router.post("/{username}/kill/{pid}")
-async def kill_process(username: str, pid: int, request: Request, user=Depends(require_role("admin"))):
+async def kill_process(
+    username: str,
+    pid: int,
+    request: Request,
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(require_role("admin")),
+):
     """终止指定用户的单个进程"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"kill -9 {pid}", timeout=10)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        await log_audit(
+            username=user["username"],
+            action="user.kill_process",
+            target=f"{server_id}:{username}:{pid}",
+            ip=request.client.host if request.client else "unknown",
+        )
+        return {"ok": True, "message": f"已终止远程进程 {pid}"}
     result = await asyncio.get_event_loop().run_in_executor(
         None, kill_single_process, pid, username
     )

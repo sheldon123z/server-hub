@@ -4,8 +4,26 @@ from langchain_core.tools import tool
 
 
 @tool
-def get_user_resources() -> str:
-    """获取所有用户的资源使用情况：内存、进程数、GPU显存。"""
+async def get_user_resources(server_id: str = "local") -> str:
+    """获取所有用户的资源使用情况：内存、进程数、GPU显存。
+
+    Args:
+        server_id: 目标服务器ID。'local' 表示本机。
+    """
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(
+            "ps aux --sort=-%mem | head -20", timeout=10
+        )
+        if not result.get("ok"):
+            return f"远程获取失败: {result.get('error', '未知')}"
+        data = result["data"]
+        output = data.get("stdout", "")
+        if not output.strip():
+            return f"服务器 {server_id} 没有用户进程信息。"
+        return f"## 服务器 {server_id} 用户进程 (Top 20)\n```\n{output}\n```"
+
     from modules.users.services import get_user_stats
     users = get_user_stats()
     if not users:
@@ -57,12 +75,21 @@ def update_user_quotas(key: str, mem_gb: int, proc_limit: int, comment: str = ""
 
 
 @tool
-def kill_user_processes(username: str) -> str:
+async def kill_user_processes(username: str, server_id: str = "local") -> str:
     """终止指定用户的所有进程。不能终止管理员用户的进程。
 
     Args:
         username: 要终止进程的用户名
+        server_id: 目标服务器ID。'local' 表示本机。
     """
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"pkill -u {username}", timeout=15)
+        if not result.get("ok"):
+            return f"远程执行失败: {result.get('error', '未知')}"
+        return f"已在远程服务器 {server_id} 上终止用户 {username} 的所有进程。"
+
     from modules.users.services import kill_user_processes as _kill
     result = _kill(username)
     if result.get("ok"):

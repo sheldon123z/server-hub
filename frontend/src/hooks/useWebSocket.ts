@@ -39,6 +39,7 @@ export interface AlertData {
 interface WsMessage {
   type: 'metrics' | 'metrics_full' | 'alert'
   data: MetricsData | AlertData
+  server_id?: string
 }
 
 interface UseWebSocketReturn {
@@ -61,7 +62,7 @@ function buildWsUrl(): string {
   return `${protocol}//${location.host}/ws/metrics`
 }
 
-export function useWebSocket(): UseWebSocketReturn {
+export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [history, setHistory] = useState<MetricsData[]>([])
   const [connected, setConnected] = useState(false)
@@ -90,6 +91,10 @@ export function useWebSocket(): UseWebSocketReturn {
       if (!mountedRef.current) return
       try {
         const msg: WsMessage = JSON.parse(event.data)
+        // Skip messages for other servers when a filter is active
+        if (msg.server_id && serverFilter && msg.server_id !== serverFilter) {
+          return
+        }
         if (msg.type === 'metrics' || msg.type === 'metrics_full') {
           const data = msg.data as MetricsData
           setMetrics(data)

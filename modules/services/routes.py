@@ -22,8 +22,18 @@ router = APIRouter(prefix="/api/services", tags=["服务管理"])
 
 
 @router.get("/")
-async def get_services(user=Depends(get_current_user)):
+async def get_services(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(get_current_user),
+):
     """列出所有受管 systemd 服务的状态"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.get_services()
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        return result.get("data", [])
     try:
         return await list_services()
     except RuntimeError as e:
@@ -50,9 +60,26 @@ async def do_service_action(
     name: str,
     action: str,
     request: Request,
+    server_id: str = Query(default="local", description="目标服务器"),
     user=Depends(require_role("admin")),
 ):
     """对服务执行 start / stop / restart（仅管理员）"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        if action not in ("start", "stop", "restart"):
+            raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"sudo systemctl {action} {name}", timeout=30)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        await log_audit(
+            username=user["username"],
+            action=f"service.{action}",
+            target=f"{server_id}:{name}",
+            ip=request.client.host if request.client else "unknown",
+            detail=result["data"].get("output", ""),
+        )
+        return {"ok": True, "action": action, "service": name, "output": result["data"].get("output", "")}
     try:
         result = await service_action(name, action)
     except ValueError as e:
@@ -135,9 +162,19 @@ async def get_deps(name: str, user=Depends(get_current_user)):
 async def get_service_journal(
     name: str,
     lines: int = Query(default=100, ge=1, le=5000),
+    server_id: str = Query(default="local", description="目标服务器"),
     user=Depends(get_current_user),
 ):
     """获取服务的 journal 日志"""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(
+            f"journalctl -u {name} -n {lines} --no-pager 2>&1", timeout=15
+        )
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        return {"name": name, "journal": result["data"].get("output", "")}
     try:
         output = await service_journal(name, lines=lines)
         return {"name": name, "journal": output}

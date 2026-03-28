@@ -6,8 +6,20 @@ from config import settings
 
 
 @tool
-def get_system_overview() -> str:
-    """获取系统状态概览：CPU使用率、内存、Swap、磁盘、GPU、负载、运行时间。"""
+async def get_system_overview(server_id: str = "local") -> str:
+    """获取系统状态概览：CPU使用率、内存、Swap、磁盘、GPU、负载、运行时间。
+
+    Args:
+        server_id: 目标服务器ID。'local' 表示本机。
+    """
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.get_metrics()
+        if not result.get("ok"):
+            return f"远程获取失败: {result.get('error', '未知')}"
+        return json.dumps(result["data"], ensure_ascii=False, indent=2)
+
     from modules.dashboard.collectors import get_system_info
     info = get_system_info()
     gpu = info.get("gpu", {})
@@ -25,8 +37,24 @@ def get_system_overview() -> str:
 
 
 @tool
-def get_disk_info() -> str:
-    """获取所有磁盘挂载点的使用情况。"""
+async def get_disk_info(server_id: str = "local") -> str:
+    """获取所有磁盘挂载点的使用情况。
+
+    Args:
+        server_id: 目标服务器ID。'local' 表示本机。
+    """
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.get_metrics()
+        if not result.get("ok"):
+            return f"远程获取失败: {result.get('error', '未知')}"
+        data = result["data"]
+        disk_info = data.get("disk", [])
+        if not disk_info:
+            return f"服务器 {server_id} 没有磁盘信息。"
+        return json.dumps(disk_info, ensure_ascii=False, indent=2)
+
     from modules.dashboard.collectors import get_extra_disks
     disks = get_extra_disks()
     if not disks:

@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { cn, formatDate } from '@/lib/utils'
+import { useServerStore } from '@/stores/serverStore'
 
 interface Service {
   name: string
@@ -50,59 +51,60 @@ function stateBadge(state: string) {
 
 export default function ServicesPage() {
   const queryClient = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
   const { data: services = [], isLoading } = useQuery<Service[]>({
-    queryKey: ['services'],
-    queryFn: () => client.get('/api/services/').then((r) => r.data),
+    queryKey: ['services', serverId],
+    queryFn: () => client.get('/api/services/', { params: { server_id: serverId } }).then((r) => r.data),
     refetchInterval: 10000,
   })
 
   const { data: resources } = useQuery<ServiceResources>({
-    queryKey: ['service-resources', expanded],
-    queryFn: () => client.get(`/api/services/${expanded}/resources`).then((r) => r.data),
+    queryKey: ['service-resources', expanded, serverId],
+    queryFn: () => client.get(`/api/services/${expanded}/resources`, { params: { server_id: serverId } }).then((r) => r.data),
     enabled: !!expanded,
   })
 
   const { data: deps } = useQuery<ServiceDependencies>({
-    queryKey: ['service-deps', expanded],
-    queryFn: () => client.get(`/api/services/${expanded}/dependencies`).then((r) => r.data),
+    queryKey: ['service-deps', expanded, serverId],
+    queryFn: () => client.get(`/api/services/${expanded}/dependencies`, { params: { server_id: serverId } }).then((r) => r.data),
     enabled: !!expanded,
   })
 
   const { data: journal } = useQuery<ServiceJournal>({
-    queryKey: ['service-journal', expanded],
-    queryFn: () => client.get(`/api/services/${expanded}/journal?lines=50`).then((r) => r.data),
+    queryKey: ['service-journal', expanded, serverId],
+    queryFn: () => client.get(`/api/services/${expanded}/journal`, { params: { lines: 50, server_id: serverId } }).then((r) => r.data),
     enabled: !!expanded,
   })
 
   const actionMut = useMutation({
     mutationFn: ({ name, action }: { name: string; action: string }) =>
-      client.post(`/api/services/${name}/${action}`).then((r) => r.data),
+      client.post(`/api/services/${name}/${action}`, null, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: (data) => {
       toast.success(`${data.service}: ${data.action} 成功`)
-      queryClient.invalidateQueries({ queryKey: ['services'] })
+      queryClient.invalidateQueries({ queryKey: ['services', serverId] })
     },
     onError: () => toast.error('操作失败'),
   })
 
   const enableMut = useMutation({
     mutationFn: ({ name, enable }: { name: string; enable: boolean }) =>
-      client.post(`/api/services/${name}/${enable ? 'enable' : 'disable'}`).then((r) => r.data),
+      client.post(`/api/services/${name}/${enable ? 'enable' : 'disable'}`, null, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => {
       toast.success('操作成功')
-      queryClient.invalidateQueries({ queryKey: ['services'] })
+      queryClient.invalidateQueries({ queryKey: ['services', serverId] })
     },
     onError: () => toast.error('操作失败'),
   })
 
   const reloadMut = useMutation({
     mutationFn: (name: string) =>
-      client.post(`/api/services/${name}/reload`).then((r) => r.data),
+      client.post(`/api/services/${name}/reload`, null, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => {
       toast.success('Reload 成功')
-      queryClient.invalidateQueries({ queryKey: ['services'] })
+      queryClient.invalidateQueries({ queryKey: ['services', serverId] })
     },
     onError: () => toast.error('Reload 失败'),
   })

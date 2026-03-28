@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
 import { cn } from '@/lib/utils'
+import { useServerStore } from '@/stores/serverStore'
 
 interface PortInfo {
   port: number
@@ -52,22 +53,24 @@ function tcpStateColor(state: string): string {
 }
 
 export default function NetworkPage() {
+  const serverId = useServerStore((s) => s.selectedServerId)
+
   const { data: portsData, isLoading: portsLoading } = useQuery<{
     ports: PortInfo[]
     count: number
   }>({
-    queryKey: ['network-ports'],
-    queryFn: () => client.get('/api/network/ports').then((r) => r.data),
+    queryKey: ['network-ports', serverId],
+    queryFn: () => client.get('/api/network/ports', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const { data: connData, isLoading: connLoading } = useQuery<Record<string, unknown>>({
-    queryKey: ['network-connections'],
-    queryFn: () => client.get('/api/network/connections').then((r) => r.data),
+    queryKey: ['network-connections', serverId],
+    queryFn: () => client.get('/api/network/connections', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const { data: proxyData } = useQuery<ProxyInfo>({
-    queryKey: ['network-proxy'],
-    queryFn: () => client.get('/api/network/proxy').then((r) => r.data),
+    queryKey: ['network-proxy', serverId],
+    queryFn: () => client.get('/api/network/proxy', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const connStats = connData ? flattenConnectionStats(connData) : {}

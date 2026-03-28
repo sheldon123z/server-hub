@@ -4,6 +4,7 @@ import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
+import { useServerStore } from '@/stores/serverStore'
 
 /* ---------- types ---------- */
 
@@ -170,16 +171,17 @@ function ExpressionValidator() {
 
 function AddJobForm({ cronUser }: { cronUser: string }) {
   const qc = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [schedule, setSchedule] = useState('')
   const [command, setCommand] = useState('')
   const [comment, setComment] = useState('')
   const [open, setOpen] = useState(false)
 
   const addMut = useMutation({
-    mutationFn: () => client.post('/api/cron/jobs', { cron_user: cronUser, schedule, command, comment }).then((r) => r.data),
+    mutationFn: () => client.post('/api/cron/jobs', { cron_user: cronUser, schedule, command, comment }, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => {
       toast.success('任务已添加')
-      qc.invalidateQueries({ queryKey: ['cron', cronUser] })
+      qc.invalidateQueries({ queryKey: ['cron', cronUser, serverId] })
       setSchedule('')
       setCommand('')
       setComment('')
@@ -221,29 +223,30 @@ function AddJobForm({ cronUser }: { cronUser: string }) {
 
 function JobTable({ cronUser }: { cronUser: string }) {
   const qc = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [editingJob, setEditingJob] = useState<CronJob | null>(null)
   const [newSchedule, setNewSchedule] = useState('')
 
   const { data, isLoading } = useQuery<CronListResponse>({
-    queryKey: ['cron', cronUser],
-    queryFn: () => client.get(cronUser === 'root' ? '/api/cron/root' : '/api/cron/').then((r) => r.data),
+    queryKey: ['cron', cronUser, serverId],
+    queryFn: () => client.get(cronUser === 'root' ? '/api/cron/root' : '/api/cron/', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const toggleMut = useMutation({
-    mutationFn: (job: CronJob) => client.put('/api/cron/jobs/toggle', { cron_user: cronUser, schedule: job.schedule, command: job.command, enabled: !job.enabled }),
-    onSuccess: () => { toast.success('状态已更新'); qc.invalidateQueries({ queryKey: ['cron', cronUser] }) },
+    mutationFn: (job: CronJob) => client.put('/api/cron/jobs/toggle', { cron_user: cronUser, schedule: job.schedule, command: job.command, enabled: !job.enabled }, { params: { server_id: serverId } }),
+    onSuccess: () => { toast.success('状态已更新'); qc.invalidateQueries({ queryKey: ['cron', cronUser, serverId] }) },
     onError: () => toast.error('操作失败'),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (job: CronJob) => client.delete('/api/cron/jobs', { data: { cron_user: cronUser, schedule: job.schedule, command: job.command } }),
-    onSuccess: () => { toast.success('任务已删除'); qc.invalidateQueries({ queryKey: ['cron', cronUser] }) },
+    mutationFn: (job: CronJob) => client.delete('/api/cron/jobs', { data: { cron_user: cronUser, schedule: job.schedule, command: job.command }, params: { server_id: serverId } }),
+    onSuccess: () => { toast.success('任务已删除'); qc.invalidateQueries({ queryKey: ['cron', cronUser, serverId] }) },
     onError: () => toast.error('删除失败'),
   })
 
   const editMut = useMutation({
-    mutationFn: () => client.put('/api/cron/schedule', { cron_user: cronUser, old_schedule: editingJob!.schedule, command: editingJob!.command, new_schedule: newSchedule }),
-    onSuccess: () => { toast.success('已更新'); setEditingJob(null); qc.invalidateQueries({ queryKey: ['cron', cronUser] }) },
+    mutationFn: () => client.put('/api/cron/schedule', { cron_user: cronUser, old_schedule: editingJob!.schedule, command: editingJob!.command, new_schedule: newSchedule }, { params: { server_id: serverId } }),
+    onSuccess: () => { toast.success('已更新'); setEditingJob(null); qc.invalidateQueries({ queryKey: ['cron', cronUser, serverId] }) },
     onError: () => toast.error('更新失败'),
   })
 
@@ -315,9 +318,11 @@ function JobTable({ cronUser }: { cronUser: string }) {
 }
 
 function HistorySection({ cronUser }: { cronUser: string }) {
+  const serverId = useServerStore((s) => s.selectedServerId)
+
   const { data, isLoading } = useQuery<{ entries: HistoryEntry[]; count: number }>({
-    queryKey: ['cron-history', cronUser],
-    queryFn: () => client.get('/api/cron/history', { params: { pattern: '', hours: 24 } }).then((r) => r.data),
+    queryKey: ['cron-history', cronUser, serverId],
+    queryFn: () => client.get('/api/cron/history', { params: { pattern: '', hours: 24, server_id: serverId } }).then((r) => r.data),
   })
 
   if (isLoading) return <p className="text-text3 text-sm">加载中...</p>
@@ -352,23 +357,24 @@ function HistorySection({ cronUser }: { cronUser: string }) {
 export default function CronPage() {
   const currentUser = useAuthStore((s) => s.user)
   const currentUsername = currentUser?.username ?? 'zhengxiaodong'
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [activeTab, setActiveTab] = useState('user')
   const [section, setSection] = useState<'jobs' | 'history'>('jobs')
 
   const backupMut = useMutation({
-    mutationFn: (cronUser: string) => client.post('/api/cron/backup', null, { params: { cron_user: cronUser } }).then((r) => r.data),
+    mutationFn: (cronUser: string) => client.post('/api/cron/backup', null, { params: { cron_user: cronUser, server_id: serverId } }).then((r) => r.data),
     onSuccess: (d: { path: string }) => toast.success(`备份已保存: ${d.path}`),
     onError: () => toast.error('备份失败'),
   })
 
   // Fetch both user and root jobs for stat cards
   const { data: userJobsData } = useQuery<CronListResponse>({
-    queryKey: ['cron', ''],
-    queryFn: () => client.get('/api/cron/').then((r) => r.data),
+    queryKey: ['cron', '', serverId],
+    queryFn: () => client.get('/api/cron/', { params: { server_id: serverId } }).then((r) => r.data),
   })
   const { data: rootJobsData } = useQuery<CronListResponse>({
-    queryKey: ['cron', 'root'],
-    queryFn: () => client.get('/api/cron/root').then((r) => r.data),
+    queryKey: ['cron', 'root', serverId],
+    queryFn: () => client.get('/api/cron/root', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const cronUser = activeTab === 'root' ? 'root' : ''

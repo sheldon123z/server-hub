@@ -9,8 +9,26 @@ router = APIRouter(prefix="/api/logs", tags=["日志查看"])
 
 
 @router.get("/files")
-async def get_log_files(user=Depends(require_role("admin"))):
+async def get_log_files(
+    server_id: str = Query(default="local", description="目标服务器"),
+    user=Depends(require_role("admin")),
+):
     """List all discoverable log files in configured directories."""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(
+            "find /var/log -maxdepth 2 -type f -name '*.log' -o -name 'syslog' -o -name 'auth.log' 2>/dev/null | head -50",
+            timeout=10,
+        )
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        files = [
+            {"path": f.strip(), "name": f.strip().split("/")[-1]}
+            for f in result["data"].get("output", "").strip().splitlines()
+            if f.strip()
+        ]
+        return {"files": files, "count": len(files)}
     files = list_log_files()
     return {"files": files, "count": len(files)}
 
@@ -19,9 +37,20 @@ async def get_log_files(user=Depends(require_role("admin"))):
 async def get_log_tail(
     path: str = Query(..., description="Log file path"),
     lines: int = Query(200, ge=1, le=10000, description="Number of lines"),
+    server_id: str = Query(default="local", description="目标服务器"),
     user=Depends(require_role("admin")),
 ):
     """Read the last N lines of a log file."""
+    if server_id != "local":
+        from modules.servers.agent_client import get_agent_client
+        # 基本路径安全检查 — 只允许 /var/log 下的文件
+        if not path.startswith("/var/log"):
+            raise HTTPException(status_code=403, detail="远程日志仅允许读取 /var/log 下的文件")
+        client = await get_agent_client(server_id)
+        result = await client.execute_command(f"tail -n {lines} {path} 2>&1", timeout=15)
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        return {"path": path, "lines": lines, "content": result["data"].get("output", "")}
     try:
         content = await tail_log(path, lines)
         return {"path": path, "lines": lines, "content": content}

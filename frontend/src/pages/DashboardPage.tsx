@@ -15,6 +15,7 @@ import {
 import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { useWebSocket, type MetricsData, type AlertData } from '@/hooks/useWebSocket'
+import { useServerStore } from '@/stores/serverStore'
 import { cn, formatBytes, formatPercent } from '@/lib/utils'
 import ErrorBoundary from '@/components/ErrorBoundary'
 
@@ -1032,11 +1033,12 @@ function NetworkDetail({ metrics, history }: { metrics: MetricsData; history: Me
 }
 
 function GpuDetail({ metrics, history }: { metrics: MetricsData; history: MetricsData[] }) {
+  const serverId = useServerStore((s) => s.selectedServerId)
   // All hooks MUST be called before any conditional return (Rules of Hooks)
   const { data: gpuData } = useQuery({
-    queryKey: ['gpu-processes'],
+    queryKey: ['gpu-processes', serverId],
     queryFn: async () => {
-      const res = await client.get<{ processes?: Array<{ pid: number; name: string; gpu_memory_usage: number | string }> }>('/api/monitoring/gpu')
+      const res = await client.get<{ processes?: Array<{ pid: number; name: string; gpu_memory_usage: number | string }> }>('/api/monitoring/gpu', { params: { server_id: serverId } })
       return res.data
     },
     refetchInterval: 10_000,
@@ -1121,11 +1123,12 @@ function HostDetail({ metrics, history }: { metrics: MetricsData; history: Metri
   const loadData = history.map((m) => (m.load?.['1min'] ?? 0))
   const cpuCount = metrics.cpu?.count ?? 0
 
+  const serverId = useServerStore((s) => s.selectedServerId)
   // Fetch additional system info (OS, kernel, CPU model) from overview endpoint
   const { data: sysInfo } = useQuery({
-    queryKey: ['system-info-detail'],
+    queryKey: ['system-info-detail', serverId],
     queryFn: async () => {
-      const res = await client.get<Record<string, unknown>>('/api/dashboard/overview')
+      const res = await client.get<Record<string, unknown>>('/api/dashboard/overview', { params: { server_id: serverId } })
       return res.data
     },
     staleTime: 300_000, // Cache for 5 min since this rarely changes
@@ -1173,12 +1176,13 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 // ---------------------------------------------------------------------------
 function ProcessTable({ sort = 'cpu' }: { sort?: 'cpu' | 'mem' }) {
   const queryClient = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const sortKey = sort === 'mem' ? 'by_mem' : 'by_cpu'
 
   const { data: processes } = useQuery({
-    queryKey: ['top-processes', sort],
+    queryKey: ['top-processes', sort, serverId],
     queryFn: async () => {
-      const res = await client.get<Record<string, Array<{ pid: number; name: string; user: string; cpu_percent: number; mem_rss_mb: number; cmdline: string }>>>('/api/monitoring/top-processes', { params: { limit: 15, sort } })
+      const res = await client.get<Record<string, Array<{ pid: number; name: string; user: string; cpu_percent: number; mem_rss_mb: number; cmdline: string }>>>('/api/monitoring/top-processes', { params: { limit: 15, sort, server_id: serverId } })
       return res.data[sortKey] ?? res.data.by_cpu ?? []
     },
     refetchInterval: 10_000,
@@ -1186,7 +1190,7 @@ function ProcessTable({ sort = 'cpu' }: { sort?: 'cpu' | 'mem' }) {
 
   const killMutation = useMutation({
     mutationFn: async ({ pid, username }: { pid: number; username: string }) => {
-      const res = await client.post(`/api/users/${username}/kill/${pid}`)
+      const res = await client.post(`/api/users/${username}/kill/${pid}`, null, { params: { server_id: serverId } })
       return res.data
     },
     onSuccess: (d: { message?: string }) => {
@@ -1252,10 +1256,11 @@ function ProcessTable({ sort = 'cpu' }: { sort?: 'cpu' | 'mem' }) {
 // Recent Alerts List
 // ---------------------------------------------------------------------------
 function RecentAlertsList() {
+  const serverId = useServerStore((s) => s.selectedServerId)
   const { data: recentAlerts } = useQuery({
-    queryKey: ['recent-alerts'],
+    queryKey: ['recent-alerts', serverId],
     queryFn: async () => {
-      const res = await client.get<RecentAlert[]>('/api/monitoring/alerts/recent', { params: { limit: 6 } })
+      const res = await client.get<RecentAlert[]>('/api/monitoring/alerts/recent', { params: { limit: 6, server_id: serverId } })
       return res.data ?? []
     },
     refetchInterval: 30_000,
@@ -1314,15 +1319,16 @@ function RecentAlertsList() {
 // Main Dashboard
 // ---------------------------------------------------------------------------
 export default function DashboardPage() {
-  const { metrics, history, connected, alerts } = useWebSocket()
+  const serverId = useServerStore((s) => s.selectedServerId)
+  const { metrics, history, connected, alerts } = useWebSocket(serverId)
   const [activeCard, setActiveCard] = useState<CardId | null>(null)
   const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('1')
 
   // Fallback: fetch snapshot if WS not connected
   const { data: fallbackMetrics } = useQuery({
-    queryKey: ['metrics-fallback'],
+    queryKey: ['metrics-fallback', serverId],
     queryFn: async () => {
-      const res = await client.get<MetricsData>('/api/monitoring/realtime')
+      const res = await client.get<MetricsData>('/api/monitoring/realtime', { params: { server_id: serverId } })
       return res.data
     },
     enabled: !connected && !metrics,
@@ -1331,9 +1337,9 @@ export default function DashboardPage() {
 
   // Alert summary
   const { data: alertSummary } = useQuery({
-    queryKey: ['alert-summary'],
+    queryKey: ['alert-summary', serverId],
     queryFn: async () => {
-      const res = await client.get<AlertSummary>('/api/monitoring/alerts/summary')
+      const res = await client.get<AlertSummary>('/api/monitoring/alerts/summary', { params: { server_id: serverId } })
       return res.data
     },
     refetchInterval: 30_000,
@@ -1341,9 +1347,9 @@ export default function DashboardPage() {
 
   // Docker container count (also used for overview charts)
   const { data: dockerContainers } = useQuery({
-    queryKey: ['docker-containers-list'],
+    queryKey: ['docker-containers-list', serverId],
     queryFn: async () => {
-      const res = await client.get<Array<{ name: string; state: string; image: string; status: string }>>('/api/docker/containers')
+      const res = await client.get<Array<{ name: string; state: string; image: string; status: string }>>('/api/docker/containers', { params: { server_id: serverId } })
       return res.data ?? []
     },
     refetchInterval: 30_000,
@@ -1352,9 +1358,9 @@ export default function DashboardPage() {
 
   // History data for overview system trend chart
   const { data: historyData } = useQuery({
-    queryKey: ['monitoring-history', historyPeriod],
+    queryKey: ['monitoring-history', historyPeriod, serverId],
     queryFn: async () => {
-      const res = await client.get<HistoryPoint[]>('/api/monitoring/history', { params: { metric: 'all', hours: Number(historyPeriod) } })
+      const res = await client.get<HistoryPoint[]>('/api/monitoring/history', { params: { metric: 'all', hours: Number(historyPeriod), server_id: serverId } })
       // The API returns raw HistoryPoint[] with `value` as a JSON string for metric=all
       return (res.data ?? []).map((item) => ({
         ...item,
@@ -1367,9 +1373,9 @@ export default function DashboardPage() {
 
   // Top processes for overview chart
   const { data: topProcessesData } = useQuery({
-    queryKey: ['top-processes-overview'],
+    queryKey: ['top-processes-overview', serverId],
     queryFn: async () => {
-      const res = await client.get<{ by_cpu: Array<{ name: string; cpu_percent: number; mem_rss_mb: number }> }>('/api/monitoring/top-processes', { params: { limit: 5 } })
+      const res = await client.get<{ by_cpu: Array<{ name: string; cpu_percent: number; mem_rss_mb: number }> }>('/api/monitoring/top-processes', { params: { limit: 5, server_id: serverId } })
       return res.data.by_cpu
     },
     refetchInterval: 15_000,
@@ -1475,10 +1481,11 @@ export default function DashboardPage() {
 type DockerContainer = { name: string; status: string; image: string; state: string }
 
 function DockerDetail() {
+  const serverId = useServerStore((s) => s.selectedServerId)
   const { data: containers } = useQuery<DockerContainer[]>({
-    queryKey: ['docker-containers-detail'],
+    queryKey: ['docker-containers-detail', serverId],
     queryFn: async (): Promise<DockerContainer[]> => {
-      const res = await client.get('/api/docker/containers')
+      const res = await client.get('/api/docker/containers', { params: { server_id: serverId } })
       const raw = res.data
       return Array.isArray(raw) ? raw : (raw?.containers ?? [])
     },

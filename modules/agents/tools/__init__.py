@@ -89,6 +89,12 @@ from modules.agents.tools.playbook import (
     playbook_search,
 )
 
+# ─── 服务器舰队管理 ───
+from modules.agents.tools.servers import (
+    server_list,
+    server_test_connectivity,
+)
+
 
 # ─── 工具注册表 ───
 
@@ -154,6 +160,9 @@ def get_server_tools(user_role: str = "admin") -> list:
         playbook_execute,
         playbook_list,
         playbook_search,
+        # 服务器舰队管理
+        server_list,
+        server_test_connectivity,
     ]
 
     if user_role == "admin":

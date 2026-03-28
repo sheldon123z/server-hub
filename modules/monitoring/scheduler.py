@@ -39,7 +39,7 @@ async def _collect_and_store():
         # 全量数据也通过 WS 广播
         try:
             from modules.monitoring.routes import ws_manager
-            await ws_manager.broadcast({"type": "metrics_full", "data": snapshot})
+            await ws_manager.broadcast({"type": "metrics_full", "server_id": "local", "data": snapshot})
         except Exception as e:
             logger.debug(f"WS全量广播跳过: {e}")
 
@@ -91,7 +91,7 @@ async def _ws_broadcast_loop():
                 snapshot = await asyncio.get_event_loop().run_in_executor(
                     None, collect_realtime_fast
                 )
-                await ws_manager.broadcast({"type": "metrics", "data": snapshot})
+                await ws_manager.broadcast({"type": "metrics", "server_id": "local", "data": snapshot})
             except Exception as e:
                 logger.error(f"WS广播失败: {e}")
         await asyncio.sleep(settings.ws_metrics_interval)
@@ -121,3 +121,96 @@ async def stop_scheduler():
 
     _scheduler_task = None
     _ws_task = None
+
+
+# ---------------------------------------------------------------------------
+# 远程服务器指标采集
+# ---------------------------------------------------------------------------
+
+_remote_task: asyncio.Task | None = None
+REMOTE_COLLECT_INTERVAL = 60  # seconds
+
+
+async def _remote_collect_loop():
+    """远程服务器指标采集循环 — 每 60s 从所有在线远程服务器获取指标"""
+    logger.info("远程指标采集循环已启动 (间隔: %ds)", REMOTE_COLLECT_INTERVAL)
+    while True:
+        try:
+            await _collect_remote_metrics()
+        except Exception as e:
+            logger.error("远程指标采集异常: %s", e)
+        await asyncio.sleep(REMOTE_COLLECT_INTERVAL)
+
+
+async def _collect_remote_metrics():
+    """从所有在线远程服务器采集指标并存储"""
+    db = await get_db()
+    rows = await (await db.execute(
+        "SELECT * FROM servers WHERE is_local = 0 AND status = 'online'"
+    )).fetchall()
+
+    if not rows:
+        return
+
+    from modules.servers.services import _row_to_dict
+    from modules.servers.agent_client import AgentClient
+
+    sem = asyncio.Semaphore(10)
+
+    async def collect_one(server_dict):
+        async with sem:
+            client = AgentClient(server_dict)
+            try:
+                result = await asyncio.wait_for(client.get_metrics(), timeout=15)
+                # AgentClient 返回 {"ok": true, "data": {...}} 格式
+                if not result.get("ok"):
+                    logger.debug("远程指标采集失败 [%s]: %s", server_dict["name"], result.get("error", ""))
+                    return
+                snapshot = result["data"]
+            except Exception as e:
+                logger.debug("远程指标采集异常 [%s]: %s", server_dict["name"], e)
+                return
+
+            # 存储到 metrics 表（带 server_id）
+            await db.execute(
+                "INSERT INTO metrics (metric_type, value_json, server_id) VALUES (?, ?, ?)",
+                ("all", json.dumps(snapshot, ensure_ascii=False), server_dict["id"]),
+            )
+
+            # 通过 WS 广播（带 server_id）
+            try:
+                from modules.monitoring.routes import ws_manager
+                await ws_manager.broadcast({
+                    "type": "metrics_full",
+                    "server_id": server_dict["id"],
+                    "data": snapshot,
+                })
+            except Exception as e:
+                logger.debug("远程指标WS广播跳过 [%s]: %s", server_dict["name"], e)
+
+    server_dicts = [_row_to_dict(r) for r in rows]
+    await asyncio.gather(*[collect_one(s) for s in server_dicts], return_exceptions=True)
+    await db.commit()
+
+
+async def start_remote_scheduler():
+    """启动远程服务器指标采集任务"""
+    global _remote_task
+
+    if _remote_task is not None and not _remote_task.done():
+        logger.warning("远程采集调度器已在运行中")
+        return
+
+    _remote_task = asyncio.create_task(_remote_collect_loop())
+    logger.info("远程指标采集调度器任务已创建")
+
+
+async def stop_remote_scheduler():
+    """停止远程服务器指标采集任务"""
+    global _remote_task
+
+    if _remote_task is not None and not _remote_task.done():
+        _remote_task.cancel()
+        logger.info("远程采集循环已停止")
+
+    _remote_task = None

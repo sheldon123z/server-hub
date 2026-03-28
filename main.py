@@ -101,9 +101,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("[ServerHub] 运维剧本系统启动失败 (非致命): %s", e)
 
+    # 启动服务器心跳监控
+    try:
+        from modules.servers.heartbeat import start_heartbeat
+        await start_heartbeat()
+        logger.info("[ServerHub] 服务器心跳监控已启动")
+    except Exception as e:
+        logger.warning("[ServerHub] 心跳监控启动失败 (非致命): %s", e)
+
+    # 启动远程指标采集
+    try:
+        from modules.monitoring.scheduler import start_remote_scheduler
+        await start_remote_scheduler()
+        logger.info("[ServerHub] 远程指标采集已启动")
+    except Exception as e:
+        logger.warning("[ServerHub] 远程指标采集启动失败 (非致命): %s", e)
+
     yield
 
     # 关闭
+    try:
+        from modules.servers.heartbeat import stop_heartbeat
+        await stop_heartbeat()
+    except Exception:
+        pass
+    try:
+        from modules.monitoring.scheduler import stop_remote_scheduler
+        await stop_remote_scheduler()
+    except Exception:
+        pass
     try:
         from modules.playbooks.scheduler import stop_playbook_scheduler
         await stop_playbook_scheduler()
@@ -128,6 +154,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ServerHub", lifespan=lifespan)
+
+# 服务 agent 安装文件（供远程 curl 下载）
+AGENT_DIR = Path(__file__).parent / "serverhub-agent"
+if AGENT_DIR.exists():
+    app.mount("/static/agent", StaticFiles(directory=str(AGENT_DIR)), name="agent-files")
 
 # 认证路由
 app.include_router(auth_router)
