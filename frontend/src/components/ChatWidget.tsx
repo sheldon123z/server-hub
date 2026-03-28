@@ -277,7 +277,11 @@ function ChatWidgetInner() {
             seenServerIds.current.add(sid)
           }
 
-          if (type === 'message') {
+          if (type === 'run.started') {
+            return
+          }
+
+          if (type === 'message' || type === 'message.final') {
             const rawContent = obj?.content ?? obj?.text ?? ''
             const content = typeof rawContent === 'string' ? rawContent
               : Array.isArray(rawContent) ? rawContent.map((b: any) => typeof b === 'string' ? b : b?.text ?? '').join('')
@@ -293,13 +297,13 @@ function ChatWidgetInner() {
               }
               return [...prev, { id: assistantId, role: 'assistant', content: assistantContent }]
             })
-          } else if (type === 'tool_call') {
+          } else if (type === 'tool_call' || type === 'tool.call') {
             const toolName = String(obj?.name ?? obj?.tool ?? 'tool')
             setMessages((prev) => [
               ...prev,
               { id: generateId(), role: 'tool', content: '', toolName },
             ])
-          } else if (type === 'tool_result') {
+          } else if (type === 'tool_result' || type === 'tool.result') {
             const resultContent = typeof data === 'string' ? data : String(obj?.content ?? obj?.result ?? '')
             if (resultContent) {
               setMessages((prev) => [
@@ -307,16 +311,20 @@ function ChatWidgetInner() {
                 { id: generateId(), role: 'tool_result', content: resultContent },
               ])
             }
-          } else if (type === 'approval_request') {
+          } else if (type === 'approval_request' || type === 'approval.request') {
             const description = String(obj?.description ?? obj?.message ?? '需要您的审批')
             const approvalId = String(obj?.approval_id ?? obj?.id ?? '')
             setMessages((prev) => [
               ...prev,
               { id: generateId(), role: 'approval', content: description, approvalId },
             ])
+          } else if (type === 'todo.update') {
+            return
+          } else if (type === 'run.completed') {
+            return
           } else if (type === 'done') {
             // Stream complete
-          } else if (type === 'error') {
+          } else if (type === 'error' || type === 'run.error') {
             const errMsg = typeof data === 'string' ? data : String(obj?.message ?? '请求出错')
             setMessages((prev) => [
               ...prev,

@@ -112,7 +112,9 @@ class TestSSHSafety:
 class TestSeedPlaybooks:
     def test_seed_data_valid(self):
         from modules.playbooks.seed import DEFAULT_PLAYBOOKS
-        assert len(DEFAULT_PLAYBOOKS) == 3
+        assert len(DEFAULT_PLAYBOOKS) >= 3
+        seed_ids = {pb["id"] for pb in DEFAULT_PLAYBOOKS}
+        assert {"vlan_info_collect", "docker_service_restart", "batch_server_health"}.issubset(seed_ids)
         for pb in DEFAULT_PLAYBOOKS:
             assert pb["id"]
             assert pb["name"]

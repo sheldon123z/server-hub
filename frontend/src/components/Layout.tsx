@@ -18,6 +18,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/panel_users': '面板用户',
   '/assets': '资产管理',
   '/agents': 'OpsAgent',
+  '/agents/studio': 'Agent Studio',
   '/playbooks': '运维剧本',
   '/servers': '服务器管理',
   '/fleet': '舰队总览',

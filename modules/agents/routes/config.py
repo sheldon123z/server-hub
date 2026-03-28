@@ -157,7 +157,7 @@ async def get_prompt(user=Depends(require_role("admin"))):
     custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
     is_custom = custom_path.exists()
     content = custom_path.read_text(encoding="utf-8") if is_custom else SYSTEM_PROMPT
-    return {"content": content, "is_custom": is_custom}
+    return {"content": content, "prompt": content, "is_custom": is_custom}
 
 
 @router.put("/admin/prompt")
@@ -166,9 +166,9 @@ async def update_prompt(request: Request, user=Depends(require_role("admin"))):
     from pathlib import Path
     from config import settings
     body = await request.json()
-    content = body.get("content", "")
+    content = body.get("content", body.get("prompt", ""))
     custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
-    if body.get("reset"):
+    if body.get("reset") or body.get("prompt") is None:
         custom_path.unlink(missing_ok=True)
         from modules.agents.deep_agent import reset_agent_cache
         reset_agent_cache()
@@ -184,9 +184,17 @@ async def list_subagents(user=Depends(require_role("admin"))):
     """获取所有 SubAgent 配置 + 可用工具列表"""
     from modules.agents.subagents import get_subagents_config, get_available_tools
     from modules.agents.llm import get_provider_status
+    subagents = get_subagents_config()
+    available_tools = get_available_tools()
+    for item in subagents:
+        if "model" not in item:
+            model_purpose = item.get("model_purpose")
+            item["model"] = None if not model_purpose else model_purpose
+    for tool in available_tools:
+        tool["risk_level"] = tool.get("risk")
     return {
-        "subagents": get_subagents_config(),
-        "available_tools": get_available_tools(),
+        "subagents": subagents,
+        "available_tools": available_tools,
         "providers": get_provider_status(),
     }
 

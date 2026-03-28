@@ -3,13 +3,16 @@ import type { ChatMessage, TodoItem } from '@/types/agent'
 
 interface ChatState {
   conversationId: string | null
+  currentRunId: string | null
   messages: ChatMessage[]
   todos: TodoItem[]
   isStreaming: boolean
   safetyMode: 'supervised' | 'autonomous'
+  selectedSkillId: string | null
 
   // Actions
   setConversationId: (id: string | null) => void
+  setCurrentRunId: (id: string | null) => void
   addMessage: (msg: ChatMessage) => void
   setMessages: (msgs: ChatMessage[]) => void
   removeMessage: (id: string) => void
@@ -17,6 +20,7 @@ interface ChatState {
   setTodos: (todos: TodoItem[]) => void
   setStreaming: (streaming: boolean) => void
   setSafetyMode: (mode: 'supervised' | 'autonomous') => void
+  setSelectedSkillId: (id: string | null) => void
   clearChat: () => void
 
   // Internal
@@ -27,15 +31,18 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversationId: null,
+  currentRunId: null,
   messages: [],
   todos: [],
   isStreaming: false,
   safetyMode: 'supervised',
+  selectedSkillId: null,
 
   _msgSeq: 0,
   _seenIds: new Set<string>(),
 
   setConversationId: (id) => set({ conversationId: id }),
+  setCurrentRunId: (id) => set({ currentRunId: id }),
 
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
 
@@ -63,12 +70,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setSafetyMode: (mode) => set({ safetyMode: mode }),
 
+  setSelectedSkillId: (id) => set({ selectedSkillId: id }),
+
   clearChat: () => {
     set({
       conversationId: null,
+      currentRunId: null,
       messages: [],
       todos: [],
       isStreaming: false,
+      selectedSkillId: null,
       _msgSeq: 0,
       _seenIds: new Set<string>(),
     })

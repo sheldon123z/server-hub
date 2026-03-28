@@ -19,8 +19,16 @@ try:
     from deepagents.backends.local_shell import LocalShellBackend
     from deepagents.backends.protocol import ExecuteResponse
 except ImportError:
-    LocalShellBackend = None  # type: ignore[assignment,misc]
-    ExecuteResponse = None  # type: ignore[assignment,misc]
+    class LocalShellBackend:  # type: ignore[override]
+        def __init__(self, **kwargs):
+            self._env = dict(os.environ)
+
+        def execute(self, command: str, *, timeout: int | None = None):
+            raise RuntimeError("deepagents.backends.local_shell unavailable in current environment")
+
+    class ExecuteResponse:  # type: ignore[override]
+        pass
+
     logging.getLogger(__name__).warning(
         "deepagents not installed — agent sandbox unavailable"
     )

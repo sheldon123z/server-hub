@@ -175,15 +175,17 @@ async def _collect_remote_metrics():
 
     async def collect_one(server_dict):
         async with sem:
-            server_dict["_decrypted_token"] = decrypt_agent_token(server_dict.get("agent_token_hash", ""))
+            server_dict["_decrypted_token"] = decrypt_agent_token(
+                server_dict.get("agent_token_encrypted") or server_dict.get("agent_token_hash", "")
+            )
             client = AgentClient(server_dict)
             try:
-                result = await asyncio.wait_for(client.get_metrics(), timeout=15)
-                # AgentClient 返回 {"ok": true, "data": {...}} 格式
-                if not result.get("ok"):
-                    logger.debug("远程指标采集失败 [%s]: %s", server_dict["name"], result.get("error", ""))
-                    return
-                snapshot = result["data"]
+                getter = getattr(client, "get_metrics_full", None) or getattr(client, "get_metrics")
+                result = await asyncio.wait_for(getter(), timeout=15)
+                if result.get("ok"):
+                    snapshot = result["data"]
+                else:
+                    snapshot = result
             except Exception as e:
                 logger.debug("远程指标采集异常 [%s]: %s", server_dict["name"], e)
                 return

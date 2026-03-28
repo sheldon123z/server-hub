@@ -13,6 +13,7 @@ from modules.servers.services import (
     add_server_to_group,
     create_group,
     create_server,
+    create_server_with_token,
     delete_group,
     delete_server,
     get_fleet_overview,
@@ -144,7 +145,7 @@ async def api_create_server(
 ):
     """注册新服务器，返回一次性可见的 agent token"""
     try:
-        server_id, agent_token = await create_server(body.model_dump(), created_by=user["username"])
+        server_id, agent_token = await create_server_with_token(body.model_dump(), created_by=user["username"])
     except Exception as e:
         if "UNIQUE" in str(e):
             raise HTTPException(status_code=409, detail=f"服务器名称 '{body.name}' 已存在")

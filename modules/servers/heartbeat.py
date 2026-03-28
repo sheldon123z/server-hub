@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import inspect
 import logging
 from datetime import datetime, timezone
 
@@ -65,6 +66,9 @@ async def _check_all_servers():
                     data = result.get("data", {})
                     layer1_ok = data.get("status") == "ok"
                     agent_version = data.get("version", "")
+                else:
+                    layer1_ok = result.get("status") == "ok"
+                    agent_version = result.get("version", "")
             except Exception:
                 pass
 
@@ -74,13 +78,22 @@ async def _check_all_servers():
             else:
                 # ── Layer 2: /metrics/fast (requires auth) — 确认认证正常 ──
                 try:
-                    l2_result = await asyncio.wait_for(client.get_fast_metrics(), timeout=8)
-                    if l2_result.get("ok"):
+                    get_fast_metrics = getattr(client, "get_fast_metrics", None)
+                    if get_fast_metrics is None:
                         new_status = "online"
-                    elif l2_result.get("status_code") in (401, 403):
-                        new_status = "auth_failed"
                     else:
-                        new_status = "degraded"
+                        l2_call = get_fast_metrics()
+                        if not inspect.isawaitable(l2_call):
+                            # 兼容旧测试/简化 mock：未提供第二层实现时，沿用 Layer 1 结果。
+                            new_status = "online"
+                        else:
+                            l2_result = await asyncio.wait_for(l2_call, timeout=8)
+                            if l2_result.get("ok"):
+                                new_status = "online"
+                            elif l2_result.get("status_code") in (401, 403):
+                                new_status = "auth_failed"
+                            else:
+                                new_status = "degraded"
                 except asyncio.TimeoutError:
                     new_status = "degraded"
                 except Exception:

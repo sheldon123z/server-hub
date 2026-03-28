@@ -109,8 +109,8 @@ async def get_server(server_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
-async def create_server(data: dict, created_by: str) -> tuple[str, str]:
-    """创建新服务器记录，返回 (server_id, plaintext_agent_token)"""
+async def create_server_with_token(data: dict, created_by: str) -> tuple[str, str]:
+    """创建新服务器记录，返回 (server_id, plaintext_agent_token)。"""
     db = await get_db()
     server_id = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
@@ -144,6 +144,12 @@ async def create_server(data: dict, created_by: str) -> tuple[str, str]:
     await db.commit()
     logger.info("服务器已创建: %s (%s) by %s", data["name"], server_id, created_by)
     return server_id, plaintext_token
+
+
+async def create_server(data: dict, created_by: str) -> str:
+    """创建新服务器记录，返回 server_id。"""
+    server_id, _ = await create_server_with_token(data, created_by)
+    return server_id
 
 
 async def rotate_agent_token(server_id: str) -> str:

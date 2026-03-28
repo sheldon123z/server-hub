@@ -1,15 +1,21 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, ShieldAlert } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Send, ShieldAlert, Square, Sparkles } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
+import client from '@/api/client'
 import { useChatStore } from '@/stores/chatStore'
 import { useSSEChat } from '@/hooks/useSSEChat'
-import client from '@/api/client'
-import type { ChatMessage } from '@/types/agent'
+import type { ChatMessage, SkillRecommendation } from '@/types/agent'
 import { MessageBubble } from './MessageBubble'
 import { TodoPanel } from './TodoPanel'
 import { SlashCommandMenu, type SlashCommandMenuHandle, generateHelpText } from './SlashCommandMenu'
 
-// --- ApprovalCard ---
+function pageContextFromPath(pathname: string): string {
+  const seg = pathname.replace(/^\//, '').split('/')[0]
+  return seg || 'dashboard'
+}
+
 function ApprovalCard({
   msg,
   onResolve,
@@ -22,19 +28,20 @@ function ApprovalCard({
   async function handle(action: 'approve' | 'reject') {
     if (!msg.approval_id) return
     setLoading(true)
-    onResolve(msg.approval_id, action)
+    await onResolve(msg.approval_id, action)
+    setLoading(false)
   }
 
   return (
     <div className="flex justify-start px-3">
       <div className="max-w-[85%] rounded-lg border border-yellow/40 bg-yellow/10 px-3 py-2.5">
-        <div className="flex items-center gap-2 text-yellow text-xs font-medium mb-1.5">
+        <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-yellow">
           <ShieldAlert size={14} />
           <span>需要审批</span>
         </div>
-        <div className="text-sm text-text mb-2">{msg.description || '确认执行此操作？'}</div>
+        <div className="mb-2 text-sm text-text">{msg.description || '确认执行此操作？'}</div>
         {msg.actions && msg.actions.length > 0 && (
-          <div className="text-xs text-text3 mb-2 font-mono bg-bg/50 rounded px-2 py-1">
+          <div className="mb-2 rounded bg-bg/50 px-2 py-1 font-mono text-xs text-text3">
             {msg.actions.map((a, i) => (
               <div key={i}>
                 {a.name}({JSON.stringify(a.args)})
@@ -46,14 +53,14 @@ function ApprovalCard({
           <button
             onClick={() => handle('approve')}
             disabled={loading}
-            className="px-3 py-1 text-xs rounded bg-green/20 text-green hover:bg-green/30 transition-colors disabled:opacity-50 cursor-pointer"
+            className="rounded bg-green/20 px-3 py-1 text-xs text-green transition-colors hover:bg-green/30 disabled:opacity-50"
           >
             批准
           </button>
           <button
             onClick={() => handle('reject')}
             disabled={loading}
-            className="px-3 py-1 text-xs rounded bg-red/20 text-red hover:bg-red/30 transition-colors disabled:opacity-50 cursor-pointer"
+            className="rounded bg-red/20 px-3 py-1 text-xs text-red transition-colors hover:bg-red/30 disabled:opacity-50"
           >
             拒绝
           </button>
@@ -63,36 +70,60 @@ function ApprovalCard({
   )
 }
 
-// --- TypingIndicator ---
 function TypingIndicator() {
   return (
     <div className="flex justify-start px-3">
-      <div className="flex items-center gap-1 bg-bg2 border border-border rounded-lg px-3 py-2">
-        <span className="w-1.5 h-1.5 rounded-full bg-text3 animate-bounce [animation-delay:0ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-text3 animate-bounce [animation-delay:150ms]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-text3 animate-bounce [animation-delay:300ms]" />
+      <div className="flex items-center gap-1 rounded-lg border border-border bg-bg2 px-3 py-2">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text3 [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text3 [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text3 [animation-delay:300ms]" />
       </div>
     </div>
   )
 }
 
-// --- Main ChatPanel ---
 export function ChatPanel() {
-  const { messages, isStreaming, removeMessage, pushMsg } = useChatStore()
-  const { sendMessage } = useSSEChat()
-
+  const location = useLocation()
+  const {
+    messages,
+    isStreaming,
+    removeMessage,
+    pushMsg,
+    selectedSkillId,
+    setSelectedSkillId,
+  } = useChatStore()
+  const { sendMessage, cancel } = useSSEChat()
   const [input, setInput] = useState('')
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
+  const pageContext = pageContextFromPath(location.pathname)
 
-  // Auto-scroll on new messages
+  const trimmedInput = input.trim()
+
+  const { data: recommendations } = useQuery({
+    queryKey: ['skill-recommendations', pageContext, trimmedInput],
+    queryFn: async () => {
+      if (!trimmedInput) return [] as SkillRecommendation[]
+      const { data } = await client.get<{ items: SkillRecommendation[] }>('/api/agents/skills/recommendations', {
+        params: { message: trimmedInput, page_context: pageContext },
+      })
+      return data.items
+    },
+    enabled: trimmedInput.length >= 2,
+    staleTime: 15_000,
+  })
+
+  const selectedRecommendation = useMemo(
+    () => recommendations?.find((item) => item.id === selectedSkillId) ?? null,
+    [recommendations, selectedSkillId],
+  )
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, isStreaming])
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
@@ -106,9 +137,9 @@ export function ChatPanel() {
       if (!msg || isStreaming) return
       setInput('')
       setShowSlashMenu(false)
-      sendMessage(msg)
+      sendMessage(msg, { pageContext, skillId: selectedSkillId })
     },
-    [input, isStreaming, sendMessage],
+    [input, isStreaming, pageContext, selectedSkillId, sendMessage],
   )
 
   const handleDelete = useCallback((id: string) => {
@@ -118,26 +149,19 @@ export function ChatPanel() {
   const handleResend = useCallback(
     (content: string, id: string) => {
       useChatStore.getState().removeMessagesFrom(id)
-      sendMessage(content)
+      sendMessage(content, { pageContext, skillId: selectedSkillId })
     },
-    [sendMessage],
+    [pageContext, selectedSkillId, sendMessage],
   )
 
   function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.target.value
     setInput(value)
-    if (value.startsWith('/')) {
-      setShowSlashMenu(true)
-    } else {
-      setShowSlashMenu(false)
-    }
+    setShowSlashMenu(value.startsWith('/'))
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Let slash menu handle navigation keys first
-    if (showSlashMenu && slashMenuRef.current?.handleKeyDown(e)) {
-      return
-    }
+    if (showSlashMenu && slashMenuRef.current?.handleKeyDown(e)) return
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -147,44 +171,30 @@ export function ChatPanel() {
   function handleSlashSelect(prompt: string) {
     if (!prompt) return
     setShowSlashMenu(false)
-
-    // /help: inject formatted help as an assistant message locally
     if (prompt === '__HELP__') {
       pushMsg({ role: 'assistant', content: generateHelpText() })
       setInput('')
       return
     }
-
     setInput(prompt)
-    // Auto-send if prompt is complete (no trailing space/colon suggesting user needs to add more)
     if (!prompt.endsWith(': ') && !prompt.endsWith(' ')) {
       handleSend(prompt)
     } else {
-      // Focus textarea for user to complete the command
       textareaRef.current?.focus()
     }
   }
 
   async function handleApproval(approvalId: string, action: 'approve' | 'reject') {
     try {
-      await client.post(`/api/agents/approvals/${approvalId}`, {
-        action,
-        reason: '',
-      })
-      // Remove the approval message
+      const { data } = await client.post(`/api/agents/approvals/${approvalId}`, { action, reason: '' })
       const approvalMsg = messages.find((m) => m.approval_id === approvalId)
       if (approvalMsg) removeMessage(approvalMsg._id)
-
-      // Add result message
       pushMsg({
         role: 'assistant',
-        content: action === 'approve' ? '操作已批准，正在执行...' : '操作已被拒绝',
+        content: data?.result || (action === 'approve' ? '操作已批准，正在执行...' : '操作已被拒绝'),
       })
     } catch {
-      pushMsg({
-        role: 'assistant',
-        content: '审批请求处理失败',
-      })
+      pushMsg({ role: 'assistant', content: '审批请求处理失败' })
     }
   }
 
@@ -203,47 +213,68 @@ export function ChatPanel() {
             />
           </div>
         )
-
       case 'approval':
-        return (
-          <ApprovalCard
-            key={msg._id}
-            msg={msg}
-            onResolve={handleApproval}
-          />
-        )
-
+        return <ApprovalCard key={msg._id} msg={msg} onResolve={handleApproval} />
       default:
         return null
     }
   }
 
   return (
-    <div className="flex flex-col h-full min-w-0">
-      {/* Message list */}
-      <div className="flex-1 overflow-y-auto flex flex-col gap-2.5 py-3">
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="flex-1 overflow-y-auto py-3">
         {messages.length === 0 && !isStreaming && (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex h-full items-center justify-center">
             <div className="text-center text-text3">
-              <div className="text-3xl mb-2">&#129302;</div>
+              <div className="mb-2 text-3xl">&#129302;</div>
               <div className="text-sm">OpsAgent 运维助手</div>
-              <div className="text-xs mt-1">输入消息开始对话</div>
+              <div className="mt-1 text-xs">输入消息开始对话</div>
             </div>
           </div>
         )}
-
-        {messages.map(renderMessage)}
-
+        <div className="flex flex-col gap-2.5">{messages.map(renderMessage)}</div>
         {isStreaming && <TypingIndicator />}
-
         <div ref={bottomRef} />
       </div>
 
-      {/* Todo panel */}
       <TodoPanel />
 
-      {/* Input area */}
       <div className="border-t border-border px-3 py-2.5">
+        {!!recommendations?.length && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {recommendations.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSelectedSkillId(item.id)}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors',
+                  selectedSkillId === item.id
+                    ? 'border-accent bg-accent-dim text-accent'
+                    : 'border-border bg-bg2 text-text2 hover:border-accent/40 hover:text-text',
+                )}
+              >
+                <Sparkles size={12} />
+                {item.name}
+              </button>
+            ))}
+            {selectedSkillId && (
+              <button
+                type="button"
+                onClick={() => setSelectedSkillId(null)}
+                className="rounded-full border border-border px-2.5 py-1 text-xs text-text3 transition-colors hover:text-text"
+              >
+                清除技能
+              </button>
+            )}
+          </div>
+        )}
+        {selectedRecommendation && (
+          <div className="mb-2 rounded-lg border border-accent/30 bg-accent-dim/40 px-3 py-2 text-xs text-text2">
+            <div className="mb-0.5 font-medium text-accent">{selectedRecommendation.name}</div>
+            <div>{selectedRecommendation.summary}</div>
+          </div>
+        )}
         <div className="relative flex items-end gap-2">
           <SlashCommandMenu
             ref={slashMenuRef}
@@ -260,26 +291,32 @@ export function ChatPanel() {
             placeholder="输入消息... (Shift+Enter 换行)"
             rows={1}
             className={cn(
-              'flex-1 resize-none rounded-lg px-3 py-2.5',
-              'bg-bg2 border border-border text-sm text-text',
-              'placeholder:text-text3 focus:outline-none focus:border-accent',
-              'transition-colors',
+              'flex-1 resize-none rounded-lg border border-border bg-bg2 px-3 py-2.5 text-sm text-text',
+              'placeholder:text-text3 focus:border-accent focus:outline-none',
             )}
             style={{ minHeight: '44px', maxHeight: '150px' }}
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={isStreaming || !input.trim()}
-            className={cn(
-              'shrink-0 p-2.5 rounded-lg transition-colors cursor-pointer',
-              isStreaming || !input.trim()
-                ? 'bg-border text-text3 cursor-not-allowed'
-                : 'bg-accent text-[#0f172a] hover:bg-accent/80',
-            )}
-            title="发送"
-          >
-            <Send size={18} />
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={() => void cancel()}
+              className="shrink-0 rounded-lg bg-red/20 p-2.5 text-red transition-colors hover:bg-red/30"
+              title="取消"
+            >
+              <Square size={18} />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim()}
+              className={cn(
+                'shrink-0 rounded-lg p-2.5 transition-colors',
+                !input.trim() ? 'cursor-not-allowed bg-border text-text3' : 'bg-accent text-[#0f172a] hover:bg-accent/80',
+              )}
+              title="发送"
+            >
+              <Send size={18} />
+            </button>
+          )}
         </div>
       </div>
     </div>
