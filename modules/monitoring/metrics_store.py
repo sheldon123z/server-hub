@@ -111,22 +111,24 @@ class MetricsStore:
         return result
 
     async def get_fleet_summary(self) -> dict:
-        """Get aggregate fleet metrics summary."""
+        """Get aggregate fleet metrics summary.
+        遍历所有已注册服务器（非仅有 metrics 的），新注册无数据的也会显示。
+        """
         fleet_latest = await self.query_fleet_latest()
-        if not fleet_latest:
-            return {"total_servers": 0}
 
-        # Load server info for names/status
+        # Load ALL registered servers (not just those with metrics)
         db = await get_db()
         server_rows = await (await db.execute("SELECT id, name, status FROM servers")).fetchall()
-        server_info = {r[0]: {"name": r[1], "status": r[2]} for r in server_rows}
+        if not server_rows:
+            return {"servers": [], "aggregate": {"total_servers": 0, "online": 0, "offline": 0, "degraded": 0}}
 
         servers = []
         total_cpu = total_mem = total_disk = 0
         count = 0
 
-        for sid, metrics in fleet_latest.items():
-            info = server_info.get(sid, {"name": sid, "status": "unknown"})
+        for row in server_rows:
+            sid, name, status = row[0], row[1], row[2]
+            metrics = fleet_latest.get(sid, {})
             cpu = metrics.get("cpu", {}).get("overall_percent", 0) if isinstance(metrics.get("cpu"), dict) else 0
             mem = metrics.get("memory", {}).get("percent", 0) if isinstance(metrics.get("memory"), dict) else 0
             disk_parts = metrics.get("disk", {}).get("partitions", []) if isinstance(metrics.get("disk"), dict) else []
@@ -136,17 +138,17 @@ class MetricsStore:
 
             servers.append({
                 "id": sid,
-                "name": info["name"],
-                "status": info["status"],
+                "name": name,
+                "status": status,
                 "cpu_percent": round(cpu, 1),
                 "memory_percent": round(mem, 1),
                 "disk_percent": round(disk, 1),
                 "gpu_percent": round(gpu, 1),
-                "hostname": metrics.get("hostname", ""),
+                "hostname": metrics.get("hostname", name),
                 "uptime": metrics.get("uptime", 0),
             })
 
-            if info["status"] == "online":
+            if status == "online":
                 total_cpu += cpu
                 total_mem += mem
                 total_disk += disk

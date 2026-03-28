@@ -82,8 +82,7 @@ async def init_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_metrics_type_time
             ON metrics(metric_type, timestamp);
-        CREATE INDEX IF NOT EXISTS idx_metrics_server_time
-            ON metrics(server_id, timestamp);
+        -- idx_metrics_server_time 在 _ensure_column 添加 server_id 后创建
 
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -429,6 +428,10 @@ async def init_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "notifications", "channel_id", "TEXT")
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
+    # server_id 列就绪后才能创建复合索引
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)"
+    )
     # Issue #8: agent_token_hash 实际存 Fernet 加密值而非 hash，新增正确命名的字段
     # 不能 ALTER TABLE RENAME COLUMN (旧版 SQLite 不支持)，所以新增并双写
     await _ensure_column(db, "servers", "agent_token_encrypted", "TEXT")

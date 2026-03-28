@@ -393,7 +393,7 @@ async def log_tail(
     """读取日志文件末尾 — 路径限制在 /var/log 下，无 shell 注入"""
     # 路径安全: 解析真实路径，防止符号链接逃逸
     resolved = os.path.realpath(path)
-    if not resolved.startswith("/var/log"):
+    if not (resolved.startswith("/var/log/") or resolved == "/var/log"):
         raise HTTPException(status_code=403, detail="路径限制在 /var/log 下")
 
     result = await _safe_exec(
