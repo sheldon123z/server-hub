@@ -86,7 +86,7 @@ npm run build                # 生产构建 → frontend/dist/
 modules/agents/
 ├── deep_agent.py    → 工厂函数，组装 model + tools + backend + middleware + subagents + memory + store
 ├── llm.py           → 8 家 LLM 服务商注册表，parse_model_id("provider:model")
-├── tools/           → 39 个 @tool 服务器管理工具（10 个子模块：system/docker/services/users/cron/assets/knowledge/security/notifications/scripts）
+├── tools/           → 50+ 个 @tool 服务器管理工具（11 个子模块：system/docker/services/users/cron/assets/knowledge/security/notifications/scripts/servers）
 ├── subagents/       → 6 个 SubAgent 定义（researcher/log-analyzer/security-auditor/correlation-analyzer/ops-scheduler/knowledge-retriever）+ 配置管理
 ├── async_graphs/    → 3 个异步 SubAgent 图（researcher/security-auditor/correlation-analyzer）
 ├── lg_compat.py     → LangGraph 兼容 HTTP 服务器（异步任务执行）
@@ -160,7 +160,33 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - `data/agent-checkpoints.db` — LangGraph checkpoint（agent 会话状态持久化）
 - `data/agent-store.db` — AsyncSqliteStore（agent 结构化长期存储）
 
-表结构在 `database.py:init_tables()` 中定义，应用启动时自动创建。新增表: `alert_rules`, `alert_history`, `patrol_templates`, `cron_job_log`。
+表结构在 `database.py:init_tables()` 中定义，启动时自动创建 (30 张表)。关键新增: `servers`, `server_groups`, `server_group_members`; metrics 表含 `server_id` 列 (DEFAULT 'local')。
+
+**注意**: `_ensure_column` 添加新列后才能创建依赖该列的索引（不能放在同一个 `executescript` 中）。
+
+### 多服务器管理 (modules/servers/)
+
+Hub-Agent 架构：中心 Hub (本项目) + 每台被管理服务器部署 `serverhub-agent/` 守护进程。
+
+- `modules/servers/` — 服务器注册/分组/连通性测试/心跳(30s)
+- `modules/servers/agent_client.py` — HTTP 客户端 (Fernet Token 加密鉴权)
+- `modules/servers/heartbeat.py` — 三层健康检查: 存活→鉴权→业务
+- `serverhub-agent/` — 独立包 (FastAPI :9901, 12 个结构化端点, Bearer Token 认证)
+- `modules/monitoring/scheduler.py` — 本地采集(60s) + 远程采集(60s, 并行 executemany)
+- `modules/monitoring/metrics_store.py` — 指标抽象层 (fleet 查询/批量/聚合)
+- `frontend/src/pages/FleetDashboardPage.tsx` — 舰队总览 (概览网格/对比图表/热力图)
+
+**server_id 贯穿全栈**: TopBar 选择器 → Zustand serverStore → TanStack Query queryKey → API params → 后端 dispatch → AgentClient/本地执行
+
+**远程执行安全**: 所有远程操作通过 Agent 结构化端点 (create_subprocess_exec)，不用 shell 拼接。/execute 端点默认关闭。
+
+**Token 生命周期**: `secrets.token_urlsafe(32)` 生成 → Fernet 加密存 `agent_token_encrypted` → `decrypt_agent_token()` 解密 → Bearer header 发给 Agent
+
+### 启动架构 (main.py lifespan)
+
+关键路径（阻塞 ready）: `get_db()` → `ensure_admin()` → `discover_modules()` → 路由注册
+后台初始化（非阻塞）: 通知/监控/RAG/巡检/剧本/心跳/远程采集 — 各自 try/except，失败不影响服务
+健康检查: `GET /api/health` (无需认证) → `{"status": "ok", "subsystems": {...}, "uptime": N}`
 
 ### 四大管理模块能力
 
@@ -179,6 +205,17 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - **审计中间件**: 所有 POST/PUT/DELETE `/api/*` 请求自动记录到 `audit_log` 表
 - **Agent 安全层**: `supervised` 模式下危险操作触发 `interrupt_on` 审批；`autonomous` 模式（巡检用）不中断但仍有 Shell 黑名单底线防护
 - **Cron 服务**: Python 3.11 的 f-string 不支持反斜杠，匹配正则时先提取 match 对象再在 f-string 中引用
+
+## 已知陷阱
+
+- **LangChain content 格式**: `AIMessage.content` 可能是 `string` 或 `[{type:"text", text:"..."}]` 数组。前端必须用 `extractContent()` 统一处理，不能 `as string` 强转
+- **API 返回值类型**: 后端返回 `{items: [...]}` 对象包裹时，前端不能直接 `.map()`。所有 useQuery 必须加 `Array.isArray(raw) ? raw : raw?.fieldName ?? []`
+- **SQLite `_ensure_column` 时序**: 先 `_ensure_column` 添加列，再 `CREATE INDEX`。不能放在同一个 `executescript` 中
+- **路径安全**: Agent `/var/log` 路径检查必须用 `/var/log/` (带斜杠) 防止 `/var/log2` 绕过
+- **远程执行**: 所有远程命令必须通过 Agent 结构化端点 (`create_subprocess_exec`)，禁止 shell 拼接
+- **Fernet vs SHA256**: `agent_token_encrypted` 是 Fernet 可逆加密（需解密传给 Agent），不是 hash
+- **WebSocket 订阅**: Fleet 页面订阅 `["*"]`，Dashboard 只订阅 `[selectedServerId]`，默认 `{"local"}`
+- **`groups` 字段类型**: 后端返回 `string`（逗号分隔），前端需 `Array.isArray(x) ? x : x.split(',')` 兼容
 
 ## 开发原则
 
