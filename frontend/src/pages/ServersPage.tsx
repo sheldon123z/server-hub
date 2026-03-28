@@ -223,13 +223,14 @@ export default function ServersPage() {
           <div className="flex items-center gap-2 mb-3">
             <input
               type="text"
-              placeholder="搜索服务器..."
+              placeholder="搜索服务器\u2026"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="flex-1 bg-bg border border-border rounded-md px-3 py-1.5 text-xs text-text placeholder:text-text3 focus:outline-none focus:border-accent"
             />
             <button
               onClick={() => setShowAddModal(true)}
+              aria-label="添加服务器"
               className="bg-accent text-[#0f172a] px-3 py-1.5 rounded-md text-xs font-medium shrink-0"
             >
               +
@@ -240,11 +241,14 @@ export default function ServersPage() {
             <div className="text-text3 text-xs text-center py-8">无匹配服务器</div>
           ) : (
             filtered.map((srv) => (
-              <div
+              <button
                 key={srv.id}
+                type="button"
                 onClick={() => setSelectedId(srv.id)}
+                aria-pressed={selectedId === srv.id}
                 className={cn(
-                  'p-3 rounded-lg cursor-pointer mb-2 transition-colors border',
+                  'w-full text-left p-3 rounded-lg cursor-pointer mb-2 transition-colors border',
+                  'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2',
                   selectedId === srv.id
                     ? 'bg-accent-dim border-accent/30'
                     : 'bg-card border-border hover:border-border-light'
@@ -267,7 +271,7 @@ export default function ServersPage() {
                     ))}
                   </div>
                 )}
-              </div>
+              </button>
             ))
           )}
         </div>

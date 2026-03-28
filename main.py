@@ -57,10 +57,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("[ServerHub] LG Compat 路由注册失败: %s", e)
 
-    # ── 非阻塞后台初始化 ──
+    # ── 非阻塞后台初始化（并发 + per-task 超时） ──
     async def _init_background():
-        """后台初始化 — 不阻塞主服务 ready"""
-        tasks: list[tuple[str, object]] = [
+        """后台初始化 — 并发执行，单个子系统超时不拖后续"""
+        task_defs: list[tuple[str, object]] = [
             ("通知渠道", _init_notifications()),
             ("指标采集", _init_monitoring()),
             ("RAG 知识库", _init_rag()),
@@ -71,15 +71,22 @@ async def lifespan(app: FastAPI):
             ("心跳监控", _init_heartbeat()),
             ("远程指标采集", _init_remote_scheduler()),
         ]
-        for name, coro in tasks:
+        for name, _ in task_defs:
             _subsystem_status[name] = "starting"
+
+        async def _run_one(name: str, coro):
             try:
-                await coro
+                await asyncio.wait_for(coro, timeout=30)
                 _subsystem_status[name] = "ready"
                 logger.info("[ServerHub] %s 已启动", name)
+            except asyncio.TimeoutError:
+                _subsystem_status[name] = "timeout"
+                logger.warning("[ServerHub] %s 启动超时(30s)", name)
             except Exception as e:
                 _subsystem_status[name] = "failed"
                 logger.warning("[ServerHub] %s 启动失败 (非致命): %s", name, e)
+
+        await asyncio.gather(*(_run_one(n, c) for n, c in task_defs))
 
     _bg_init_task = asyncio.create_task(_init_background())
 

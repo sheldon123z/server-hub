@@ -159,8 +159,11 @@ export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
     }
   }, []) // Empty deps - connect logic is in refs
 
-  // Re-subscribe when serverFilter changes (while already connected)
+  // Re-subscribe when serverFilter changes — clear stale data + push new subscription
   useEffect(() => {
+    // Clear old server's data immediately so UI doesn't show stale metrics
+    setMetrics(null)
+    setHistory([])
     if (!connected) return
     const ids = serverFilter === '*' ? ['*'] : [serverFilter ?? 'local']
     subscribe(ids)

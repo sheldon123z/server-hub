@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts/core'
 import client from '@/api/client'
@@ -153,18 +153,37 @@ type TabKey = (typeof TABS)[number]['key']
 // Main Component
 // ---------------------------------------------------------------------------
 export default function FleetDashboardPage() {
-  const [tab, setTab] = useState<TabKey>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = (searchParams.get('tab') as TabKey) || 'overview'
+
+  const setTab = useCallback(
+    (key: TabKey) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        if (key === 'overview') {
+          next.delete('tab')
+        } else {
+          next.set('tab', key)
+        }
+        return next
+      })
+    },
+    [setSearchParams],
+  )
 
   return (
     <div className="space-y-4">
       {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-border pb-0">
+      <div className="flex items-center gap-1 border-b border-border pb-0" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
             className={cn(
               'px-4 py-2 text-sm transition-colors border-b-2 -mb-px',
+              'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2',
               tab === t.key
                 ? 'border-accent text-accent'
                 : 'border-transparent text-text3 hover:text-text2',
@@ -432,6 +451,7 @@ function CompareChart() {
                 onClick={() => setMetric(m)}
                 className={cn(
                   'px-2 py-1 text-xs rounded transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1',
                   metric === m
                     ? 'bg-accent text-white'
                     : 'bg-bg text-text3 hover:text-text2',
@@ -455,6 +475,7 @@ function CompareChart() {
                 onClick={() => setHours(p.hours)}
                 className={cn(
                   'px-2 py-1 text-xs rounded transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1',
                   hours === p.hours
                     ? 'bg-accent text-white'
                     : 'bg-bg text-text3 hover:text-text2',

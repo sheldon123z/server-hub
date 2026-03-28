@@ -60,11 +60,23 @@ class MetricsWSManager:
         logger.info(f"WebSocket 客户端断开, 订阅={subs} (当前: {len(self._connections)})")
 
     async def update_subscription(self, ws: WebSocket, server_ids: set[str]):
-        """Update a client's subscription list"""
+        """Update a client's subscription list and push cached data for new subscriptions"""
         if ws in self._connections:
             old = self._connections[ws]
             self._connections[ws] = server_ids
             logger.debug(f"WebSocket 订阅更新: {old} → {server_ids}")
+
+            # Push cached snapshots for newly subscribed servers
+            new_sids = server_ids - old if "*" not in old else set()
+            if "*" in server_ids:
+                new_sids = set(self._cache.keys()) - (old if "*" not in old else set())
+            for sid in new_sids:
+                if sid in self._cache:
+                    for snapshot in self._cache[sid]:
+                        try:
+                            await ws.send_json(snapshot)
+                        except Exception:
+                            return
 
     async def broadcast(self, message: dict):
         """Broadcast to subscribed clients only"""
@@ -166,8 +178,13 @@ async def get_realtime(
         raise HTTPException(status_code=404, detail=f"服务器 {server_id} 不存在")
 
     try:
-        snapshot = await asyncio.wait_for(client.get_metrics(), timeout=10)
-        return {"server_id": server_id, "data": snapshot}
+        result = await asyncio.wait_for(client.get_metrics(), timeout=10)
+        # AgentClient 返回 {"ok": true, "data": {...}} — 解包以保持与本机格式一致
+        if isinstance(result, dict) and "data" in result:
+            snapshot = result["data"]
+        else:
+            snapshot = result
+        return snapshot
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=502, detail=f"远程指标获取失败: {e}")
@@ -215,20 +232,39 @@ async def get_history(
 
 
 @router.get("/gpu")
-async def get_gpu_detail(user=Depends(get_current_user)):
-    """获取详细 GPU 信息"""
-    gpu_info = await asyncio.get_event_loop().run_in_executor(None, collect_gpu)
-    return gpu_info
+async def get_gpu_detail(
+    server_id: str = Query(default="local", description="服务器ID"),
+    user=Depends(get_current_user),
+):
+    """获取详细 GPU 信息，支持远程服务器"""
+    if server_id == "local":
+        gpu_info = await asyncio.get_event_loop().run_in_executor(None, collect_gpu)
+        return gpu_info
+
+    from modules.servers.agent_client import get_agent_client
+    try:
+        client = await get_agent_client(server_id)
+        result = await asyncio.wait_for(client.get_metrics(), timeout=10)
+        data = result.get("data", result) if isinstance(result, dict) else result
+        return data.get("gpu", {}) if isinstance(data, dict) else {}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"远程 GPU 信��获取失败: {e}")
 
 
 @router.get("/top-processes")
 async def get_top_processes(
     limit: int = Query(default=15, ge=1, le=50),
+    server_id: str = Query(default="local", description="服务器ID"),
     user=Depends(get_current_user),
 ):
-    """获取资源占用 Top N 进程排行"""
-    data = await asyncio.get_event_loop().run_in_executor(None, lambda: collect_top_processes(limit))
-    return data
+    """获取资源占用 Top N 进程排行，支持远程服务器"""
+    if server_id == "local":
+        data = await asyncio.get_event_loop().run_in_executor(None, lambda: collect_top_processes(limit))
+        return data
+
+    # 远程服务器暂不支持进程列表（Agent 端无专用端点）
+    return {"cpu": [], "memory": [], "gpu": [], "_remote": True, "_message": "远程服务器暂不支持进程排行"}
 
 
 @router.get("/inode")
@@ -239,7 +275,10 @@ async def get_inode(user=Depends(get_current_user)):
 
 
 @router.get("/alerts/summary")
-async def get_alerts_summary(user=Depends(get_current_user)):
+async def get_alerts_summary(
+    server_id: str = Query(default="local", description="服务器ID"),
+    user=Depends(get_current_user),
+):
     """获取告警摘要: 各级别数量 + 活跃规则数"""
     db = await get_db()
 
@@ -250,11 +289,12 @@ async def get_alerts_summary(user=Depends(get_current_user)):
     row = await cursor.fetchone()
     active_rules = row[0] if row else 0
 
-    # 最近24h各级别告警数
+    # 最近24h各级别告警数（按 server_id 过滤）
     cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
     cursor = await db.execute(
-        "SELECT severity, COUNT(*) FROM alert_history WHERE created_at >= ? GROUP BY severity",
-        (cutoff,),
+        "SELECT severity, COUNT(*) FROM alert_history "
+        "WHERE created_at >= ? AND (server_id = ? OR server_id IS NULL) GROUP BY severity",
+        (cutoff, server_id),
     )
     rows = await cursor.fetchall()
     by_severity = {r[0]: r[1] for r in rows}
@@ -273,22 +313,22 @@ async def get_alerts_summary(user=Depends(get_current_user)):
 async def get_alerts_recent(
     limit: int = Query(default=20, ge=1, le=100),
     severity: str | None = Query(default=None),
+    server_id: str = Query(default="local", description="服务器ID"),
     user=Depends(get_current_user),
 ):
     """获取最近的告警历史记录"""
     db = await get_db()
 
+    base_where = "WHERE (server_id = ? OR server_id IS NULL)"
+    params: list = [server_id]
     if severity:
-        cursor = await db.execute(
-            "SELECT * FROM alert_history WHERE severity = ? ORDER BY created_at DESC LIMIT ?",
-            (severity, limit),
-        )
-    else:
-        cursor = await db.execute(
-            "SELECT * FROM alert_history ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        )
+        base_where += " AND severity = ?"
+        params.append(severity)
 
+    cursor = await db.execute(
+        f"SELECT * FROM alert_history {base_where} ORDER BY created_at DESC LIMIT ?",
+        (*params, limit),
+    )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -357,10 +397,9 @@ async def fleet_compare(
 
     store = get_metrics_store()
     ids = [s.strip() for s in server_ids.split(",") if s.strip()]
-    result = {}
-    for sid in ids:
-        history = await store.query_history(sid, hours)
-        result[sid] = [extract_metric(h, metric) for h in history]
+    # 并行查询所有服务器的历史数据
+    histories = await asyncio.gather(*(store.query_history(sid, hours) for sid in ids))
+    result = {sid: [extract_metric(h, metric) for h in hist] for sid, hist in zip(ids, histories)}
     return {"server_ids": ids, "metric": metric, "hours": hours, "data": result}
 
 
@@ -373,19 +412,17 @@ async def fleet_heatmap(user=Depends(get_current_user)):
     fleet = await store.query_fleet_latest()
 
     metrics_list = ["cpu", "memory", "disk", "gpu", "swap"]
+
+    # 一次查询加载所有服务器名称，避免 N+1
+    db = await get_db()
+    name_rows = await (await db.execute("SELECT id, name FROM servers")).fetchall()
+    name_map = {r[0]: r[1] for r in name_rows}
+
     servers = []
     matrix = []
-
-    db = await get_db()
     for sid, data in fleet.items():
-        srv = await (await db.execute("SELECT name FROM servers WHERE id = ?", (sid,))).fetchone()
-        name = srv[0] if srv else sid
-        servers.append({"id": sid, "name": name})
-
-        row = []
-        for m in metrics_list:
-            row.append(extract_metric_percent(data, m))
-        matrix.append(row)
+        servers.append({"id": sid, "name": name_map.get(sid, sid)})
+        matrix.append([extract_metric_percent(data, m) for m in metrics_list])
 
     return {"servers": servers, "metrics": metrics_list, "matrix": matrix}
 
