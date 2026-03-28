@@ -44,5 +44,7 @@ modules/agents/graph.py
 .worktrees/
 .claude/worktrees/
 
-# Node (if any)
+# Node / Frontend
 node_modules/
+frontend/dist/
+frontend/node_modules/

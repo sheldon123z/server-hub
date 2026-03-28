@@ -1,0 +1,165 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Plus, X, MessageSquare } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useChatStore } from '@/stores/chatStore'
+import client from '@/api/client'
+import type { Conversation, ChatMessage } from '@/types/agent'
+
+async function fetchConversations(): Promise<Conversation[]> {
+  const { data } = await client.get('/api/agents/conversations')
+  return data
+}
+
+async function fetchConversation(
+  id: string,
+): Promise<{ conversation_id: string; messages: ChatMessage[]; todos: never[] }> {
+  const { data } = await client.get(`/api/agents/conversations/${id}`)
+  return data
+}
+
+async function deleteConversationApi(id: string): Promise<void> {
+  await client.delete(`/api/agents/conversations/${id}`)
+}
+
+export function ConversationSidebar() {
+  const queryClient = useQueryClient()
+  const { conversationId, setConversationId, setMessages, setTodos, clearChat } =
+    useChatStore()
+
+  const { data: conversations = [] } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: fetchConversations,
+    refetchInterval: 30_000,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteConversationApi,
+    onSuccess: (_data, deletedId) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      if (conversationId === deletedId) {
+        clearChat()
+      }
+    },
+  })
+
+  function handleNew() {
+    clearChat()
+  }
+
+  async function handleLoad(id: string) {
+    if (id === conversationId) return
+
+    try {
+      const detail = await fetchConversation(id)
+
+      // Map server messages to ChatMessage with stable _ids
+      const msgs: ChatMessage[] = (detail.messages ?? []).map(
+        (m: any, i: number) => ({
+          _id: 'h_' + i,
+          role: (m.role as ChatMessage['role']) ?? 'assistant',
+          content: typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b: any) => b?.text ?? '').join('') : String(m.content ?? ''),
+          tool: m.tool as string | undefined,
+          args: m.args as Record<string, unknown> | undefined,
+          approval_id: m.approval_id as string | undefined,
+          description: m.description as string | undefined,
+          actions: m.actions as ChatMessage['actions'] | undefined,
+          _serverId: m.id as string | undefined,
+        }),
+      )
+
+      setConversationId(detail.conversation_id)
+      setMessages(msgs)
+      setTodos(detail.todos ?? [])
+    } catch {
+      // Silently fail; user can retry
+    }
+  }
+
+  function handleDelete(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    deleteMutation.mutate(id)
+  }
+
+  function formatTime(iso: string) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffDays = Math.floor(diffMs / 86_400_000)
+
+    if (diffDays === 0) {
+      return d.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    }
+    if (diffDays === 1) return '昨天'
+    if (diffDays < 7) return diffDays + '天前'
+    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  }
+
+  return (
+    <div className="flex flex-col h-full w-[180px] border-r border-border bg-bg">
+      {/* New conversation button */}
+      <button
+        onClick={handleNew}
+        className={cn(
+          'flex items-center gap-2 mx-2 mt-2 mb-1 px-3 py-2 rounded-lg',
+          'text-sm font-medium text-accent',
+          'border border-dashed border-accent/40 hover:bg-accent-dim',
+          'transition-colors cursor-pointer',
+        )}
+      >
+        <Plus size={16} />
+        <span>新对话</span>
+      </button>
+
+      {/* Conversation list */}
+      <div className="flex-1 overflow-y-auto px-1 py-1">
+        {conversations.map((conv) => {
+          const isActive = conv.id === conversationId
+          return (
+            <div
+              key={conv.id}
+              onClick={() => handleLoad(conv.id)}
+              className={cn(
+                'group flex items-center gap-2 px-2.5 py-2 mx-1 my-0.5 rounded-lg cursor-pointer',
+                'transition-colors text-sm',
+                isActive
+                  ? 'bg-accent-dim text-accent'
+                  : 'text-text2 hover:bg-card hover:text-text',
+              )}
+            >
+              <MessageSquare size={14} className="shrink-0 opacity-50" />
+              <div className="flex-1 min-w-0">
+                <div className="truncate text-[13px] leading-tight">
+                  {conv.title || '新对话'}
+                </div>
+                <div className="text-[11px] text-text3 mt-0.5">
+                  {formatTime(conv.updated_at)}
+                </div>
+              </div>
+              <button
+                onClick={(e) => handleDelete(e, conv.id)}
+                className={cn(
+                  'shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100',
+                  'hover:bg-red/20 hover:text-red transition-all cursor-pointer',
+                )}
+                title="删除对话"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )
+        })}
+
+        {conversations.length === 0 && (
+          <div className="text-center text-text3 text-xs mt-8 px-3">
+            暂无对话记录
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

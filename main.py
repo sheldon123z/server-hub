@@ -1,8 +1,9 @@
 """
 ServerHub — NF5468M6 服务器管理系统
-FastAPI + Jinja2/HTMX + SQLite
+FastAPI + React 18 + SQLite
 """
 
+import os
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -13,9 +14,8 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from config import settings
 from database import get_db, close_db
@@ -129,12 +129,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ServerHub", lifespan=lifespan)
 
-# 静态文件
-app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
-
-# 模板
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
 # 认证路由
 app.include_router(auth_router)
 
@@ -148,358 +142,55 @@ app.include_router(ws_router)
 app.add_middleware(AuditMiddleware)
 
 
-# ─── 页面路由辅助 ───
+# ─── React 前端 sidebar API ───
 
-async def _get_user_or_redirect(request: Request):
-    """获取当前用户，未登录则返回 None"""
-    try:
-        return await get_current_user(request)
-    except HTTPException:
-        return None
+@app.get("/api/sidebar")
+async def sidebar_api(request: Request, user=Depends(get_current_user)):
+    return get_sidebar_items(user["role"])
 
 
-def _page_context(request: Request, user: dict, active_module: str, **extra):
-    """构建模板渲染上下文"""
-    sidebar = get_sidebar_items(user["role"])
-    # 查找模块显示名（供对话气泡组件显示）
-    display_name = active_module
-    for item in sidebar:
-        if item["name"] == active_module:
-            display_name = item["display_name"]
-            break
-    return {
-        "request": request,
-        "user": user,
-        "active_module": active_module,
-        "active_module_display": display_name,
-        "sidebar_items": sidebar,
-        **extra,
-    }
+# ─── React SPA 前端服务 ───
 
+FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 
-# ─── 登录页 ───
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-# ─── 仪表盘 ───
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    return templates.TemplateResponse("dashboard.html", _page_context(request, user, "dashboard"))
-
-
-# ─── 仪表盘局部刷新 ───
-
-@app.get("/partials/dashboard/cards", response_class=HTMLResponse)
-async def dashboard_cards_partial(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return HTMLResponse("", status_code=401)
-    from modules.dashboard.collectors import get_system_info
-    sys_info = get_system_info()
-    return templates.TemplateResponse("partials/_metrics_cards.html", {"request": request, "sys": sys_info})
-
-
-@app.get("/partials/dashboard/docker-brief", response_class=HTMLResponse)
-async def dashboard_docker_brief(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return HTMLResponse("", status_code=401)
-    html = ""
-    try:
-        from modules.docker.services import list_containers
-        containers = await list_containers()
-        for c in containers[:8]:
-            name = c.get("Names") or c.get("name", "")
-            status = c.get("Status") or c.get("status", "")
-            if "Up" in status:
-                badge = '<span class="badge badge-ok">运行中</span>'
-            elif "Restarting" in status:
-                badge = '<span class="badge badge-crit">重启中</span>'
-            else:
-                badge = '<span class="badge badge-idle">已停止</span>'
-            html += f"<tr><td>{name}</td><td>{badge}</td></tr>"
-    except Exception:
-        pass
-    return HTMLResponse(html or '<tr><td colspan="2" class="text-muted text-center">无数据</td></tr>')
-
-
-@app.get("/partials/dashboard/users-brief", response_class=HTMLResponse)
-async def dashboard_users_brief(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return HTMLResponse("", status_code=401)
-    html = ""
-    try:
-        from modules.users.services import get_user_stats
-        users = get_user_stats()
-        for u in users[:6]:
-            html += f'<tr><td><strong>{u["name"]}</strong></td><td>{u["mem_gb"]} GB</td><td>{u["proc_count"]}</td></tr>'
-    except Exception:
-        pass
-    return HTMLResponse(html or '<tr><td colspan="3" class="text-muted text-center">无数据</td></tr>')
-
-
-# ─── 监控页面 ───
-
-@app.get("/monitoring", response_class=HTMLResponse)
-async def monitoring_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    return RedirectResponse("/dashboard", status_code=302)
-
-
-# ─── 用户管理页面 ───
-
-@app.get("/users", response_class=HTMLResponse)
-async def users_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    from modules.users.services import get_user_stats, read_quotas, get_user_quota, get_quota_status
-    users = get_user_stats()
-    quotas = read_quotas()
-    qs = get_quota_status()
-    ctx = _page_context(request, user, "users",
-                        users=users, quotas=quotas, get_user_quota=get_user_quota,
-                        over_quota_count=qs["over_quota_count"],
-                        total_user_mem_gb=qs["total_mem_gb"])
-    return templates.TemplateResponse("users.html", ctx)
-
-
-# ─── Docker 管理页面 ───
-
-@app.get("/docker", response_class=HTMLResponse)
-async def docker_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-
-    containers, images, stacks = [], [], []
-    try:
-        from modules.docker.services import list_containers, list_images, list_compose_stacks
-        containers = await list_containers()
-        images = await list_images()
-        stacks = await list_compose_stacks()
-    except Exception as e:
-        logger.exception("[Docker] 加载失败: %s", e)
-
-    ctx = _page_context(request, user, "docker",
-                        containers=containers, images=images, stacks=stacks)
-    return templates.TemplateResponse("docker.html", ctx)
-
-
-# ─── 服务管理页面 ───
-
-@app.get("/services", response_class=HTMLResponse)
-async def services_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    services = []
-    try:
-        from modules.services.services import list_services
-        services = await list_services()
-    except Exception as e:
-        logger.exception("[Services] 加载失败: %s", e)
-    ctx = _page_context(request, user, "services", services=services)
-    return templates.TemplateResponse("services.html", ctx)
-
-
-# ─── Cron 页面 ───
-
-@app.get("/cron", response_class=HTMLResponse)
-async def cron_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    user_jobs, root_jobs = [], []
-    try:
-        from modules.cron.services import get_user_crontab, get_root_crontab
-        user_jobs = await get_user_crontab()
-        if user["role"] == "admin":
-            root_jobs = await get_root_crontab()
-    except Exception as e:
-        logger.exception("[Cron] 加载失败: %s", e)
-    ctx = _page_context(request, user, "cron", user_jobs=user_jobs, root_jobs=root_jobs)
-    return templates.TemplateResponse("cron.html", ctx)
-
-
-# ─── 网络管理页面 ───
-
-@app.get("/network", response_class=HTMLResponse)
-async def network_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-
-    ports, proxy, connections = [], {}, ""
-    try:
-        from modules.network.services import get_listening_ports, get_proxy_status, get_connections_summary
-        ports = await get_listening_ports()
-        proxy = await get_proxy_status()
-        connections = await get_connections_summary()
-    except Exception as e:
-        logger.exception("[Network] 加载失败: %s", e)
-
-    ctx = _page_context(request, user, "network", ports=ports, proxy=proxy, connections=connections)
-    return templates.TemplateResponse("network.html", ctx)
-
-
-# ─── 代理管理页面 ───
-
-@app.get("/proxy", response_class=HTMLResponse)
-async def proxy_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    proxy_instances = []
-    default_proxy_instance_id = None
-    try:
-        from modules.proxy.services import list_proxy_instances
-        payload = await list_proxy_instances()
-        proxy_instances = payload.get("instances", [])
-        default_proxy_instance_id = payload.get("default_instance_id")
-    except Exception as e:
-        logger.exception("[Proxy] 加载失败: %s", e)
-    ctx = _page_context(
-        request,
-        user,
-        "proxy",
-        proxy_instances=proxy_instances,
-        default_proxy_instance_id=default_proxy_instance_id,
+# 开发模式 CORS（Vite dev server 在不同端口时使用）
+if os.getenv("SERVERHUB_DEV"):
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
-    return templates.TemplateResponse("proxy.html", ctx)
+
+if FRONTEND_DIR.exists():
+    # React 构建产物的静态资源（JS/CSS/图片）
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="frontend-assets")
+
+    _favicon_path = FRONTEND_DIR / "favicon.svg"
+    _index_html = (FRONTEND_DIR / "index.html").read_text()
+
+    @app.get("/favicon.svg")
+    async def frontend_favicon():
+        if _favicon_path.exists():
+            return FileResponse(str(_favicon_path), media_type="image/svg+xml")
+        raise HTTPException(status_code=404)
+
+    # SPA catch-all: 所有非 API/非 WS 路径都返回 React index.html
+    @app.get("/{full_path:path}", response_class=HTMLResponse)
+    async def spa_fallback(full_path: str):
+        return HTMLResponse(_index_html)
+else:
+    logger.warning(
+        "[ServerHub] frontend/dist/ 不存在。请运行 cd frontend && npm run build 构建前端。"
+        "当前只能通过 API 端点访问。"
+    )
 
 
-# ─── 日志查看页面 ───
+# ─── 旧 Jinja2 页面路由已移除，前端统一由 React SPA 提供 ───
+# 旧模板文件已归档到 archive/templates_legacy/
 
-@app.get("/logs", response_class=HTMLResponse)
-async def logs_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    files = []
-    try:
-        from modules.logs.services import list_log_files
-        files = list_log_files()
-    except Exception as e:
-        logger.exception("[Logs] 加载失败: %s", e)
-    ctx = _page_context(request, user, "logs", files=files)
-    return templates.TemplateResponse("logs.html", ctx)
-
-
-# ─── 通知管理页面 ───
-
-@app.get("/notifications", response_class=HTMLResponse)
-async def notifications_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    channels, history = [], []
-    try:
-        from modules.notifications.services import get_channels, get_notification_history
-        channels = await get_channels()
-        history = await get_notification_history()
-    except Exception as e:
-        logger.exception("[Notifications] 加载失败: %s", e)
-    ctx = _page_context(request, user, "notifications", history=history, channels=channels)
-    return templates.TemplateResponse("notifications.html", ctx)
-
-
-# ─── 审计日志页面 ───
-
-@app.get("/audit", response_class=HTMLResponse)
-async def audit_page(request: Request, page: int = 1, limit: int = 50, username: str = ""):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    logs, total = [], 0
-    try:
-        from modules.audit.routes import _get_audit_logs
-        result = await _get_audit_logs(page, limit, username)
-        logs = result["items"]
-        total = result["total"]
-    except Exception as e:
-        logger.exception("[Audit] 加载失败: %s", e)
-    ctx = _page_context(request, user, "audit",
-                        logs=logs, total=total, page=page, limit=limit)
-    return templates.TemplateResponse("audit.html", ctx)
-
-
-# ─── 面板用户管理页面 ───
-
-@app.get("/panel_users", response_class=HTMLResponse)
-async def panel_users_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    from auth.user_store import list_users
-    panel_users = await list_users()
-    ctx = _page_context(request, user, "panel_users", panel_users=panel_users)
-    return templates.TemplateResponse("panel_users.html", ctx)
-
-
-# ─── 系统设置页面 ───
-
-@app.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    config = {
-        "metrics_interval_seconds": settings.metrics_interval_seconds,
-        "metrics_retention_days": settings.metrics_retention_days,
-        "managed_services": settings.managed_services,
-        "compose_stacks": settings.compose_stacks,
-        "log_dirs": settings.log_dirs,
-    }
-    ctx = _page_context(request, user, "settings", config=config)
-    return templates.TemplateResponse("settings.html", ctx)
-
-
-# ─── OpsAgent 页面 ───
-
-@app.get("/assets", response_class=HTMLResponse)
-async def assets_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    if user["role"] != "admin":
-        return RedirectResponse("/", status_code=302)
-    ctx = _page_context(request, user, "assets")
-    return templates.TemplateResponse("assets.html", ctx)
-
-
-@app.get("/agents", response_class=HTMLResponse)
-async def agents_page(request: Request):
-    user = await _get_user_or_redirect(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    ctx = _page_context(request, user, "agents")
-    return templates.TemplateResponse("agents.html", ctx)
 
 
 # ─── 入口 ───

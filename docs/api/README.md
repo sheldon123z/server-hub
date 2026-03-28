@@ -98,6 +98,11 @@ ServerHub 使用 **JWT Cookie 认证**。登录成功后，服务端通过 `Set-
 
 **合计**: 16 个模块，约 123 个端点（含 1 个 WebSocket）。
 
+### GET /api/sidebar
+- **说明**: 返回按用户角色过滤的侧边栏菜单项（React 前端使用）
+- **权限**: `user`（自动按角色过滤 admin-only 模块）
+- **响应**: `[{name, display_name, icon, category, required_role, order}]`
+
 ---
 
 ## 各模块端点明细

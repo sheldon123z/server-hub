@@ -1,0 +1,18 @@
+export const ROUTES = {
+  LOGIN: '/login',
+  DASHBOARD: '/dashboard',
+  USERS: '/users',
+  DOCKER: '/docker',
+  SERVICES: '/services',
+  CRON: '/cron',
+  NETWORK: '/network',
+  PROXY: '/proxy',
+  LOGS: '/logs',
+  NOTIFICATIONS: '/notifications',
+  SETTINGS: '/settings',
+  AUDIT: '/audit',
+  PANEL_USERS: '/panel_users',
+  ASSETS: '/assets',
+  AGENTS: '/agents',
+  MONITORING: '/monitoring',
+} as const

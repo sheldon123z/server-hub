@@ -1,6 +1,6 @@
 # 前端架构
 
-ServerHub 使用服务端渲染（Jinja2）+ 轻量交互（HTMX + Alpine.js）的技术栈，避免引入复杂的前端构建流程。
+ServerHub 使用 React 19 + TypeScript + Tailwind CSS 构建 SPA 前端，通过 Vite 构建工具链开发，FastAPI 作为静态文件服务和 API 后端。
 
 ---
 
@@ -8,441 +8,456 @@ ServerHub 使用服务端渲染（Jinja2）+ 轻量交互（HTMX + Alpine.js）�
 
 | 技术 | 版本 | 用途 |
 |------|------|------|
-| Jinja2 | FastAPI 内置 | 服务端模板渲染 |
-| HTMX | 2.x | 局部 HTML 刷新（无需编写 JS fetch）|
-| Alpine.js | 3.x | 客户端交互状态（对话、设置、下拉）|
-| ECharts | 5.x | 高性能图表可视化（仪表盘、趋势图）|
-| xterm.js | 5.x | WebSocket 终端（WebTerminal）|
-| Tabler Icons | 3.x | 侧边栏和页面图标（CDN Webfont）|
-
-所有 JS/CSS 以静态文件形式存储在 `static/` 目录，无需构建步骤。
-
-### 图标系统
-
-使用 [Tabler Icons](https://tabler.io/icons) Webfont，通过 CDN 引入：
-```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
-```
-
-在模板中使用：`<i class="ti ti-icon-name"></i>`
-
-各模块在 `MODULE_INFO["icon"]` 中定义图标名称，`base.html` 侧边栏自动渲染。
+| React | 19.2 | UI 组件框架 |
+| TypeScript | ~5.9 | 类型安全 |
+| Vite | 8.0 | 构建工具 + HMR |
+| Tailwind CSS | 4.2 | 样式系统（`@tailwindcss/vite` 插件） |
+| TanStack Query | 5.x | 服务端状态管理（API 缓存 + 自动刷新） |
+| Zustand | 5.x | 客户端状态（认证、聊天、侧边栏） |
+| React Router | 7.x | 客户端路由 + 代码分割 |
+| ECharts | 6.x (echarts-for-react) | 仪表盘图表 |
+| marked.js | 17.x | Markdown 渲染 |
+| highlight.js | 11.x | 代码语法高亮 |
+| mermaid.js | 11.x | 流程图/拓扑图渲染 |
+| DOMPurify | 3.x | HTML 安全净化 |
+| @xterm/xterm | 6.x | WebSocket 终端 |
+| Tabler Icons | 3.x | 侧边栏图标 (CDN Webfont) |
+| react-hot-toast | 2.x | Toast 通知 |
+| react-hook-form + zod | 7.x + 4.x | 表单校验 |
+| Axios | 1.x | HTTP 客户端 |
+| Lucide React | 1.x | 页面内图标 |
 
 ---
 
-## CSS 变量体系
+## 开发命令
 
-所有颜色和尺寸通过 CSS 自定义属性（CSS Variables）定义在 `static/css/app.css` 中，支持暗色主题。
+```bash
+cd frontend
+
+# 安装依赖
+npm install
+
+# 开发模式 (HMR, 端口 5173, API 代理到 localhost:9900)
+npm run dev
+
+# 类型检查 + 生产构建
+npm run build
+
+# 预览生产构建
+npm run preview
+
+# ESLint 检查
+npm run lint
+```
+
+开发模式下 Vite 将 `/api` 和 `/ws` 请求代理到 `http://localhost:9900`（FastAPI 后端）。
+
+---
+
+## 项目结构
+
+```
+frontend/src/
+├── main.tsx              # 入口：StrictMode + QueryClientProvider + BrowserRouter + Toaster
+├── App.tsx               # 路由表 + ProtectedRoute + 懒加载
+├── index.css             # Tailwind @theme 变量定义 + 全局样式
+├── api/
+│   ├── client.ts         # Axios 实例（baseURL、Cookie 认证、401 拦截）
+│   └── auth.ts           # 认证 API（login/logout/me/refresh）
+├── components/
+│   ├── Layout.tsx         # 全局布局：Sidebar + TopBar + Outlet + ChatWidget
+│   ├── Sidebar.tsx        # 侧边栏：从 /api/sidebar 获取菜单，fallback 到静态列表
+│   ├── TopBar.tsx         # 顶栏：页面标题
+│   ├── ChatWidget.tsx     # 浮动对话气泡（SSE 流式、可拖拽、最小化）
+│   └── ErrorBoundary.tsx  # React 错误边界
+├── hooks/
+│   ├── useAuth.ts         # 认证初始化 + 定时刷新 token
+│   ├── useSSEChat.ts      # AgentsPage 聊天 SSE 流（7 种事件类型）
+│   └── useWebSocket.ts    # 实时指标 WebSocket（60 点循环缓冲）
+├── stores/
+│   ├── authStore.ts       # Zustand：用户信息 + isAdmin() + isLoading
+│   ├── chatStore.ts       # Zustand：对话消息 + Todo + 流式状态 + 去重
+│   └── sidebarStore.ts    # Zustand：侧边栏折叠状态
+├── pages/
+│   ├── LoginPage.tsx
+│   ├── DashboardPage.tsx
+│   ├── UsersPage.tsx
+│   ├── DockerPage.tsx
+│   ├── ServicesPage.tsx
+│   ├── CronPage.tsx
+│   ├── NetworkPage.tsx
+│   ├── ProxyPage.tsx
+│   ├── LogsPage.tsx
+│   ├── NotificationsPage.tsx
+│   ├── SettingsPage.tsx
+│   ├── AuditPage.tsx
+│   ├── PanelUsersPage.tsx
+│   ├── AssetsPage.tsx
+│   └── agents/
+│       ├── AgentsPage.tsx          # 三栏主页面
+│       ├── ConversationSidebar.tsx  # 对话列表
+│       ├── ChatPanel.tsx           # 聊天主区域
+│       ├── MessageBubble.tsx       # 消息气泡（hover 操作栏）
+│       ├── MarkdownRenderer.tsx    # Markdown + Mermaid + Artifact 渲染
+│       ├── TodoPanel.tsx           # Todo 进度面板
+│       ├── SlashCommandMenu.tsx    # 快捷指令菜单
+│       ├── PatrolPanel.tsx         # 巡检标签页
+│       ├── AdminPanel.tsx          # 管理标签页
+│       ├── TerminalPanel.tsx       # xterm.js 终端
+│       └── SafetyToggle.tsx        # 安全模式切换
+├── lib/
+│   ├── markdown.ts        # marked.js 配置 + DOMPurify 净化
+│   ├── utils.ts           # cn() 等工具函数
+│   └── constants.ts       # 常量定义
+└── types/
+    ├── api.ts             # SidebarItem 等公共类型
+    ├── agent.ts           # ChatMessage, TodoItem 等 Agent 类型
+    ├── docker.ts          # Docker 相关类型
+    └── user.ts            # 用户相关类型
+```
+
+---
+
+## 暗色主题系统
+
+所有颜色和尺寸通过 Tailwind CSS 4 的 `@theme` 指令定义在 `src/index.css` 中，在组件中通过 `bg-bg`、`text-accent`、`border-border` 等 Tailwind 类名直接使用。
 
 ### 颜色变量
 
-| 变量 | 用途 |
-|------|------|
-| `--bg` | 背景色（页面底层）|
-| `--bg2` | 次级背景色（卡片、消息气泡）|
-| `--card` | 卡片背景 |
-| `--border` | 边框颜色 |
-| `--text` | 主文本颜色 |
-| `--text2` | 次级文本颜色 |
-| `--text3` | 三级文本（时间戳、提示）|
-| `--accent` | 强调色（蓝色，用于按钮、链接、高亮）|
-| `--accent-dim` | 强调色半透明版（激活状态背景）|
-| `--green` | 成功/正常状态 |
-| `--yellow` | 警告状态 |
-| `--red` | 错误/危险状态 |
+| Tailwind 类名 | 值 | 用途 |
+|---------------|-----|------|
+| `bg` | `#0a0f1a` | 页面底层背景 |
+| `bg2` | `#0f172a` | 次级背景（侧边栏、顶栏、消息气泡） |
+| `card` | `#1e293b` | 卡片背景 |
+| `card-hover` | `#253347` | 卡片悬停背景 |
+| `border` | `#334155` | 边框颜色 |
+| `border-light` | `#475569` | 次级边框 |
+| `accent` | `#38bdf8` | 强调色（按钮、链接、活跃状态） |
+| `accent-dim` | `rgba(56,189,248,0.15)` | 强调色半透明（选中背景） |
+| `green` | `#4ade80` | 成功/正常状态 |
+| `yellow` | `#fbbf24` | 警告状态 |
+| `red` | `#f87171` | 错误/危险状态 |
+| `orange` | `#fb923c` | 次级警告 |
+| `purple` | `#a78bfa` | 辅助色 |
+| `text` | `#e2e8f0` | 主文本颜色 |
+| `text2` | `#94a3b8` | 次级文本颜色 |
+| `text3` | `#64748b` | 三级文本（时间戳、提示） |
 
 ### 尺寸变量
 
-| 变量 | 值 | 用途 |
-|------|---|------|
-| `--sidebar-w` | 220px | 侧边栏宽度 |
-| `--header-h` | 56px | 顶栏高度 |
-| `--radius` | 8px | 卡片圆角 |
+| Tailwind 类名 | 值 | 用途 |
+|---------------|-----|------|
+| `sidebar` (spacing) | 220px | 侧边栏宽度（`w-sidebar`, `ml-sidebar`） |
+| `header` (spacing) | 56px | 顶栏高度 |
+| `default` (radius) | 8px | 默认圆角 |
 
 ---
 
-## 页面模板结构
+## 页面路由表
 
-### 模板继承链
+所有页面组件通过 `React.lazy()` 懒加载，由 `<Suspense>` 包裹显示加载状态。受保护路由通过 `<ProtectedRoute>` 检查 `authStore.user` 状态。
 
-```
-base.html
-    ├── dashboard.html     （仪表盘）
-    ├── monitoring.html    （监控图表）
-    ├── users.html         （用户管理）
-    ├── docker.html        （Docker 管理）
-    ├── services.html      （服务管理）
-    ├── network.html       （网络管理）
-    ├── logs.html          （日志查看）
-    ├── notifications.html （通知记录）
-    ├── audit.html         （审计日志）
-    ├── panel_users.html   （面板用户）
-    ├── proxy.html         （代理管理）
-    ├── settings.html      （系统设置）
-    ├── agents.html        （OpsAgent）
-    ├── assets.html        （资产台账）
-    ├── cron.html          （定时任务）
-    └── login.html         （登录页，不继承 base）
-```
-
-### 共享 CSS 组件
-
-以下组件定义在 `app.css` 中，供所有管理页面复用：
-
-| 组件 | 类名 | 说明 |
+| 路径 | 组件 | 说明 |
 |------|------|------|
-| 标签栏 | `.tab-bar` + `.tab-item` | 水平标签页导航，替代 `btn btn-sm` 模式 |
-| 开关 | `.toggle-switch` + `.toggle-slider` | 启用/禁用切换开关 |
-| 筛选栏 | `.filter-bar` | 搜索/筛选控件行 |
-| 统计网格 | `.page-stats` + `.page-stat-card` | 页面顶部统计卡片（自动响应式网格）|
-| 状态圆点 | `.status-dot` + `.status-dot-ok/warn/err/idle` | 彩色状态指示器（带发光效果）|
-| 日志高亮 | `.log-line-error/warn/info/debug` | 日志级别语法着色 |
-| 空状态 | `.empty-state` | 无数据占位提示 |
-
-### 登录页（login.html）
-
-登录页不继承 `base.html`，拥有独立的视觉设计：
-- **背景**: SVG 透视网格 + 抽象波形曲线动画 + Canvas 粒子网络 + 呼吸光斑
-- **登录卡片**: 玻璃拟态（`backdrop-filter: blur(20px)`）
-- **动画**: `prefers-reduced-motion` 全面适配
-- **无真实参数暴露**: 背景仅展示抽象装饰元素
+| `/login` | `LoginPage` | 登录页（不套 Layout） |
+| `/` | → `/dashboard` | 重定向 |
+| `/dashboard` | `DashboardPage` | 仪表盘（含 ErrorBoundary） |
+| `/users` | `UsersPage` | 用户管理 |
+| `/docker` | `DockerPage` | Docker 管理 |
+| `/services` | `ServicesPage` | 服务管理 |
+| `/cron` | `CronPage` | 定时任务 |
+| `/network` | `NetworkPage` | 网络状态 |
+| `/proxy` | `ProxyPage` | 代理管理 |
+| `/logs` | `LogsPage` | 日志查看 |
+| `/notifications` | `NotificationsPage` | 通知管理 |
+| `/settings` | `SettingsPage` | 系统设置 |
+| `/audit` | `AuditPage` | 审计日志 |
+| `/panel_users` | `PanelUsersPage` | 面板用户 |
+| `/assets` | `AssetsPage` | 资产管理 |
+| `/agents` | `AgentsPage` | AI OpsAgent |
+| `/monitoring` | → `/dashboard` | 重定向（兼容旧路由） |
 
 ---
 
-### 页面功能详述
+## 全局布局
 
-#### cron.html — 定时任务
+`Layout.tsx` 定义了所有受保护页面的统一结构：
 
-Alpine.js 组件 `cronManager()`，三标签页设计：
+```
+┌──────────────────────────────────────────────────────┐
+│  Sidebar (fixed, 220px)  │  TopBar (标题)            │
+│                          ├──────────────────────────│
+│  按分组渲染菜单            │                          │
+│  (从 /api/sidebar 获取)   │  <Outlet /> 页面内容      │
+│                          │                          │
+└──────────────────────────┴──────────────────────────┘
+                           + ChatWidget (浮动气泡)
+```
 
-| 标签 | 内容 | 权限 |
-|------|------|------|
-| 用户任务 | zhengxiaodong 的 crontab 列表 | user（只读）/ admin（编辑）|
-| Root 任务 | root 的 crontab 列表 | admin |
-| 执行历史 | 最近 24 小时 cron 执行记录（从 journal 获取），支持命令关键词过滤 | admin |
+- **Sidebar**: 通过 TanStack Query 从 `GET /api/sidebar` 获取菜单项，失败时 fallback 到硬编码的静态列表（按角色过滤）。使用 `<NavLink>` 自动高亮当前页面。
+- **TopBar**: 根据 `location.pathname` 映射页面标题（`PAGE_TITLES` 常量）。
+- **ChatWidget**: 除 `/agents` 页面外始终渲染的浮动对话气泡。
 
-**功能**：
-- **启禁 Toggle**：管理员可通过滑块开关启用/禁用单个 cron 任务（注释/取消注释方式）
-- **行内修改表达式**：点击 Cron 表达式列可编辑，修改后出现"保存"按钮；旁边有"快选"下拉（10 种常用预设：每5分钟、每小时、每天等）
-- **创建模态框**：选择目标用户（zhengxiaodong/root）、Cron 表达式（支持实时验证 + 中文描述 + 下次执行时间预览）、执行命令、备注；预设下拉快速填入
-- **删除**：逐条删除，带 `confirm` 确认
-- **备份**：按用户备份 crontab 到文件
+---
 
-#### users.html — 用户管理
+## 认证与鉴权
 
-Alpine.js 组件 `userManager()`，三标签页设计：
+### 认证流程
 
-| 标签 | 内容 | 权限 |
-|------|------|------|
-| 用户资源 | 活跃用户的内存/进程/GPU 使用量 + 配额对比 + Top 进程 | user（只读）/ admin（可终止进程）|
-| 配额管理 | user-quotas.conf 的可视化编辑（标识/内存上限/进程上限/备注）| user（只读）/ admin（编辑）|
-| 用户管理 | 所有 Linux 用户列表（UID/组/Shell/Home/最后登录）| admin |
+1. `main.tsx` 创建 `QueryClientProvider`，全局 staleTime 30s
+2. `App.tsx` 调用 `useAuth()` hook，通过 TanStack Query 请求 `GET /api/auth/me`
+3. 返回用户信息写入 `authStore`；401/403 清空用户状态
+4. `ProtectedRoute` 组件检查 `authStore.user`，未登录重定向到 `/login`
+5. 定时每 20 分钟调用 `POST /api/auth/refresh` 无感续期 access_token
 
-**功能**：
-- **状态徽章**：根据内存配额使用率显示"正常/警告/超限/空闲/无配额"
-- **单进程 Kill**：Top 进程列每行有"x"按钮，可终止指定 PID 的进程
-- **终止全部**：一键终止用户的所有进程（HTMX POST + confirm）
-- **登录历史弹窗**：模态框展示指定用户最近 30 条 `last` 命令输出
-- **创建用户模态框**：用户名、密码、附加组（逗号分隔）、Shell（bash/zsh/nologin）
-- **配额编辑**：行内 input 修改 + "保存全部"按钮批量提交；底部可添加新配额行；支持删除（default 除外）
-- **修改/删除用户**：非管理员用户可修改属性或删除（不删除 home 目录）
+### 状态管理
 
-#### docker.html — Docker 管理
+```typescript
+// authStore.ts
+interface AuthState {
+  user: UserInfo | null
+  isLoading: boolean
+  setUser: (user) => void
+  setLoading: (loading) => void
+  isAdmin: () => boolean     // 快捷判断角色
+}
+```
 
-Alpine.js 组件 `dockerManager()`，五标签页设计：
+### Cookie 自动携带
 
-| 标签 | 内容 | 数据来源 |
+Axios 实例 (`api/client.ts`) 配置 `withCredentials: true`，浏览器自动携带 `access_token` Cookie。SSE 请求使用 `fetch()` 的 `credentials: 'include'`。
+
+---
+
+## 数据获取模式
+
+### 读取数据 (TanStack Query)
+
+```typescript
+// 标准 GET 请求 — 自动缓存、重试、后台刷新
+const { data, isLoading } = useQuery({
+  queryKey: ['docker', 'containers'],
+  queryFn: () => client.get('/api/docker/containers').then(r => r.data),
+  refetchInterval: 15_000,  // 可选：轮询
+})
+```
+
+### 写入操作 (useMutation)
+
+```typescript
+const mutation = useMutation({
+  mutationFn: (body) => client.post('/api/docker/containers/nginx/restart', body),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['docker'] })  // 刷新相关缓存
+    toast.success('操作成功')
+  },
+})
+```
+
+### 缓存失效模式
+
+- 写操作成功后调用 `queryClient.invalidateQueries()` 刷新相关查询
+- SSE 聊天结束后刷新 `['conversations']` 查询
+- 全局 `staleTime: 30s`，侧边栏 `staleTime: 5min`
+
+---
+
+## 实时通信
+
+### WebSocket: useWebSocket
+
+连接 `/ws/metrics`，接收服务器实时指标。
+
+```typescript
+const { metrics, history, connected, alerts } = useWebSocket()
+```
+
+- **消息类型**: `metrics` / `metrics_full`（指标数据）、`alert`（告警推送）
+- **循环缓冲**: 维护最近 60 个数据点的 `history` 数组，用于 sparkline 趋势图
+- **自动重连**: 指数退避（1s → 2s → 4s → ... → 30s 上限）
+- **开发模式**: 直连 `hostname:9900`（绕过 Vite WS proxy 不稳定问题）
+
+### SSE: useSSEChat
+
+AgentsPage 的聊天使用 `POST /api/agents/chat` 发起 SSE 流。
+
+```typescript
+const { sendMessage } = useSSEChat()
+```
+
+**7 种 SSE 事件类型**:
+
+| 事件 | 说明 | 处理方式 |
 |------|------|---------|
-| 容器 | 容器列表（名称/镜像/状态/端口）+ 操作按钮 | 服务端 Jinja2 渲染 |
-| Compose 堆栈 | 堆栈列表（名称/路径/容器数/运行中）+ 重启/更新按钮 | 服务端 Jinja2 渲染 |
-| 镜像 | 镜像列表（仓库/标签/大小/创建时间）| 服务端 Jinja2 渲染 |
-| 网络 | Docker 网络列表（名称/ID/驱动/范围）| Alpine.js fetch 动态加载 |
-| 卷 | Docker 卷列表（名称/驱动/挂载点）| Alpine.js fetch 动态加载 |
+| `message` | 助手文本消息 | 追加到消息列表 |
+| `tool_call` | 工具调用 | 显示工具名称卡片 |
+| `tool_result` | 工具返回结果 | 显示折叠的输出内容 |
+| `todo_update` | Todo 列表变更 | 更新 TodoPanel（含完成闪绿动画） |
+| `approval_request` | 待审批操作 | 显示审批卡片（批准/拒绝按钮） |
+| `done` | 流结束 | 更新 conversationId，刷新对话列表 |
+| `error` | 错误信息 | 显示错误消息 |
 
-**功能**：
-- **容器操作**（admin）：启动、停止、重启（HTMX POST + confirm）
-- **日志弹窗**：模态框展示容器最近 200 行日志
-- **Exec 弹窗**：模态框输入命令，在容器内执行并显示输出
-- **清理全部**：顶部"清理全部"按钮，调用 `prune/all` 端点清理未使用的容器/镜像/网络/卷
-- **堆栈管理**（admin）：重启堆栈、拉取更新
-
-#### services.html — 服务管理
-
-Alpine.js 组件 `serviceManager()`，单表格展示所有受管 systemd 服务：
-
-| 列 | 内容 |
-|----|------|
-| 服务名 | 可点击，弹出依赖关系弹窗 |
-| 状态 | 运行中（绿色徽章）/ 已停止（灰色徽章）|
-| 自启动 | admin 为 Toggle 滑块开关（enable/disable），user 为文本标签 |
-| 操作 | admin 可见：日志、重载、重启、停止/启动 |
-
-**功能**：
-- **Enable/Disable Toggle**：管理员通过滑块开关控制服务的 systemd 自启动状态
-- **Reload 按钮**：重新加载服务配置（`systemctl reload`），运行中的服务可用
-- **依赖关系弹窗**：点击服务名弹出模态框，展示 `systemctl list-dependencies` 的输出
-- **日志 ERROR/WARN 高亮**：日志弹窗中，包含 `error`/`fatal`/`fail` 的行标红（`.log-line-error`），包含 `warn` 的行标黄（`.log-line-warn`）
+**去重机制**: `chatStore` 通过 `_seenIds: Set<string>` 按 `_serverId` 去重，防止重复消息。
 
 ---
 
-### base.html 提供的结构
+## AI 对话页面 (AgentsPage)
 
-```html
-<body x-data="{ sidebarOpen: true }">
-  <!-- 侧边栏 -->
-  <aside class="sidebar">
-    <div class="sidebar-header">       <!-- 品牌 Logo + 主机名 -->
-    <nav class="sidebar-nav">          <!-- 模块列表（Jinja2 循环渲染）-->
-    <div class="sidebar-footer">       <!-- 用户名 + 退出 -->
-  </aside>
-
-  <!-- 主内容区 -->
-  <div class="main-wrapper">
-    <header class="top-bar">           <!-- 页面标题 + 操作按钮 -->
-    <main class="main-content">        <!-- 页面内容（block content）-->
-  </div>
-
-  <!-- Toast 通知容器 -->
-  <div id="toast-container">
-</body>
-```
-
-### Jinja2 Block 定义
-
-| Block 名称 | 用途 |
-|-----------|------|
-| `title` | 浏览器标签页标题 |
-| `page_title` | 顶栏页面标题文字 |
-| `top_actions` | 顶栏右侧按钮（可选）|
-| `content` | 页面主体内容 |
-
-### 渲染上下文
-
-所有页面通过 `main.py:_page_context()` 获取公共上下文：
-
-```python
-{
-    "user": UserInfo,           # 当前登录用户
-    "sidebar_items": list,      # 侧边栏模块列表（按 order 排序）
-    "active_module": str,       # 当前激活模块名
-}
-```
-
----
-
-## 交互模式
-
-### HTMX（局部刷新）
-
-适用于需要从服务端获取数据、局部更新 DOM 的场景：
-
-```html
-<!-- 每 15 秒自动刷新指标卡片 -->
-<div hx-get="/api/dashboard/metrics-cards"
-     hx-trigger="every 15s"
-     hx-swap="innerHTML">
-  ...
-</div>
-
-<!-- 按钮触发操作 -->
-<button hx-post="/api/docker/containers/nginx/restart"
-        hx-swap="none"
-        hx-on::after-request="showToast('重启成功')">
-  重启
-</button>
-```
-
-**HTMX SSE**：AI 对话使用 `htmx-sse.js` 扩展接收 Server-Sent Events 流：
-
-```html
-<div hx-ext="sse"
-     sse-connect="/api/agents/chat/stream?conversation_id=xxx"
-     sse-swap="message">
-  ...
-</div>
-```
-
-### Alpine.js（客户端交互）
-
-适用于纯客户端状态管理（表单、对话框、下拉选择）：
-
-```html
-<!-- 内联状态定义 -->
-<div x-data="{ show: false, selected: null }">
-  <button @click="show = !show">切换</button>
-  <div x-show="show">内容</div>
-</div>
-
-<!-- 跨元素共享状态（通过 $store 或 x-data 外提）-->
-```
-
-agents.html 的主 Alpine 状态包含：
-
-```javascript
-{
-    // 对话相关
-    conversations: [],
-    currentConvId: null,
-    messages: [],
-    input: '',
-    isStreaming: false,
-
-    // 安全模式
-    safetyMode: 'supervised',
-
-    // 右侧标签页
-    activeTab: 'patrol',  // 'patrol' | 'admin'
-
-    // 快捷指令
-    slashMenuVisible: false,
-    slashQuery: '',
-    slashIndex: 0,
-
-    // Todo 列表
-    todos: [],
-    todoCollapsed: false,
-
-    // 审批
-    pendingApproval: null,
-}
-```
-
----
-
-## agents.html 特殊布局
-
-agents.html 是最复杂的页面，采用三栏 Grid 布局 + 子标签页设计。
+AgentsPage 是最复杂的页面，采用三栏 Grid 布局（admin 视图）或两栏布局（user 视图）。
 
 ### 三栏 Grid 布局
 
-```css
-.agent-main {
-    display: grid;
-    grid-template-columns: 180px 1fr 1fr;
-    /* 左栏：对话列表 | 中栏：聊天（始终可见）| 右栏：子标签切换 */
-}
-```
-
 ```
 ┌──────────────┬─────────────────────┬──────────────────────┐
-│  对话列表     │    聊天主区域         │   右侧标签面板         │
-│  (180px)     │    (1fr, 始终可见)   │   (1fr, 按标签切换)   │
+│  对话列表     │    聊天主区域         │   右侧面板            │
+│  (180px)     │    (1fr, 始终可见)   │   (1fr, admin only)  │
 │              │                     │                      │
-│  • 对话 1    │  [消息气泡]          │  [巡检] [管理]        │
-│  • 对话 2    │  [工具调用卡片]      │                      │
-│  • 对话 3    │  [审批卡片]          │  巡检列表 + 详情      │
-│              │  [Todo 面板]        │  或管理面板            │
-│  + 新建对话  │  [输入框 + 按钮]     │                      │
+│  • 对话 1    │  [消息气泡]          │  [巡检] [管理] 标签   │
+│  • 对话 2    │  [工具调用卡片]      │  或 [终端]            │
+│  • 对话 3    │  [审批卡片]          │                      │
+│              │  [Todo 面板]        │  巡检列表 / 管理面板   │
+│  + 新建对话  │  [快捷指令菜单]     │  / 终端面板            │
 └──────────────┴─────────────────────┴──────────────────────┘
 ```
 
-### 聊天区域组件
+### 顶部控制栏
 
-**消息气泡**：用户消息（右对齐蓝色）vs 助手消息（左对齐灰色）。助手消息渲染 Markdown（pre 代码块、table 表格）。
+位于 Grid 上方的固定栏（42px），包含：
+- 左侧：绿色状态圆点 + "OpsAgent" 标题
+- 右侧（admin）：安全模式切换（SafetyToggle） + 终端按钮 + 巡检/管理标签切换
 
-**工具调用卡片**（.tool-card）：
-```
-[工具名: get_system_overview]
-↳ 工具输出（最大高度 120px，可滚动）
-```
+### 11 个子组件
 
-**审批卡片**（.approval-card）：
-```
-⚠ 待审批：kill_user_processes
-参数：{"username": "wangtao"}
-风险级别：danger
+| 组件 | 文件 | 功能 |
+|------|------|------|
+| `ConversationSidebar` | `ConversationSidebar.tsx` | 对话列表（创建/切换/删除） |
+| `ChatPanel` | `ChatPanel.tsx` | 聊天主区域（消息列表 + 输入框） |
+| `MessageBubble` | `MessageBubble.tsx` | 单条消息渲染 + hover 操作栏 |
+| `MarkdownRenderer` | `MarkdownRenderer.tsx` | Markdown + Mermaid + Artifact 渲染 |
+| `TodoPanel` | `TodoPanel.tsx` | Todo 进度面板（进度条 + 任务列表） |
+| `SlashCommandMenu` | `SlashCommandMenu.tsx` | 快捷指令菜单（模糊搜索 + 键盘导航） |
+| `PatrolPanel` | `PatrolPanel.tsx` | 巡检任务列表 + 详情 + 历史 |
+| `AdminPanel` | `AdminPanel.tsx` | 系统提示词 / SubAgent / 记忆管理 |
+| `TerminalPanel` | `TerminalPanel.tsx` | xterm.js WebSocket 终端 |
+| `SafetyToggle` | `SafetyToggle.tsx` | supervised/autonomous 模式切换 |
 
-[批准] [拒绝]
-```
+### 安全模式
 
-**Todo 面板**（.todo-panel）：
-- 进度条（已完成数 / 总数）
-- 任务列表（in_progress 时图标脉冲动画，just-completed 时绿色闪烁）
-- 可折叠（点击标题切换）
+- **supervised**（默认）：危险操作触发审批卡片，需用户批准/拒绝
+- **autonomous**：自动执行，不中断（切换时弹 confirm 提示）
 
-### 右侧标签页
+状态存储在 `chatStore.safetyMode`，随聊天请求通过 `safety_mode` 参数传递给后端。
 
-| 标签 | 内容 | CSS Class |
-|------|------|-----------|
-| 巡检 | 巡检任务列表 + 详情 + 历史 | `right-panel.active`（当 activeTab=='patrol'）|
-| 管理 | 系统提示词 / SubAgent / 记忆 / 巡检 / 告警规则 | `right-panel.active`（当 activeTab=='admin'）|
+---
 
-### 终端
+## AI 对话增强功能
 
-通过聊天头部的"终端"按钮调出，使用 xterm.js 渲染，通过 WebSocket 连接到 `/ws/terminal`（`terminal.py:WebTerminal` 使用 `pty.fork()` 实现）。
+### 消息操作
 
-### 快捷指令菜单
+`MessageBubble` 组件在 hover 时显示操作栏：
 
-输入 `/` 时触发，展示 10 个内置指令（模糊搜索 + 键盘导航）：
-
-| 指令 | 说明 |
+| 操作 | 说明 |
 |------|------|
-| /status | 查看系统状态 |
-| /docker | 列出所有容器 |
-| /gpu | 查看 GPU 状态 |
-| /disk | 检查磁盘空间 |
-| /users | 查看用户资源使用 |
-| /services | 检查服务状态 |
-| /logs | 查看最近日志 |
-| /patrol | 立即触发全量巡检 |
-| /compliance | 运行安全合规检查 |
-| /trend | 分析资源趋势 |
+| 复制 | 复制消息文本内容到剪贴板 |
+| 删除 | 从消息列表中移除该消息 |
+| 重发 | 删除该消息及之后的所有消息，重新发送（仅用户消息） |
 
-### 自主模式确认弹窗
+### Markdown 渲染
 
-切换到 autonomous 模式时显示页内 modal（不使用 `window.confirm`），避免浏览器对话框被屏蔽：
+`lib/markdown.ts` 配置 marked.js 的自定义 renderer：
 
-```html
-<!-- 由 Alpine.js x-show 控制显示 -->
-<div class="confirm-modal" x-show="showAutonomousConfirm">
-  <div class="confirm-card">
-    <h3>切换到自主模式</h3>
-    <p>自主模式下，Agent 将自动执行操作，不再等待您的审批...</p>
-    <div class="actions">
-      <button @click="confirmAutonomous()">确认切换</button>
-      <button @click="showAutonomousConfirm = false">取消</button>
-    </div>
-  </div>
-</div>
-```
+- **代码块**: highlight.js 语法高亮 + 语言标签 + 复制按钮（`data-code` 属性存储原始代码）
+- **表格**: 包裹 `.table-wrapper` 实现横向滚动
+- **链接**: 自动添加 `target="_blank" rel="noopener noreferrer"`
+- **GFM**: 启用 GitHub Flavored Markdown + 自动换行
+- **净化**: DOMPurify 过滤 XSS，保留 `data-code`、`class` 等白名单属性
+
+### Mermaid 图
+
+`MarkdownRenderer.tsx` 在渲染后扫描 `.mermaid-block` 占位元素，调用 `mermaid.render()` 生成 SVG 内联渲染。Mermaid 配置为 dark 主题，颜色与 Tailwind @theme 变量一致。
+
+### HTML Artifacts
+
+`html:artifact` 或 `html` 语言标记的代码块生成 `.artifact-block` 占位元素，由 `MarkdownRenderer` 渲染为 iframe sandbox（`allow-scripts`），用于展示 Agent 生成的交互式 HTML。
+
+### 代码块
+
+- highlight.js 自动检测或按指定语言高亮
+- 每个代码块顶部显示语言标签和"复制"按钮
+- 点击复制按钮通过 `navigator.clipboard.writeText()` 复制原始代码
+
+---
+
+## 浮动对话气泡 (ChatWidget)
+
+`ChatWidget` 组件渲染在 Layout 中，除 `/agents` 页面外始终可用。提供轻量级的 AI 对话入口。
+
+### 三种状态
+
+| 状态 | 视觉表现 |
+|------|---------|
+| 关闭 | 右下角圆形浮动按钮 |
+| 最小化 | 可拖拽的窄条标题栏（显示消息数） |
+| 展开 | 320×480px 聊天面板 |
+
+### 功能特性
+
+- **SSE 流式对话**: 复用 `streamChat()` 函数，支持 7 种事件类型
+- **可拖拽**: header 区域支持鼠标拖拽，位置持久化到 localStorage
+- **去重**: `seenServerIds` Set 按 `_serverId` 防止重复消息
+- **新建对话**: header 按钮可开启新对话，清空消息和中止当前流
+- **审批处理**: 审批卡片内直接批准/拒绝，调用 `POST /api/agents/approvals/{id}`
+- **页面上下文**: 自动将当前页面路径作为 `page_context` 传递，让 Agent 了解用户所在页面
+- **对话持久化**: `conversationId` 存储在 localStorage，刷新页面后恢复
 
 ---
 
 ## 侧边栏模块注册
 
-侧边栏条目由各模块的 `MODULE_INFO` 驱动，在 `main.py:lifespan` 时通过 `discover_modules()` 自动发现：
+侧边栏数据通过 `GET /api/sidebar` 从后端获取，后端按用户角色过滤模块列表。
 
-```python
-MODULE_INFO = {
-    "name": "agents",           # URL 路径段：/agents
-    "display_name": "AI 助手",  # 侧边栏显示名
-    "icon": "robot",            # Tabler Icons 名称（暂未使用）
-    "category": "智能运维",      # 侧边栏分组标题
-    "required_role": "admin",   # 访问所需角色
-    "order": 10,                # 排序权重
+```typescript
+interface SidebarItem {
+  name: string          // URL 路径段：/agents
+  display_name: string  // 显示名：OpsAgent
+  icon: string          // Tabler Icons 名称
+  category: string      // 分组标题
+  required_role: string // 访问所需角色
+  order: number         // 排序权重
 }
 ```
 
-模块注册流程：
-1. `discover_modules()` 扫描 `modules/*/` 子目录
-2. 导入每个模块的 `__init__.py`，获取 `MODULE_INFO` 和 `router`
-3. `app.include_router(router)` 注册 FastAPI 路由
-4. `sidebar_items` 按 `order` 排序后传入每个页面的渲染上下文
+**Fallback 机制**: 当 `/api/sidebar` 请求失败时，Sidebar 组件使用硬编码的 14 个静态菜单项（按角色过滤）。
+
+**图标系统**: 使用 [Tabler Icons](https://tabler.io/icons) Webfont，通过 CDN 引入，在模板中使用 `<i class="ti ti-icon-name" />`。
 
 ---
 
-## 静态文件
+## 构建与部署
 
+### 构建流程
+
+```bash
+cd frontend
+npm run build    # tsc -b && vite build → frontend/dist/
 ```
-static/
-├── css/
-│   ├── app.css        # 全局样式 + CSS 变量体系
-│   └── xterm.min.css  # xterm.js 样式
-└── js/
-    ├── htmx.min.js    # HTMX 核心
-    ├── htmx-sse.js    # HTMX SSE 扩展
-    ├── alpine.min.js  # Alpine.js（defer 加载）
-    ├── chart.min.js   # Chart.js
-    ├── xterm.min.js   # xterm.js
-    └── app.js         # 应用级工具函数（showToast, formatBytes 等）
-```
+
+构建产物输出到 `frontend/dist/`，包含 `index.html` + 代码分割后的 JS/CSS chunks。
+
+### Vite 配置要点
+
+- **路径别名**: `@` → `./src`（简化导入路径）
+- **Tailwind CSS**: 通过 `@tailwindcss/vite` 插件集成（非 PostCSS 方式）
+- **开发代理**: `/api` → `http://localhost:9900`，`/ws` → `ws://localhost:9900`
+
+### 生产部署
+
+FastAPI 后端配置静态文件服务和 SPA catch-all 路由：
+
+1. `/frontend/dist/assets/` 作为静态资源目录
+2. 所有非 API、非 WebSocket 的 GET 请求 fallback 到 `frontend/dist/index.html`
+3. React Router 在客户端接管路由
+
+### Toast 通知
+
+使用 `react-hot-toast`，全局 `<Toaster>` 在 `main.tsx` 中渲染，配色与暗色主题一致（card 背景 + text 文字色 + border 边框）。

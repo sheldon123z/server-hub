@@ -56,7 +56,7 @@ ServerHub 的核心特色 — 基于 Deep Agents 框架的 AI 运维智能体。
 | 文档 | 说明 |
 |------|------|
 | [数据库 Schema](database.md) | 14 个表定义、3 个数据库文件 |
-| [前端架构](frontend.md) | HTMX + Alpine.js + CSS 变量体系 |
+| [前端架构](frontend.md) | React 18 + TypeScript + Tailwind CSS |
 
 ---
 

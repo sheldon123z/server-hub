@@ -288,82 +288,59 @@ async def restart_service(service_name: str) -> str:
 
 ---
 
-## 5. 前端规范
+## 5. 前端规范 (React)
 
-### 5.1 Alpine.js 组件
+### 5.1 技术栈
+- **框架**: React 18 + TypeScript
+- **构建**: Vite 6
+- **样式**: Tailwind CSS (暗色主题变量映射)
+- **状态管理**: TanStack Query (服务端状态) + Zustand (客户端状态)
+- **表单**: react-hook-form + zod
+- **图表**: echarts-for-react
 
-所有 Alpine.js 组件统一使用 `init()` 方法进行初始化，不在 `x-data` 对象外直接调用异步操作：
+### 5.2 项目结构
+前端代码位于 `frontend/` 目录:
+- `src/api/` — API 客户端，每模块一个文件
+- `src/hooks/` — 自定义 React hooks (useAuth, useSSEChat, useWebSocket)
+- `src/stores/` — Zustand stores (authStore, chatStore, sidebarStore)
+- `src/components/` — 共享组件 (Layout, Sidebar, TopBar, ChatWidget, ErrorBoundary)
+- `src/pages/` — 页面组件，1:1 对应路由
+- `src/pages/agents/` — Agent 页面子组件
+- `src/lib/` — 工具函数和配置
+- `src/types/` — TypeScript 类型定义
 
-```html
-<!-- 正确 -->
-<div x-data="{
-    items: [],
-    loading: false,
-    async init() {
-        this.loading = true;
-        const resp = await fetch('/api/items');
-        this.items = await resp.json();
-        this.loading = false;
-    }
-}">
+### 5.3 开发命令
+```bash
+cd frontend
+npm run dev     # 启动 Vite 开发服务器 (5173)
+npm run build   # 生产构建到 dist/
+npx tsc --noEmit  # TypeScript 类型检查
 ```
 
-### 5.2 CSS 命名规范
+### 5.4 组件规范
+- 页面组件: `src/pages/XxxPage.tsx`，default export
+- 共享组件: `src/components/Xxx.tsx`，default export
+- Agent 子组件: `src/pages/agents/Xxx.tsx`，named export
+- 使用 ErrorBoundary 包裹可能崩溃的组件
 
-- **功能语义命名**，不以视觉效果命名
-- 使用 CSS 变量定义主题色，暗色模式变量在 `base.html` 中统一定义
+### 5.5 API 调用规范
+- 使用 `@/api/client` 的 Axios 实例（自带 cookie auth + 401 自动刷新）
+- 服务端数据用 TanStack Query: `useQuery({ queryKey: [...], queryFn: ... })`
+- 写操作用 `useMutation` + `queryClient.invalidateQueries`
+- 所有属性访问使用可选链: `data?.field ?? defaultValue`
 
-```css
-/* 正确 — 功能语义 */
-.status-badge { ... }
-.metric-card { ... }
-.sidebar-item { ... }
+### 5.6 样式规范
+- 使用 Tailwind utility classes，不写自定义 CSS（除非是动画）
+- 暗色主题变量: bg-bg, bg-card, text-text, text-accent, border-border 等
+- 按钮: `bg-accent text-[#0f172a] rounded-md text-sm font-medium`
+- 卡片: `bg-card border border-border rounded-lg p-4`
+- 表格: `w-full text-sm`, 行 `border-b border-border`
 
-/* 错误 — 视觉描述 */
-.green-badge { ... }
-.big-card { ... }
-```
-
-### 5.3 Modal 位置规范
-
-Modal 弹窗必须放置在页面 Grid 布局容器**之外**，避免被 `overflow: hidden` 裁剪：
-
-```html
-<body>
-    <!-- 主内容 Grid -->
-    <div class="app-grid">
-        <aside>...</aside>
-        <main>...</main>
-    </div>
-
-    <!-- Modal 放在 Grid 外 -->
-    <div id="confirm-modal" class="modal-overlay" x-show="showModal">
-        ...
-    </div>
-</body>
-```
-
-### 5.4 HTMX 使用原则
-
-- 仪表盘卡片、Docker 状态等**只需局部刷新**的区域使用 HTMX
-- 需要复杂交互逻辑的页面使用 Alpine.js
-- 不混合两者处理同一个交互，避免状态冲突
-
-### 5.5 模板继承
-
-所有页面模板继承 `base.html`：
-
-```html
-{% extends "base.html" %}
-
-{% block title %}页面标题{% endblock %}
-
-{% block content %}
-<!-- 页面内容 -->
-{% endblock %}
-```
-
-不要在页面模板中重复定义侧边栏、顶栏、主题 CSS 变量。
+### 5.7 TypeScript 规范
+- 严格模式 (`strict: true`)
+- API 响应类型在 `src/types/` 中定义
+- 避免 `any`，优先使用 `unknown` + 类型收窄
+- 第三方 API 数据用 `?.` 和 `?? default` 防御性访问
 
 ---
 

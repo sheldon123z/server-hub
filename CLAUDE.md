@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ServerHub 是一个基于 FastAPI 的 Linux 服务器全功能 Web 管理系统，集成了 AI 运维智能体。面向实验室/团队场景，提供系统监控、Docker/服务管理、用户资源控制、AI 自动巡检等能力。
 
-**技术栈**: FastAPI + Jinja2 + HTMX + Alpine.js + SQLite(aiosqlite) + Deep Agents(LangGraph) + xterm.js
+**技术栈**: FastAPI + React 18 + TypeScript + Tailwind CSS + SQLite(aiosqlite) + Deep Agents(LangGraph) + xterm.js
 
 ## 运行与开发
 
@@ -47,13 +47,36 @@ MODULE_INFO = {
 
 `main.py` 的 `lifespan` 中调用 `discover_modules()` 自动注册所有 router。新增模块只需创建 `modules/新模块/` 目录并导出 `MODULE_INFO` + `router`。
 
-### 页面渲染模式
+### React 前端 (frontend/)
 
-页面路由在 `main.py` 中直接定义（非模块 router）。每个页面使用 `_page_context()` 构建渲染上下文，包含 `user`、`sidebar_items`、`active_module`。
+全站已从 Jinja2 + HTMX + Alpine.js 迁移至 React 18 + TypeScript + Tailwind CSS。
 
-模板继承链: `base.html` → 各页面。`base.html` 包含侧边栏、顶栏、暗色主题 CSS 变量。交互模式：
-- **HTMX**: 局部刷新（仪表盘卡片、Docker 状态）
-- **Alpine.js**: 客户端交互逻辑（对话、Cron 编辑、设置页面）
+**开发**:
+```bash
+cd frontend && npm run dev   # Vite dev server :5173, proxy → :9900
+npm run build                # 生产构建 → frontend/dist/
+```
+
+**架构**:
+- 路由: React Router v7, 19 条路由 + 代码分割 (React.lazy)
+- 状态: TanStack Query (API 缓存) + Zustand (客户端状态)
+- 认证: Cookie auth (HttpOnly JWT), 401 自动 refresh + 重定向
+- 实时: WebSocket (/ws/metrics) + SSE (POST /api/agents/chat)
+- 图表: echarts-for-react + 暗色主题
+- Markdown: marked.js + highlight.js + mermaid.js + DOMPurify
+- 终端: @xterm/xterm WebSocket
+
+**关键文件**:
+- `src/App.tsx` — 路由配置 + 认证守卫
+- `src/api/client.ts` — Axios 实例 (cookie auth, 401 refresh, 请求队列)
+- `src/hooks/useSSEChat.ts` — SSE 流解析 (7 种事件类型)
+- `src/hooks/useWebSocket.ts` — 指标 WebSocket (60 点缓冲区)
+- `src/pages/agents/` — Agent 页面 14 个子组件
+- `src/lib/markdown.ts` — Markdown 渲染配置 (mermaid + artifact)
+
+**后端为 React 添加的端点**:
+- `GET /api/sidebar` — 侧边栏菜单项 (按角色过滤)
+- SPA catch-all 路由 (生产模式, 服务 frontend/dist/)
 
 ### AI 智能体架构 (modules/agents/)
 
@@ -112,7 +135,7 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 
 `registry.py` 白名单注册可执行的运维脚本，`executor.py` 提供沙箱化执行。AI agent 的 `execute_ops_script` 工具通过此桥接调用预定义脚本。
 
-### 管理面板 (agents.html 第四标签页「管理」)
+### 管理面板 (Agent 页面「管理」标签)
 
 通过 `/api/agents/admin/*` 端点管理 agent 配置，无需重启服务：
 - `GET/PUT /api/agents/admin/prompt` — 系统提示词（持久化到 `data/custom_prompt.txt`）
@@ -122,7 +145,7 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 
 保存后调用 `reset_agent_cache()` 使新配置在下次对话生效。
 
-### 前端布局 (agents.html)
+### 前端布局 (Agent 页面)
 
 三栏统一布局: `侧边栏(180px) | 聊天(1fr, 始终可见) | 右栏(1fr, 按标签切换)`
 - 标签页: [巡检] [管理]，终端通过聊天头部按钮调出
@@ -176,5 +199,5 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - **认证与审计**: 认证和鉴权必须通过依赖注入声明，优先使用 `get_current_user`、`require_role("admin")`；不要在 handler 内手动解析 token；写操作由审计中间件自动记录，不要重复造日志逻辑
 - **数据库规范**: 统一通过 `get_db()` 访问主库；新增表写入 `database.py:init_tables()`；SQL 必须参数化；写操作先 `commit` 再执行通知等副作用
 - **模块结构**: `routes.py` 只处理 HTTP 层，业务逻辑放入 `services.py`；新增模块需导出 `MODULE_INFO` 和 `router`
-- **前端规范**: Alpine.js 组件统一通过 `init()` 初始化；HTMX 和 Alpine.js 不要同时接管同一交互；模板必须继承 `base.html`；Modal 放在主 Grid 布局外侧避免被裁剪
+- **前端规范**: React 18 + TypeScript + Tailwind CSS；使用 TanStack Query 管理服务端状态，Zustand 管理客户端状态；API 调用通过 `@/api/client` Axios 实例；避免 `any`，使用可选链防御性访问
 - **提交与文档**: Git 提交消息遵循 `feat|fix|docs|refactor|perf|test|chore|style: 中文描述`；新增 API、Agent 工具、模块或架构变化时，必须同步更新 `docs/` 中对应文档

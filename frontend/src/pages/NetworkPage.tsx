@@ -1,0 +1,173 @@
+import { useQuery } from '@tanstack/react-query'
+import client from '@/api/client'
+import { cn } from '@/lib/utils'
+
+interface PortInfo {
+  port: number
+  protocol: string
+  process: string
+  pid: number
+  address: string
+}
+
+interface ProxyInfo {
+  running: boolean
+  port?: number
+  http_proxy?: string
+}
+
+/** Flatten a nested connections response into flat key-value pairs of state -> count. */
+function flattenConnectionStats(data: Record<string, unknown>): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'number') {
+      result[key] = value
+    } else if (typeof value === 'string') {
+      const num = Number(value)
+      if (!isNaN(num)) result[key] = num
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      // Nested object like {tcp_states: {ESTABLISHED: 5, ...}}
+      for (const [subKey, subVal] of Object.entries(value as Record<string, unknown>)) {
+        if (typeof subVal === 'number') {
+          result[subKey] = subVal
+        } else if (typeof subVal === 'string') {
+          const num = Number(subVal)
+          if (!isNaN(num)) result[subKey] = num
+        }
+      }
+    }
+  }
+  return result
+}
+
+/** Color hint for TCP state labels */
+function tcpStateColor(state: string): string {
+  const s = state.toUpperCase()
+  if (s === 'ESTABLISHED') return 'text-green'
+  if (s === 'LISTEN' || s === 'LISTENING') return 'text-accent'
+  if (s === 'TIME_WAIT') return 'text-yellow'
+  if (s === 'CLOSE_WAIT' || s === 'CLOSING') return 'text-red'
+  if (s === 'SYN_SENT' || s === 'SYN_RECV') return 'text-yellow'
+  return 'text-text'
+}
+
+export default function NetworkPage() {
+  const { data: portsData, isLoading: portsLoading } = useQuery<{
+    ports: PortInfo[]
+    count: number
+  }>({
+    queryKey: ['network-ports'],
+    queryFn: () => client.get('/api/network/ports').then((r) => r.data),
+  })
+
+  const { data: connData, isLoading: connLoading } = useQuery<Record<string, unknown>>({
+    queryKey: ['network-connections'],
+    queryFn: () => client.get('/api/network/connections').then((r) => r.data),
+  })
+
+  const { data: proxyData } = useQuery<ProxyInfo>({
+    queryKey: ['network-proxy'],
+    queryFn: () => client.get('/api/network/proxy').then((r) => r.data),
+  })
+
+  const connStats = connData ? flattenConnectionStats(connData) : {}
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold text-text">网络状态</h2>
+
+      {/* 代理状态 */}
+      {proxyData && (
+        <div className="bg-card border border-border rounded-lg p-4">
+          <h3 className="text-sm font-medium text-text2 mb-3">代理配置</h3>
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className={cn(
+                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium',
+                proxyData.running ? 'bg-green/15 text-green' : 'bg-red/15 text-red',
+              )}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', proxyData.running ? 'bg-green' : 'bg-red')} />
+                {proxyData.running ? '运行中' : '未运行'}
+              </span>
+            </div>
+            {proxyData.port && (
+              <span className="text-text3 text-xs">端口: <span className="text-accent font-mono">{proxyData.port}</span></span>
+            )}
+            {proxyData.http_proxy && (
+              <span className="text-text3 text-xs">地址: <span className="text-text2 font-mono">{proxyData.http_proxy}</span></span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 连接统计 */}
+      <div className="bg-card border border-border rounded-lg p-4">
+        <h3 className="text-sm font-medium text-text2 mb-3">连接统计</h3>
+        {connLoading ? (
+          <p className="text-text3 text-sm">加载中...</p>
+        ) : Object.keys(connStats).length === 0 ? (
+          <p className="text-text3 text-sm">暂无数据</p>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {Object.entries(connStats)
+              .sort(([, a], [, b]) => b - a)
+              .map(([state, count]) => (
+              <div key={state} className="bg-bg2 rounded-md px-3 py-2 text-center">
+                <div className={cn('text-lg font-semibold', tcpStateColor(state))}>{count}</div>
+                <div className="text-xs text-text3 mt-0.5 font-mono">{state}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 监听端口 */}
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-medium text-text2">
+            监听端口
+            {portsData && (
+              <span className="ml-2 text-text3 font-normal">({portsData.count})</span>
+            )}
+          </h3>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-text3 text-left">
+              <th className="px-4 py-3 font-medium">端口</th>
+              <th className="px-4 py-3 font-medium">协议</th>
+              <th className="px-4 py-3 font-medium">进程</th>
+              <th className="px-4 py-3 font-medium">PID</th>
+              <th className="px-4 py-3 font-medium">绑定地址</th>
+            </tr>
+          </thead>
+          <tbody>
+            {portsLoading ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-text3">
+                  加载中...
+                </td>
+              </tr>
+            ) : !portsData?.ports.length ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-text3">
+                  暂无数据
+                </td>
+              </tr>
+            ) : (
+              portsData.ports.map((p, i) => (
+                <tr key={i} className="border-b border-border hover:bg-bg2/50">
+                  <td className="px-4 py-2.5 text-accent font-mono font-medium">{p.port}</td>
+                  <td className="px-4 py-2.5 text-text2 uppercase text-xs">{p.protocol}</td>
+                  <td className="px-4 py-2.5 text-text">{p.process || '-'}</td>
+                  <td className="px-4 py-2.5 text-text3 font-mono">{p.pid || '-'}</td>
+                  <td className="px-4 py-2.5 text-text3 font-mono text-xs">{p.address}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
