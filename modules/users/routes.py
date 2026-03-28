@@ -64,25 +64,10 @@ async def list_users(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        # 通过远程命令获取用户资源统计
-        result = await client.execute_command(
-            "ps aux --sort=-%mem | awk 'NR>1{user[$1]+=$4; rss[$1]+=$6} END{for(u in user) print u, user[u], rss[u]}'",
-            timeout=15,
-        )
+        result = await client.user_stats()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
-        # 解析远程输出为用户统计列表
-        users = []
-        for line in result["data"].get("output", "").strip().splitlines():
-            parts = line.split()
-            if len(parts) >= 3:
-                users.append({
-                    "username": parts[0],
-                    "mem_percent": float(parts[1]),
-                    "rss_kb": int(parts[2]),
-                    "mem_gb": round(int(parts[2]) / 1024 / 1024, 2),
-                })
-        return users
+        return result["data"].get("users", [])
     stats = await asyncio.get_event_loop().run_in_executor(None, get_user_stats)
     return stats
 
@@ -107,7 +92,7 @@ async def active_sessions(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command("who", timeout=10)
+        result = await client.user_sessions()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         # 解析 who 输出
@@ -317,7 +302,7 @@ async def kill_process(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"kill -9 {pid}", timeout=10)
+        result = await client.kill_process(pid)
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         await log_audit(

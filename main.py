@@ -3,7 +3,9 @@ ServerHub — NF5468M6 服务器管理系统
 FastAPI + React 18 + SQLite
 """
 
+import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -26,11 +28,21 @@ from modules import discover_modules, get_sidebar_items
 from modules.audit.middleware import AuditMiddleware
 
 
+# ─── 子系统状态跟踪 ───
+
+_start_time: float = 0.0
+_subsystem_status: dict[str, str] = {}
+_bg_init_task: asyncio.Task | None = None
+
+
 # ─── 生命周期 ───
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动
+    global _start_time, _bg_init_task
+    _start_time = time.time()
+
+    # ── 关键路径（必须在服务 ready 前完成） ──
     await get_db()
     await ensure_admin()
     modules = discover_modules()
@@ -38,119 +50,116 @@ async def lifespan(app: FastAPI):
         app.include_router(m["router"])
     logger.info("[ServerHub] 已加载 %s 个模块", len(modules))
 
-    # 确保默认通知渠道存在
+    # LG Compat router 也需要在 ready 前挂载（路由注册不能延迟）
     try:
-        from modules.notifications.services import ensure_default_channels
-        await ensure_default_channels()
-    except Exception as e:
-        logger.exception("[ServerHub] 默认通知渠道初始化失败: %s", e)
-
-    # 启动后台指标采集
-    try:
-        from modules.monitoring.scheduler import start_scheduler
-        await start_scheduler()
-        logger.info("[ServerHub] 指标采集已启动")
-    except Exception as e:
-        logger.exception("[ServerHub] 指标采集启动失败: %s", e)
-
-    # 启动 RAG 知识库索引
-    try:
-        from modules.agents.rag import build_full_index
-        import asyncio as _aio
-        stats = await _aio.get_event_loop().run_in_executor(None, build_full_index)
-        logger.info("[ServerHub] RAG 知识库已构建: %s", stats)
-    except Exception as e:
-        logger.warning("[ServerHub] RAG 知识库构建失败 (非致命): %s", e)
-
-    # 清理残留的异步任务
-    try:
-        from modules.agents.async_tasks import cleanup_stale_tasks
-        await cleanup_stale_tasks()
-    except Exception as e:
-        logger.warning("[ServerHub] 异步任务清理失败: %s", e)
-
-    # 初始化 LG Compat Server — 异步 SubAgent 后端
-    try:
-        from modules.agents.lg_compat import lg_router, register_graph, start_cleanup
-        from modules.agents.async_graphs import build_all_async_graphs
-
+        from modules.agents.lg_compat import lg_router
         app.include_router(lg_router)
-        graphs = await build_all_async_graphs()
-        for gid, graph in graphs.items():
-            register_graph(gid, graph)
-        await start_cleanup()
-        logger.info("[ServerHub] LG Compat Server: %d 个异步 graph 已注册", len(graphs))
     except Exception as e:
-        logger.warning("[ServerHub] LG Compat Server 初始化失败 (非致命): %s", e)
+        logger.warning("[ServerHub] LG Compat 路由注册失败: %s", e)
 
-    # 启动 AI 巡检调度器
-    try:
-        from modules.agents.patrol import start_patrol_scheduler
-        await start_patrol_scheduler()
-        logger.info("[ServerHub] AI 巡检调度器已启动")
-    except Exception as e:
-        logger.exception("[ServerHub] AI 巡检调度器启动失败: %s", e)
+    # ── 非阻塞后台初始化 ──
+    async def _init_background():
+        """后台初始化 — 不阻塞主服务 ready"""
+        tasks: list[tuple[str, object]] = [
+            ("通知渠道", _init_notifications()),
+            ("指标采集", _init_monitoring()),
+            ("RAG 知识库", _init_rag()),
+            ("异步任务清理", _init_stale_cleanup()),
+            ("LG Compat graphs", _init_lg_compat()),
+            ("AI 巡检调度", _init_patrol()),
+            ("运维剧本", _init_playbooks()),
+            ("心跳监控", _init_heartbeat()),
+            ("远程指标采集", _init_remote_scheduler()),
+        ]
+        for name, coro in tasks:
+            _subsystem_status[name] = "starting"
+            try:
+                await coro
+                _subsystem_status[name] = "ready"
+                logger.info("[ServerHub] %s 已启动", name)
+            except Exception as e:
+                _subsystem_status[name] = "failed"
+                logger.warning("[ServerHub] %s 启动失败 (非致命): %s", name, e)
 
-    # 初始化运维剧本系统
-    try:
-        from modules.playbooks.seed import seed_builtin_playbooks
-        await seed_builtin_playbooks()
-        from modules.playbooks.scheduler import start_playbook_scheduler
-        await start_playbook_scheduler()
-        logger.info("[ServerHub] 运维剧本系统已启动")
-    except Exception as e:
-        logger.warning("[ServerHub] 运维剧本系统启动失败 (非致命): %s", e)
-
-    # 启动服务器心跳监控
-    try:
-        from modules.servers.heartbeat import start_heartbeat
-        await start_heartbeat()
-        logger.info("[ServerHub] 服务器心跳监控已启动")
-    except Exception as e:
-        logger.warning("[ServerHub] 心跳监控启动失败 (非致命): %s", e)
-
-    # 启动远程指标采集
-    try:
-        from modules.monitoring.scheduler import start_remote_scheduler
-        await start_remote_scheduler()
-        logger.info("[ServerHub] 远程指标采集已启动")
-    except Exception as e:
-        logger.warning("[ServerHub] 远程指标采集启动失败 (非致命): %s", e)
+    _bg_init_task = asyncio.create_task(_init_background())
 
     yield
 
-    # 关闭
-    try:
-        from modules.servers.heartbeat import stop_heartbeat
-        await stop_heartbeat()
-    except Exception:
-        pass
-    try:
-        from modules.monitoring.scheduler import stop_remote_scheduler
-        await stop_remote_scheduler()
-    except Exception:
-        pass
-    try:
-        from modules.playbooks.scheduler import stop_playbook_scheduler
-        await stop_playbook_scheduler()
-    except Exception:
-        pass
-    try:
-        from modules.agents.lg_compat import stop_cleanup
-        await stop_cleanup()
-    except Exception:
-        pass
-    try:
-        from modules.agents.patrol import stop_patrol_scheduler
-        await stop_patrol_scheduler()
-    except Exception:
-        pass
-    try:
-        from modules.monitoring.scheduler import stop_scheduler
-        await stop_scheduler()
-    except Exception:
-        pass
+    # ── 关闭 ──
+    if _bg_init_task and not _bg_init_task.done():
+        _bg_init_task.cancel()
+
+    for stop_fn_path in [
+        "modules.servers.heartbeat:stop_heartbeat",
+        "modules.monitoring.scheduler:stop_remote_scheduler",
+        "modules.playbooks.scheduler:stop_playbook_scheduler",
+        "modules.agents.lg_compat:stop_cleanup",
+        "modules.agents.patrol:stop_patrol_scheduler",
+        "modules.monitoring.scheduler:stop_scheduler",
+    ]:
+        try:
+            mod_path, fn_name = stop_fn_path.rsplit(":", 1)
+            import importlib
+            mod = importlib.import_module(mod_path)
+            await getattr(mod, fn_name)()
+        except Exception:
+            pass
     await close_db()
+
+
+# ─── 后台初始化协程 ───
+
+async def _init_notifications():
+    from modules.notifications.services import ensure_default_channels
+    await ensure_default_channels()
+
+
+async def _init_monitoring():
+    from modules.monitoring.scheduler import start_scheduler
+    await start_scheduler()
+
+
+async def _init_rag():
+    from modules.agents.rag import build_full_index
+    stats = await asyncio.get_event_loop().run_in_executor(None, build_full_index)
+    logger.info("[ServerHub] RAG 知识库已构建: %s", stats)
+
+
+async def _init_stale_cleanup():
+    from modules.agents.async_tasks import cleanup_stale_tasks
+    await cleanup_stale_tasks()
+
+
+async def _init_lg_compat():
+    from modules.agents.lg_compat import register_graph, start_cleanup
+    from modules.agents.async_graphs import build_all_async_graphs
+    graphs = await build_all_async_graphs()
+    for gid, graph in graphs.items():
+        register_graph(gid, graph)
+    await start_cleanup()
+    logger.info("[ServerHub] LG Compat Server: %d 个异步 graph 已注册", len(graphs))
+
+
+async def _init_patrol():
+    from modules.agents.patrol import start_patrol_scheduler
+    await start_patrol_scheduler()
+
+
+async def _init_playbooks():
+    from modules.playbooks.seed import seed_builtin_playbooks
+    await seed_builtin_playbooks()
+    from modules.playbooks.scheduler import start_playbook_scheduler
+    await start_playbook_scheduler()
+
+
+async def _init_heartbeat():
+    from modules.servers.heartbeat import start_heartbeat
+    await start_heartbeat()
+
+
+async def _init_remote_scheduler():
+    from modules.monitoring.scheduler import start_remote_scheduler
+    await start_remote_scheduler()
 
 
 app = FastAPI(title="ServerHub", lifespan=lifespan)
@@ -178,6 +187,18 @@ app.add_middleware(AuditMiddleware)
 @app.get("/api/sidebar")
 async def sidebar_api(request: Request, user=Depends(get_current_user)):
     return get_sidebar_items(user["role"])
+
+
+# ─── 健康检查（无需认证） ───
+
+@app.get("/api/health")
+async def health_check():
+    """子系统状态和服务 uptime"""
+    return {
+        "status": "ok",
+        "subsystems": dict(_subsystem_status),
+        "uptime": round(time.time() - _start_time, 1) if _start_time else 0,
+    }
 
 
 # ─── React SPA 前端服务 ───

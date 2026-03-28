@@ -42,7 +42,9 @@ async def get_containers(
         result = await client.get_docker_containers()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
-        return result.get("data", [])
+        # Agent 返回 {"containers": [...], "total": N}，前端期望数组
+        data = result.get("data", {})
+        return data.get("containers", []) if isinstance(data, dict) else data
     try:
         return await list_containers(all=all)
     except RuntimeError as e:
@@ -60,7 +62,7 @@ async def get_container_logs(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"docker logs {name} --tail {tail} 2>&1", timeout=15)
+        result = await client.docker_action(name, "logs", tail=tail)
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         return {"name": name, "logs": result["data"].get("output", "")}
@@ -115,7 +117,7 @@ async def do_container_action(
         if action not in ("start", "stop", "restart"):
             raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"docker {action} {name}", timeout=30)
+        result = await client.docker_action(name, action)
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         await log_audit(
@@ -153,10 +155,7 @@ async def get_images(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(
-            'docker images --format \'{"repository":"{{.Repository}}","tag":"{{.Tag}}","id":"{{.ID}}","size":"{{.Size}}","created":"{{.CreatedSince}}"}\'',
-            timeout=15,
-        )
+        result = await client.docker_images()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         import json
@@ -210,7 +209,7 @@ async def get_stacks(
         from modules.servers.agent_client import get_agent_client
         import json
         client = await get_agent_client(server_id)
-        result = await client.execute_command("docker compose ls --format json", timeout=15)
+        result = await client.docker_stacks()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         output = result["data"].get("output", "").strip()

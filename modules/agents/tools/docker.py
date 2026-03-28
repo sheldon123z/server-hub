@@ -45,13 +45,10 @@ async def get_container_logs(name: str, tail: int = 50, server_id: str = "local"
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(
-            f"docker logs {name} --tail {min(tail, 200)}", timeout=15
-        )
+        result = await client.docker_action(name, "logs", tail=min(tail, 200))
         if not result.get("ok"):
             return f"远程获取失败: {result.get('error', '未知')}"
-        data = result["data"]
-        output = data.get("stdout", "") + data.get("stderr", "")
+        output = result["data"].get("output", "")
         if not output.strip():
             return f"容器 {name} 没有日志输出。"
         return f"## {name} 日志 (最后{tail}行)\n```\n{output[-3000:]}\n```"
@@ -78,7 +75,7 @@ async def docker_container_action(name: str, action: str, server_id: str = "loca
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"docker {action} {name}", timeout=30)
+        result = await client.docker_action(name, action)
         if not result.get("ok"):
             return f"远程执行失败: {result.get('error', '未知')}"
         return f"容器 {name} 已在远程服务器 {server_id} 上执行 {action}。"

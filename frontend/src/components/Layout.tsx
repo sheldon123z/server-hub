@@ -20,6 +20,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/agents': 'OpsAgent',
   '/playbooks': '运维剧本',
   '/servers': '服务器管理',
+  '/fleet': '舰队总览',
   '/monitoring': '系统监控',
 }
 

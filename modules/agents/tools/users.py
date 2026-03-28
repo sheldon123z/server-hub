@@ -13,16 +13,16 @@ async def get_user_resources(server_id: str = "local") -> str:
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(
-            "ps aux --sort=-%mem | head -20", timeout=10
-        )
+        result = await client.user_stats()
         if not result.get("ok"):
             return f"远程获取失败: {result.get('error', '未知')}"
-        data = result["data"]
-        output = data.get("stdout", "")
-        if not output.strip():
+        users = result["data"].get("users", [])
+        if not users:
             return f"服务器 {server_id} 没有用户进程信息。"
-        return f"## 服务器 {server_id} 用户进程 (Top 20)\n```\n{output}\n```"
+        lines = [f"## 服务器 {server_id} 用户资源\n| 用户 | 内存% | 内存(GB) |", "|---|---|---|"]
+        for u in users[:20]:
+            lines.append(f"| {u['username']} | {u['mem_percent']} | {u['mem_gb']} |")
+        return "\n".join(lines)
 
     from modules.users.services import get_user_stats
     users = get_user_stats()
@@ -83,12 +83,12 @@ async def kill_user_processes(username: str, server_id: str = "local") -> str:
         server_id: 目标服务器ID。'local' 表示本机。
     """
     if server_id != "local":
-        from modules.servers.agent_client import get_agent_client
-        client = await get_agent_client(server_id)
-        result = await client.execute_command(f"pkill -u {username}", timeout=15)
-        if not result.get("ok"):
-            return f"远程执行失败: {result.get('error', '未知')}"
-        return f"已在远程服务器 {server_id} 上终止用户 {username} 的所有进程。"
+        # 注意: pkill -u 不在结构化端点中，但远程 kill 单进程可用
+        # 这里保留警告，建议逐个 kill 进程
+        return (
+            f"远程批量终止用户进程暂不支持。请使用 kill_single_process_tool 逐个终止 "
+            f"服务器 {server_id} 上用户 {username} 的进程。"
+        )
 
     from modules.users.services import kill_user_processes as _kill
     result = _kill(username)

@@ -48,11 +48,25 @@ async def _collect_and_store():
 
 
 async def _cleanup_old_metrics():
-    """清理超过保留天数的过期指标"""
+    """清理超过保留天数的过期指标
+
+    使用 server_id + timestamp 条件以命中 idx_metrics_server_time 复合索引，
+    避免全表扫描。按 server_id 分批删除，每批 LIMIT 防止长事务锁定。
+    """
     try:
         cutoff = (datetime.now() - timedelta(days=settings.metrics_retention_days)).isoformat()
         db = await get_db()
-        await db.execute("DELETE FROM metrics WHERE timestamp < ?", (cutoff,))
+        # 获取所有 server_id 以利用 idx_metrics_server_time 复合索引
+        rows = await (await db.execute(
+            "SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,)
+        )).fetchall()
+        if not rows:
+            return
+        for (sid,) in rows:
+            await db.execute(
+                "DELETE FROM metrics WHERE server_id = ? AND timestamp < ?",
+                (sid, cutoff),
+            )
         await db.commit()
     except Exception as e:
         logger.error(f"清理过期指标失败: {e}")
@@ -86,7 +100,7 @@ async def _ws_broadcast_loop():
 
     logger.info(f"WebSocket 广播循环已启动 (间隔: {settings.ws_metrics_interval}s)")
     while True:
-        if ws_manager.connections:
+        if ws_manager.connection_count:
             try:
                 snapshot = await asyncio.get_event_loop().run_in_executor(
                     None, collect_realtime_fast
@@ -143,7 +157,7 @@ async def _remote_collect_loop():
 
 
 async def _collect_remote_metrics():
-    """从所有在线远程服务器采集指标并存储"""
+    """从所有在线远程服务器采集指标并批量存储"""
     db = await get_db()
     rows = await (await db.execute(
         "SELECT * FROM servers WHERE is_local = 0 AND status = 'online'"
@@ -152,13 +166,16 @@ async def _collect_remote_metrics():
     if not rows:
         return
 
-    from modules.servers.services import _row_to_dict
+    from modules.servers.services import _row_to_dict, decrypt_agent_token
     from modules.servers.agent_client import AgentClient
 
     sem = asyncio.Semaphore(10)
+    # 收集所有成功结果，最后批量写入
+    collected: list[tuple[dict, dict]] = []  # (server_dict, snapshot)
 
     async def collect_one(server_dict):
         async with sem:
+            server_dict["_decrypted_token"] = decrypt_agent_token(server_dict.get("agent_token_hash", ""))
             client = AgentClient(server_dict)
             try:
                 result = await asyncio.wait_for(client.get_metrics(), timeout=15)
@@ -171,11 +188,7 @@ async def _collect_remote_metrics():
                 logger.debug("远程指标采集异常 [%s]: %s", server_dict["name"], e)
                 return
 
-            # 存储到 metrics 表（带 server_id）
-            await db.execute(
-                "INSERT INTO metrics (metric_type, value_json, server_id) VALUES (?, ?, ?)",
-                ("all", json.dumps(snapshot, ensure_ascii=False), server_dict["id"]),
-            )
+            collected.append((server_dict, snapshot))
 
             # 通过 WS 广播（带 server_id）
             try:
@@ -190,7 +203,18 @@ async def _collect_remote_metrics():
 
     server_dicts = [_row_to_dict(r) for r in rows]
     await asyncio.gather(*[collect_one(s) for s in server_dicts], return_exceptions=True)
-    await db.commit()
+
+    # 批量写入 — 单次 executemany + 单次 commit
+    if collected:
+        insert_rows = [
+            (server_dict["id"], "all", json.dumps(snapshot, ensure_ascii=False))
+            for server_dict, snapshot in collected
+        ]
+        await db.executemany(
+            "INSERT INTO metrics (server_id, metric_type, value_json) VALUES (?, ?, ?)",
+            insert_rows,
+        )
+        await db.commit()
 
 
 async def start_remote_scheduler():

@@ -1,4 +1,16 @@
-"""后台心跳监控 — 定期检查所有注册服务器的存活状态"""
+"""后台心跳监控 — 三层健康模型定期检查所有注册服务器的存活状态
+
+三层健康检查:
+  Layer 1: /health (no auth) — 确认 agent 进程存活
+  Layer 2: /metrics/fast (requires auth) — 确认认证链路正常
+  Layer 3: 业务级检查 (reserved, 暂未实现)
+
+状态映射:
+  Layer 1 pass + Layer 2 pass → online
+  Layer 1 pass + Layer 2 fail → auth_failed
+  Layer 1 pass + Layer 2 timeout → degraded
+  Both fail → offline
+"""
 
 import asyncio
 import logging
@@ -21,9 +33,10 @@ async def _heartbeat_loop():
 
 
 async def _check_all_servers():
-    """Check all non-local servers"""
+    """Check all non-local servers using 3-layer health model"""
     from database import get_db
     from modules.servers.agent_client import AgentClient
+    from modules.servers.services import decrypt_agent_token
 
     db = await get_db()
     rows = await (await db.execute(
@@ -38,16 +51,43 @@ async def _check_all_servers():
 
     async def check_one(server_dict):
         async with sem:
+            # Migration: 优先读 agent_token_encrypted，回退到 agent_token_hash
+            encrypted = server_dict.get("agent_token_encrypted") or server_dict.get("agent_token_hash", "")
+            server_dict["_decrypted_token"] = decrypt_agent_token(encrypted)
             client = AgentClient(server_dict)
+
+            # ── Layer 1: /health (no auth) — 确认 agent 存活 ──
+            layer1_ok = False
+            agent_version = ""
             try:
                 result = await asyncio.wait_for(client.health_check(), timeout=10)
-                # AgentClient 返回 {"ok": true, "data": {"status": "ok", ...}}
-                data = result.get("data", result) if result.get("ok") else result
-                new_status = "online" if data.get("status") == "ok" else "degraded"
-                agent_version = data.get("version", "")
+                if result.get("ok"):
+                    data = result.get("data", {})
+                    layer1_ok = data.get("status") == "ok"
+                    agent_version = data.get("version", "")
             except Exception:
+                pass
+
+            if not layer1_ok:
+                # Layer 1 失败，直接标记 offline
                 new_status = "offline"
-                agent_version = ""
+            else:
+                # ── Layer 2: /metrics/fast (requires auth) — 确认认证正常 ──
+                try:
+                    l2_result = await asyncio.wait_for(client.get_fast_metrics(), timeout=8)
+                    if l2_result.get("ok"):
+                        new_status = "online"
+                    elif l2_result.get("status_code") in (401, 403):
+                        new_status = "auth_failed"
+                    else:
+                        new_status = "degraded"
+                except asyncio.TimeoutError:
+                    new_status = "degraded"
+                except Exception:
+                    new_status = "degraded"
+
+            # ── Layer 3: 业务检查 (reserved) ──
+            # TODO: 未来可扩展业务级健康检查
 
             # Update status
             old_status = server_dict.get("status", "unknown")

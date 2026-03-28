@@ -73,6 +73,7 @@ class Settings:
         self.metrics_retention_days: int = 90
         self.gpu_metrics_ttl_seconds: int = int(os.getenv("SERVERHUB_GPU_METRICS_TTL_SECONDS", "20"))
         self.top_processes_cache_seconds: int = int(os.getenv("SERVERHUB_TOP_PROCESSES_CACHE_SECONDS", "10"))
+        self.metrics_cache_ttl_seconds: int = 30
 
         # WebSocket
         self.ws_metrics_interval: int = 5          # WS快速推送间隔(秒)

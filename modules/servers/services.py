@@ -51,7 +51,11 @@ def _get_fernet():
 
 def generate_agent_token() -> tuple[str, str]:
     """生成 agent token。返回 (plaintext_token, encrypted_token)。
-    encrypted_token 存入 DB 的 agent_token_hash 字段（实际是加密值，可逆）。
+
+    迁移说明: 历史遗留字段名为 agent_token_hash，实际存储 Fernet 加密值（可逆）。
+    新字段 agent_token_encrypted 是正确命名。两者存储相同的加密值。
+    读取时优先从 agent_token_encrypted 读取，回退到 agent_token_hash。
+    当所有数据迁移完成后可移除 agent_token_hash 字段。
     """
     token = secrets.token_urlsafe(32)
     encrypted = _get_fernet().encrypt(token.encode()).decode()
@@ -59,7 +63,11 @@ def generate_agent_token() -> tuple[str, str]:
 
 
 def decrypt_agent_token(encrypted: str) -> str:
-    """解密 agent token（从 DB 的 agent_token_hash 字段恢复明文）"""
+    """解密 agent token — 从 Fernet 加密值恢复明文。
+
+    调用方应优先传入 agent_token_encrypted 字段值，
+    若为空则回退到 agent_token_hash (legacy 字段)。
+    """
     if not encrypted:
         return ""
     try:
@@ -111,17 +119,19 @@ async def create_server(data: dict, created_by: str) -> tuple[str, str]:
     # 自动生成 agent token
     plaintext_token, token_hash = generate_agent_token()
 
+    # 写入 agent_token_hash (legacy) 和 agent_token_encrypted (新字段)，双写确保兼容
     await db.execute(
         "INSERT INTO servers "
-        "(id, name, hostname, ip_address, agent_port, agent_token_hash, ssh_user, ssh_port, "
-        "ssh_key_credential, tags, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id, name, hostname, ip_address, agent_port, agent_token_hash, agent_token_encrypted, "
+        "ssh_user, ssh_port, ssh_key_credential, tags, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             server_id,
             data["name"],
             data["hostname"],
             data["ip_address"],
             data.get("agent_port", 9901),
+            token_hash,
             token_hash,
             data.get("ssh_user"),
             data.get("ssh_port", 22),
@@ -145,9 +155,10 @@ async def rotate_agent_token(server_id: str) -> str:
 
     plaintext_token, token_hash = generate_agent_token()
     now = datetime.now(timezone.utc).isoformat()
+    # 双写 legacy + 新字段
     await db.execute(
-        "UPDATE servers SET agent_token_hash = ?, updated_at = ? WHERE id = ?",
-        (token_hash, now, server_id),
+        "UPDATE servers SET agent_token_hash = ?, agent_token_encrypted = ?, updated_at = ? WHERE id = ?",
+        (token_hash, token_hash, now, server_id),
     )
     await db.commit()
     logger.info("服务器 %s 的 agent token 已轮换", server_id)
@@ -308,6 +319,7 @@ async def get_fleet_overview() -> dict:
         "online": counts.get("online", 0),
         "offline": counts.get("offline", 0),
         "degraded": counts.get("degraded", 0),
+        "auth_failed": counts.get("auth_failed", 0),
         "unknown": counts.get("unknown", 0),
     }
 

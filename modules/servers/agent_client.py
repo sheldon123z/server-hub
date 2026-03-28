@@ -44,6 +44,8 @@ class AgentClient:
         self.server_name: str = server.get("name", "unknown")
         self.base_url: str = f"http://{server['ip_address']}:{server.get('agent_port', 9901)}"
         self.token: str = server.get("_decrypted_token", "")
+        if not self.token and not server.get("is_local"):
+            logger.warning("AgentClient for %s created without token — auth will fail", self.server_name)
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -153,6 +155,79 @@ class AgentClient:
         """列出远程服务器上的 systemd 服务"""
         return await self._request("GET", "/services", timeout=10.0)
 
+    # ─── 结构化 action 方法 (无 shell 注入) ───
+
+    async def service_action(self, name: str, action: str) -> dict:
+        """结构化 systemd 服务控制"""
+        return await self._request(
+            "POST", "/actions/service",
+            json_body={"name": name, "action": action},
+            timeout=35.0,
+        )
+
+    async def service_journal(self, name: str, lines: int = 100) -> dict:
+        """获取服务 journal 日志"""
+        return await self._request(
+            "POST", "/actions/service/journal",
+            json_body={"name": name, "lines": lines},
+            timeout=20.0,
+        )
+
+    async def docker_action(self, name: str, action: str, tail: int = 200) -> dict:
+        """结构化 Docker 容器控制"""
+        return await self._request(
+            "POST", "/actions/docker",
+            json_body={"name": name, "action": action, "tail": tail},
+            timeout=35.0,
+        )
+
+    async def docker_images(self) -> dict:
+        """列出远程 Docker 镜像"""
+        return await self._request("GET", "/actions/docker/images", timeout=15.0)
+
+    async def docker_stacks(self) -> dict:
+        """列出远程 Docker Compose 堆栈"""
+        return await self._request("GET", "/actions/docker/stacks", timeout=15.0)
+
+    async def log_files(self) -> dict:
+        """列出远程 /var/log 下的日志文件"""
+        return await self._request("GET", "/logs/files", timeout=10.0)
+
+    async def log_tail(self, path: str, lines: int = 200) -> dict:
+        """读取远程日志文件末尾（安全路径校验在 agent 端）"""
+        from urllib.parse import urlencode
+        qs = urlencode({"path": path, "lines": lines})
+        return await self._request("GET", f"/logs/tail?{qs}", timeout=20.0)
+
+    async def cron_list(self, user: str = "") -> dict:
+        """列出远程 crontab"""
+        qs = f"?user={user}" if user else ""
+        return await self._request("GET", f"/cron/list{qs}", timeout=10.0)
+
+    async def network_ports(self) -> dict:
+        """列出远程监听端口"""
+        return await self._request("GET", "/network/ports", timeout=10.0)
+
+    async def network_connections(self) -> dict:
+        """获取远程网络连接摘要"""
+        return await self._request("GET", "/network/connections", timeout=10.0)
+
+    async def user_sessions(self) -> dict:
+        """获取远程活跃登录会话"""
+        return await self._request("GET", "/users/sessions", timeout=10.0)
+
+    async def user_stats(self) -> dict:
+        """获取远程用户资源统计"""
+        return await self._request("GET", "/users/stats", timeout=15.0)
+
+    async def kill_process(self, pid: int) -> dict:
+        """终止远程进程"""
+        return await self._request(
+            "POST", "/users/kill",
+            json_body={"pid": pid},
+            timeout=10.0,
+        )
+
 
 # ─── 工厂函数 ───
 
@@ -168,7 +243,9 @@ async def get_agent_client(server_id: str) -> AgentClient:
     if not server:
         raise ValueError(f"服务器 {server_id} 不存在")
 
-    server["_decrypted_token"] = decrypt_agent_token(server.get("agent_token_hash", ""))
+    # Migration: 优先读 agent_token_encrypted (新字段)，回退到 agent_token_hash (legacy)
+    encrypted = server.get("agent_token_encrypted") or server.get("agent_token_hash", "")
+    server["_decrypted_token"] = decrypt_agent_token(encrypted)
 
     return AgentClient(server)
 
@@ -187,6 +264,8 @@ async def get_all_agent_clients(status_filter: str | None = "online") -> list[Ag
     for srv in servers:
         if srv.get("is_local"):
             continue
-        srv["_decrypted_token"] = decrypt_agent_token(srv.get("agent_token_hash", ""))
+        # Migration: 优先读 agent_token_encrypted，回退到 agent_token_hash
+        encrypted = srv.get("agent_token_encrypted") or srv.get("agent_token_hash", "")
+        srv["_decrypted_token"] = decrypt_agent_token(encrypted)
         clients.append(AgentClient(srv))
     return clients

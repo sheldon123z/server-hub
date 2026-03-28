@@ -58,10 +58,9 @@ async def list_user_crontab(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command("crontab -l 2>/dev/null || echo ''", timeout=10)
+        result = await client.cron_list()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
-        # 返回原始文本，让前端或调用者解析
         return {"jobs_raw": result["data"].get("output", ""), "user": "remote"}
     try:
         entries = await get_user_crontab()
@@ -78,7 +77,7 @@ async def list_root_crontab(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command("sudo crontab -l 2>/dev/null || echo ''", timeout=10)
+        result = await client.cron_list(user="root")
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         return {"jobs_raw": result["data"].get("output", ""), "user": "root"}

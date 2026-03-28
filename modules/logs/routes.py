@@ -17,15 +17,13 @@ async def get_log_files(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(
-            "find /var/log -maxdepth 2 -type f -name '*.log' -o -name 'syslog' -o -name 'auth.log' 2>/dev/null | head -50",
-            timeout=10,
-        )
+        result = await client.log_files()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
+        raw_files = result["data"].get("files", [])
         files = [
             {"path": f.strip(), "name": f.strip().split("/")[-1]}
-            for f in result["data"].get("output", "").strip().splitlines()
+            for f in raw_files
             if f.strip()
         ]
         return {"files": files, "count": len(files)}
@@ -43,14 +41,14 @@ async def get_log_tail(
     """Read the last N lines of a log file."""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
-        # 基本路径安全检查 — 只允许 /var/log 下的文件
+        # Hub 端也做基本检查，agent 端会做 realpath 校验
         if not path.startswith("/var/log"):
             raise HTTPException(status_code=403, detail="远程日志仅允许读取 /var/log 下的文件")
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"tail -n {lines} {path} 2>&1", timeout=15)
+        result = await client.log_tail(path, lines=lines)
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
-        return {"path": path, "lines": lines, "content": result["data"].get("output", "")}
+        return {"path": path, "lines": lines, "content": result["data"].get("content", "")}
     try:
         content = await tail_log(path, lines)
         return {"path": path, "lines": lines, "content": content}

@@ -33,7 +33,18 @@ async def dispatch(server_id: str, local_fn: Callable[..., Awaitable[Any]],
 
 
 async def dispatch_command(server_id: str, command: str, timeout: int = 30) -> dict:
-    """在指定服务器上执行命令"""
+    """在指定服务器上执行命令
+
+    ⚠️ 已废弃: 此函数使用 create_subprocess_shell，存在 shell 注入风险。
+    请使用 AgentClient 的结构化方法 (service_action, docker_action 等) 替代。
+    保留仅为向后兼容，不应在新代码中使用。
+    """
+    import warnings
+    warnings.warn(
+        "dispatch_command 使用 shell 执行，存在注入风险，请迁移到结构化 action 方法",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if server_id == "local":
         proc = await asyncio.create_subprocess_shell(
             command,

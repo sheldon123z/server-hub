@@ -6,6 +6,7 @@
 import asyncio
 import json
 import logging
+from collections import deque
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
@@ -32,32 +33,65 @@ ws_router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class MetricsWSManager:
-    """管理 WebSocket 连接，支持向所有客户端广播指标数据"""
+    """WebSocket 管理器 — 支持 per-client 服务器订阅过滤 + 内存缓存"""
 
     def __init__(self):
-        self.connections: set[WebSocket] = set()
+        self._connections: dict[WebSocket, set[str]] = {}  # ws → subscribed server_ids
+        self._cache: dict[str, deque] = {}  # server_id → recent snapshots (5min)
+        self._cache_max = 60  # 5min @ 5s interval
 
-    async def connect(self, ws: WebSocket):
+    async def connect(self, ws: WebSocket, server_ids: set[str] | None = None):
         await ws.accept()
-        self.connections.add(ws)
-        logger.info(f"WebSocket 客户端连接 (当前: {len(self.connections)})")
+        subs = server_ids or {"local"}
+        self._connections[ws] = subs
+        logger.info(f"WebSocket 客户端连接, 订阅={subs} (当前: {len(self._connections)})")
 
-    async def disconnect(self, ws: WebSocket):
-        self.connections.discard(ws)
-        logger.info(f"WebSocket 客户端断开 (当前: {len(self.connections)})")
+        # Push cached data immediately so client doesn't wait
+        for sid in subs:
+            if sid in self._cache:
+                for snapshot in self._cache[sid]:
+                    try:
+                        await ws.send_json(snapshot)
+                    except Exception:
+                        break
 
-    async def broadcast(self, data: dict):
-        if not self.connections:
+    def disconnect(self, ws: WebSocket):
+        subs = self._connections.pop(ws, None)
+        logger.info(f"WebSocket 客户端断开, 订阅={subs} (当前: {len(self._connections)})")
+
+    async def update_subscription(self, ws: WebSocket, server_ids: set[str]):
+        """Update a client's subscription list"""
+        if ws in self._connections:
+            old = self._connections[ws]
+            self._connections[ws] = server_ids
+            logger.debug(f"WebSocket 订阅更新: {old} → {server_ids}")
+
+    async def broadcast(self, message: dict):
+        """Broadcast to subscribed clients only"""
+        server_id = message.get("server_id", "local")
+
+        # Update cache
+        if server_id not in self._cache:
+            self._cache[server_id] = deque(maxlen=self._cache_max)
+        self._cache[server_id].append(message)
+
+        # Send to subscribed clients
+        if not self._connections:
             return
-        dead: set = set()
-        payload = json.dumps(data, ensure_ascii=False)
-        for ws in self.connections:
-            try:
-                await ws.send_text(payload)
-            except Exception:
-                dead.add(ws)
-        if dead:
-            self.connections -= dead
+        disconnected = []
+        for ws, subscribed in self._connections.items():
+            if "*" in subscribed or server_id in subscribed:
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    disconnected.append(ws)
+
+        for ws in disconnected:
+            self.disconnect(ws)
+
+    @property
+    def connection_count(self) -> int:
+        return len(self._connections)
 
 
 ws_manager = MetricsWSManager()
@@ -79,7 +113,9 @@ async def _ws_authenticate(websocket: WebSocket) -> dict | None:
 async def metrics_ws(websocket: WebSocket):
     """
     WebSocket 指标推送端点
-    客户端连接后自动接收实时指标广播，发送任意消息作为心跳
+    客户端连接后自动接收实时指标广播。
+    支持发送 {"type": "subscribe", "server_ids": ["local", "xxx"]} 更新订阅。
+    其他消息视为心跳。
     """
     user = await _ws_authenticate(websocket)
     if not user:
@@ -89,14 +125,21 @@ async def metrics_ws(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
         while True:
-            # 等待客户端消息（心跳 ping 或其他）
-            await websocket.receive_text()
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "subscribe" and "server_ids" in msg:
+                    server_ids = set(msg["server_ids"])
+                    if server_ids:
+                        await ws_manager.update_subscription(websocket, server_ids)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass  # heartbeat or malformed — ignore
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
-        await ws_manager.disconnect(websocket)
+        ws_manager.disconnect(websocket)
 
 
 # ---------------------------------------------------------------------------
@@ -113,17 +156,16 @@ async def get_realtime(
         snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
         return snapshot  # 保持向后兼容：本机直接返回原始快照格式
 
-    # 远程服务器 — 通过 AgentClient 获取
-    from modules.servers.services import get_server
-    from modules.servers.agent_client import AgentClient
+    # 远程服务器 — 通过 AgentClient 获取（工厂函数自动解密 token）
+    from modules.servers.agent_client import get_agent_client
 
-    server = await get_server(server_id)
-    if server is None:
+    try:
+        client = await get_agent_client(server_id)
+    except ValueError:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"服务器 {server_id} 不存在")
 
     try:
-        client = AgentClient(server)
         snapshot = await asyncio.wait_for(client.get_metrics(), timeout=10)
         return {"server_id": server_id, "data": snapshot}
     except Exception as e:
@@ -249,3 +291,118 @@ async def get_alerts_recent(
 
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Fleet 舰队监控端点
+# ---------------------------------------------------------------------------
+
+
+def extract_metric(snapshot: dict, metric: str) -> dict:
+    """Extract a specific metric value + timestamp from a full snapshot."""
+    ts = snapshot.get("_timestamp", "")
+    if metric == "cpu":
+        return {"ts": ts, "value": snapshot.get("cpu", {}).get("overall_percent", 0)}
+    elif metric == "memory":
+        return {"ts": ts, "value": snapshot.get("memory", {}).get("percent", 0)}
+    elif metric == "disk":
+        parts = snapshot.get("disk", {}).get("partitions", [])
+        root = next((p for p in parts if p.get("mountpoint") == "/"), parts[0] if parts else {})
+        return {"ts": ts, "value": root.get("percent", 0)}
+    elif metric == "gpu":
+        return {"ts": ts, "value": snapshot.get("gpu", {}).get("utilization", 0)}
+    elif metric == "swap":
+        return {"ts": ts, "value": snapshot.get("memory", {}).get("swap_percent", 0)}
+    elif metric == "network":
+        net = snapshot.get("network", {})
+        return {"ts": ts, "value": net.get("bytes_sent", 0) + net.get("bytes_recv", 0)}
+    return {"ts": ts, "value": 0}
+
+
+def extract_metric_percent(data: dict, metric: str) -> float:
+    """Extract a single percent value from a metrics snapshot."""
+    if metric == "cpu":
+        return data.get("cpu", {}).get("overall_percent", 0)
+    if metric == "memory":
+        return data.get("memory", {}).get("percent", 0)
+    if metric == "disk":
+        parts = data.get("disk", {}).get("partitions", [])
+        root = next((p for p in parts if p.get("mountpoint") == "/"), parts[0] if parts else {})
+        return root.get("percent", 0)
+    if metric == "gpu":
+        return data.get("gpu", {}).get("utilization", 0)
+    if metric == "swap":
+        return data.get("memory", {}).get("swap_percent", 0)
+    return 0
+
+
+@router.get("/fleet/overview")
+async def fleet_overview(user=Depends(get_current_user)):
+    """全舰队概览 — 各服务器最新指标 + 聚合统计"""
+    from modules.monitoring.metrics_store import get_metrics_store
+
+    store = get_metrics_store()
+    return await store.get_fleet_summary()
+
+
+@router.get("/fleet/compare")
+async def fleet_compare(
+    server_ids: str = Query(..., description="逗号分隔的服务器ID"),
+    metric: str = Query(default="cpu", description="对比指标"),
+    hours: int = Query(default=1, ge=1, le=72),
+    user=Depends(get_current_user),
+):
+    """多服务器指标对比"""
+    from modules.monitoring.metrics_store import get_metrics_store
+
+    store = get_metrics_store()
+    ids = [s.strip() for s in server_ids.split(",") if s.strip()]
+    result = {}
+    for sid in ids:
+        history = await store.query_history(sid, hours)
+        result[sid] = [extract_metric(h, metric) for h in history]
+    return {"server_ids": ids, "metric": metric, "hours": hours, "data": result}
+
+
+@router.get("/fleet/heatmap")
+async def fleet_heatmap(user=Depends(get_current_user)):
+    """热力图数据 — 所有服务器 × 所有指标"""
+    from modules.monitoring.metrics_store import get_metrics_store
+
+    store = get_metrics_store()
+    fleet = await store.query_fleet_latest()
+
+    metrics_list = ["cpu", "memory", "disk", "gpu", "swap"]
+    servers = []
+    matrix = []
+
+    db = await get_db()
+    for sid, data in fleet.items():
+        srv = await (await db.execute("SELECT name FROM servers WHERE id = ?", (sid,))).fetchone()
+        name = srv[0] if srv else sid
+        servers.append({"id": sid, "name": name})
+
+        row = []
+        for m in metrics_list:
+            row.append(extract_metric_percent(data, m))
+        matrix.append(row)
+
+    return {"servers": servers, "metrics": metrics_list, "matrix": matrix}
+
+
+@router.get("/fleet/top")
+async def fleet_top(
+    metric: str = Query(default="cpu", description="排序指标"),
+    limit: int = Query(default=10, ge=1, le=50),
+    user=Depends(get_current_user),
+):
+    """Top N 服务器排行"""
+    from modules.monitoring.metrics_store import get_metrics_store
+
+    store = get_metrics_store()
+    summary = await store.get_fleet_summary()
+    servers = summary.get("servers", [])
+
+    key = f"{metric}_percent"
+    sorted_servers = sorted(servers, key=lambda s: s.get(key, 0), reverse=True)
+    return sorted_servers[:limit]

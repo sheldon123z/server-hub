@@ -23,6 +23,7 @@ const AssetsPage = lazy(() => import('@/pages/AssetsPage'))
 const AgentsPage = lazy(() => import('@/pages/agents/AgentsPage'))
 const PlaybooksPage = lazy(() => import('@/pages/PlaybooksPage'))
 const ServersPage = lazy(() => import('@/pages/ServersPage'))
+const FleetDashboardPage = lazy(() => import('@/pages/FleetDashboardPage'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore()
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/playbooks" element={<PlaybooksPage />} />
           <Route path="/servers" element={<ServersPage />} />
+          <Route path="/fleet" element={<FleetDashboardPage />} />
           <Route path="/monitoring" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

@@ -44,13 +44,10 @@ async def get_service_logs(name: str, lines: int = 50, server_id: str = "local")
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(
-            f"journalctl -u {name} -n {min(lines, 200)} --no-pager", timeout=15
-        )
+        result = await client.service_journal(name, lines=min(lines, 200))
         if not result.get("ok"):
             return f"远程获取失败: {result.get('error', '未知')}"
-        data = result["data"]
-        output = data.get("stdout", "")
+        output = result["data"].get("output", "")
         if not output.strip():
             return f"服务 {name} 没有日志输出。"
         return f"## {name} 日志\n```\n{output[-3000:]}\n```"
@@ -77,7 +74,7 @@ async def service_control(name: str, action: str, server_id: str = "local") -> s
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"systemctl {action} {name}", timeout=30)
+        result = await client.service_action(name, action)
         if not result.get("ok"):
             return f"远程执行失败: {result.get('error', '未知')}"
         return f"服务 {name} 已在远程服务器 {server_id} 上执行 {action}。"

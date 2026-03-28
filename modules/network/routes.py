@@ -23,7 +23,7 @@ async def list_listening_ports(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command("ss -tlnp", timeout=10)
+        result = await client.network_ports()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         # 解析 ss 输出为结构化数据
@@ -61,7 +61,7 @@ async def connections_summary(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command("ss -s", timeout=10)
+        result = await client.network_connections()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         return {"raw": result["data"].get("output", "")}

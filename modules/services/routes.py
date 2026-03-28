@@ -33,7 +33,9 @@ async def get_services(
         result = await client.get_services()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
-        return result.get("data", [])
+        # Agent 返回 {"services": [...], "total": N}，前端期望数组
+        data = result.get("data", {})
+        return data.get("services", []) if isinstance(data, dict) else data
     try:
         return await list_services()
     except RuntimeError as e:
@@ -69,7 +71,7 @@ async def do_service_action(
         if action not in ("start", "stop", "restart"):
             raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
         client = await get_agent_client(server_id)
-        result = await client.execute_command(f"sudo systemctl {action} {name}", timeout=30)
+        result = await client.service_action(name, action)
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         await log_audit(
@@ -169,9 +171,7 @@ async def get_service_journal(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         client = await get_agent_client(server_id)
-        result = await client.execute_command(
-            f"journalctl -u {name} -n {lines} --no-pager 2>&1", timeout=15
-        )
+        result = await client.service_journal(name, lines=lines)
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         return {"name": name, "journal": result["data"].get("output", "")}

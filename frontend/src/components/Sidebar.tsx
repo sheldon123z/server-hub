@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 const FALLBACK_ITEMS: SidebarItem[] = [
   { name: 'dashboard', display_name: '仪表盘', icon: 'dashboard', category: '监控', required_role: 'user', order: 1 },
   { name: 'servers', display_name: '服务器', icon: 'server-2', category: '基础设施', required_role: 'admin', order: 2 },
+  { name: 'fleet', display_name: '舰队总览', icon: 'topology-ring-3', category: '基础设施', required_role: 'admin', order: 3 },
   { name: 'agents', display_name: 'OpsAgent', icon: 'robot', category: '智能', required_role: 'user', order: 5 },
   { name: 'playbooks', display_name: '运维剧本', icon: 'script', category: '自动化', required_role: 'admin', order: 55 },
   { name: 'docker', display_name: 'Docker', icon: 'brand-docker', category: '管理', required_role: 'admin', order: 10 },

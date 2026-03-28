@@ -4,7 +4,7 @@
  * maintains a circular buffer of last 60 data points for sparkline history.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface GpuProcess {
   pid: number
@@ -47,6 +47,7 @@ interface UseWebSocketReturn {
   history: MetricsData[]
   connected: boolean
   alerts: AlertData[]
+  subscribe: (serverIds: string[]) => void
 }
 
 const HISTORY_SIZE = 60
@@ -85,6 +86,12 @@ export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
       if (!mountedRef.current) return
       setConnected(true)
       reconnectDelayRef.current = RECONNECT_BASE_MS
+      // Subscribe to selected server (or all for fleet page)
+      const subscribeMsg = JSON.stringify({
+        type: 'subscribe',
+        server_ids: serverFilter === '*' ? ['*'] : [serverFilter ?? 'local'],
+      })
+      ws.send(subscribeMsg)
     }
 
     ws.onmessage = (event) => {
@@ -128,6 +135,14 @@ export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
     }
   }
 
+  // Imperatively send a subscribe message to the backend
+  const subscribe = useCallback((serverIds: string[]) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'subscribe', server_ids: serverIds }))
+    }
+  }, [])
+
+  // Initial connection
   useEffect(() => {
     mountedRef.current = true
     connectRef.current!()
@@ -144,5 +159,12 @@ export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
     }
   }, []) // Empty deps - connect logic is in refs
 
-  return { metrics, history, connected, alerts }
+  // Re-subscribe when serverFilter changes (while already connected)
+  useEffect(() => {
+    if (!connected) return
+    const ids = serverFilter === '*' ? ['*'] : [serverFilter ?? 'local']
+    subscribe(ids)
+  }, [serverFilter, connected, subscribe])
+
+  return { metrics, history, connected, alerts, subscribe }
 }

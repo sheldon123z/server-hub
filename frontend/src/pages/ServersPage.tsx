@@ -37,6 +37,7 @@ interface ServerOverview {
   online: number
   offline: number
   degraded: number
+  auth_failed: number
 }
 
 interface ConnectivityResult {
@@ -89,6 +90,7 @@ const STATUS_DOT: Record<string, string> = {
   online: 'bg-green',
   offline: 'bg-red',
   degraded: 'bg-yellow',
+  auth_failed: 'bg-orange',
   unknown: 'bg-text3',
 }
 
@@ -96,7 +98,16 @@ const STATUS_LABEL: Record<string, string> = {
   online: '在线',
   offline: '离线',
   degraded: '降级',
+  auth_failed: '认证失败',
   unknown: '未知',
+}
+
+const STATUS_ICON: Record<string, string> = {
+  online: 'ti-circle-check',
+  offline: 'ti-circle-x',
+  degraded: 'ti-alert-triangle',
+  auth_failed: 'ti-lock',
+  unknown: 'ti-help',
 }
 
 /* ─── 空表单 ─── */
@@ -197,10 +208,11 @@ export default function ServersPage() {
   return (
     <div>
       {/* ── 顶部概览卡片 ── */}
-      <div className="grid grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-5 gap-4 mb-5">
         <StatCard label="总计" value={overview?.total ?? servers.length} icon="server-2" color="text-accent" />
         <StatCard label="在线" value={overview?.online ?? 0} icon="circle-check" color="text-green" />
         <StatCard label="离线" value={overview?.offline ?? 0} icon="circle-x" color="text-red" />
+        <StatCard label="认证失败" value={overview?.auth_failed ?? 0} icon="lock" color="text-orange" />
         <StatCard label="降级" value={overview?.degraded ?? 0} icon="alert-triangle" color="text-yellow" />
       </div>
 
@@ -420,7 +432,10 @@ function ServerDetail({
           <span className={cn('w-3 h-3 rounded-full', STATUS_DOT[server.status] ?? STATUS_DOT.unknown)} />
           <div>
             <h3 className="text-lg font-semibold text-text">{server.name}</h3>
-            <span className="text-xs text-text3">{STATUS_LABEL[server.status] ?? '未知'}</span>
+            <span className="text-xs text-text3 inline-flex items-center gap-1">
+              {server.status === 'auth_failed' && <i className="ti ti-lock text-orange" />}
+              {STATUS_LABEL[server.status] ?? '未知'}
+            </span>
           </div>
           {isLocalServer(server) && (
             <span className="text-xs text-accent bg-accent-dim px-2 py-0.5 rounded">本机 Hub</span>
