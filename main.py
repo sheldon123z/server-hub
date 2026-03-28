@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
             ("运维剧本", _init_playbooks()),
             ("心跳监控", _init_heartbeat()),
             ("远程指标采集", _init_remote_scheduler()),
+            ("智能体团队", _init_agent_teams()),
         ]
         for name, _ in task_defs:
             _subsystem_status[name] = "starting"
@@ -162,6 +163,11 @@ async def _init_playbooks():
 async def _init_heartbeat():
     from modules.servers.heartbeat import start_heartbeat
     await start_heartbeat()
+
+
+async def _init_agent_teams():
+    from modules.agents.teams.templates import seed_builtin_teams
+    await seed_builtin_teams()
 
 
 async def _init_remote_scheduler():

@@ -162,6 +162,34 @@ def get_chat_model(purpose: str = "chat") -> ChatOpenAI:
     )
 
 
+def get_chat_model_by_id(model_id: str | None = None) -> ChatOpenAI:
+    """根据 provider:model 格式返回 ChatOpenAI 实例
+
+    供团队系统使用，允许每个团队成员指定不同模型。
+    如果 model_id 为空，回退到全局默认模型。
+    """
+    if not model_id:
+        return get_chat_model("chat")
+
+    provider_key, model_name = parse_model_id(model_id)
+    provider = PROVIDERS.get(provider_key)
+    if not provider:
+        logger.warning(f"Unknown provider '{provider_key}' in model_id '{model_id}', falling back to default")
+        return get_chat_model("chat")
+
+    api_key_env = provider.get("api_key_env", "")
+    api_key = os.getenv(api_key_env, "") if api_key_env else "not-needed"
+
+    return ChatOpenAI(
+        model=model_name,
+        base_url=provider["base_url"],
+        api_key=api_key or "not-needed",
+        temperature=0.3,
+        max_tokens=4096,
+        streaming=True,
+    )
+
+
 def get_provider_status() -> list[dict]:
     """获取所有服务商的状态（是否配置了 API Key）"""
     result = []

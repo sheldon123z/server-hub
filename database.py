@@ -486,6 +486,71 @@ async def init_tables(db: aiosqlite.Connection):
             server_id TEXT NOT NULL,
             PRIMARY KEY (group_id, server_id)
         );
+
+        -- 智能体团队
+        CREATE TABLE IF NOT EXISTS agent_teams (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            topology TEXT NOT NULL DEFAULT 'supervisor',
+            config_json TEXT NOT NULL DEFAULT '{}',
+            default_model TEXT,
+            safety_mode TEXT DEFAULT 'supervised',
+            max_steps INTEGER DEFAULT 50,
+            timeout_seconds INTEGER DEFAULT 300,
+            enabled INTEGER DEFAULT 1,
+            is_builtin INTEGER DEFAULT 0,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_team_members (
+            id TEXT PRIMARY KEY,
+            team_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            agent_type TEXT NOT NULL DEFAULT 'worker',
+            description TEXT,
+            system_prompt TEXT NOT NULL,
+            tools_json TEXT NOT NULL DEFAULT '[]',
+            model_id TEXT,
+            max_calls INTEGER DEFAULT 15,
+            handoff_targets TEXT DEFAULT '[]',
+            position INTEGER DEFAULT 0,
+            config_json TEXT DEFAULT '{}',
+            UNIQUE(team_id, name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_team_members_team ON agent_team_members(team_id);
+
+        CREATE TABLE IF NOT EXISTS agent_team_executions (
+            id TEXT PRIMARY KEY,
+            team_id TEXT NOT NULL,
+            instruction TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            topology TEXT NOT NULL,
+            result TEXT,
+            agent_outputs TEXT DEFAULT '{}',
+            started_by TEXT NOT NULL,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            duration_seconds REAL,
+            total_steps INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_team_exec_team ON agent_team_executions(team_id, started_at);
+
+        CREATE TABLE IF NOT EXISTS agent_team_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            from_agent TEXT NOT NULL,
+            to_agent TEXT,
+            message_type TEXT DEFAULT 'text',
+            content TEXT NOT NULL,
+            metadata TEXT DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_team_msg_exec ON agent_team_messages(execution_id, timestamp);
     """)
 
     try:
