@@ -1,0 +1,47 @@
+name: RoboRev PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+    # 排除纯文档和配置变更
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.github/**'
+      - 'frontend/package-lock.json'
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: self-hosted
+    # 仅在 PR 有 Python 或关键文件变更时运行
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # roborev 需要完整历史来 diff
+
+      - name: Run RoboRev Branch Review
+        run: |
+          roborev review --branch --wait --base ${{ github.base_ref }} 2>&1 | tee /tmp/roborev-result.txt
+          # 提取评审结论
+          VERDICT=$(grep -oP 'Verdict:\s*\K\w+' /tmp/roborev-result.txt || echo "UNKNOWN")
+          echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
+          if [ "$VERDICT" = "F" ]; then
+            echo "::warning::RoboRev 评审发现问题，请查看详情"
+          fi
+        id: review
+
+      - name: Post Review Comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let result = '';
+            try { result = fs.readFileSync('/tmp/roborev-result.txt', 'utf8'); } catch(e) { result = 'RoboRev 评审结果不可用'; }
+            const body = `## 🤖 RoboRev AI 代码评审\n\n\`\`\`\n${result.slice(0, 60000)}\n\`\`\``;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
