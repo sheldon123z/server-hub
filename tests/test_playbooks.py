@@ -299,7 +299,7 @@ class TestPlaybookCRUD:
         await create_playbook({"id": "test_net", "name": "Net", "system_prompt": "t", "category": "network"}, "test")
         await create_playbook({"id": "test_sys", "name": "Sys", "system_prompt": "t", "category": "system"}, "test")
 
-        all_pbs = await list_playbooks()
+        _all_pbs = await list_playbooks()
         net_pbs = await list_playbooks("network")
 
         assert any(p["id"] == "test_net" for p in net_pbs)

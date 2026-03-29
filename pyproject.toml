@@ -88,8 +88,6 @@ ignore = [
     "RUF003",  # 中文注释中的 Unicode — 中文项目正常
 
     # ── 存量代码豁免 (渐进修复，每次 PR 清理一批) ──
-    "F401",    # unused import — 模块 re-export 模式大量使用
-    "F841",    # unused variable — 部分是有意为之的解构
     "S110",    # try-except-pass — Issue #26 已修大部分，剩余有意为之
     "S112",    # try-except-continue — 批量操作中的容错
     "S106",    # hardcoded password — token_type="bearer" 等误报
@@ -120,7 +118,6 @@ ignore = [
     "TC001",   # typing-only first-party import — 渐进修复
     "TC003",   # typing-only stdlib import — 渐进修复
     "UP042",   # replace str enum — 需要 Python 3.11 StrEnum 迁移
-    "F821",    # undefined name — 需逐个确认
 ]
 
 # ── 按文件/目录豁免特定规则 ──

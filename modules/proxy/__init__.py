@@ -1,4 +1,4 @@
-from modules.proxy.routes import router
+from modules.proxy.routes import router as router
 
 MODULE_INFO = {
     "name": "proxy",

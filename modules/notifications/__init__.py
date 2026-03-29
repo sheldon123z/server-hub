@@ -1,4 +1,4 @@
-from modules.notifications.routes import router
+from modules.notifications.routes import router as router
 
 MODULE_INFO = {
     "name": "notifications",

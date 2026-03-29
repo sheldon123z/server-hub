@@ -1,4 +1,4 @@
-from modules.docker.routes import router
+from modules.docker.routes import router as router
 
 MODULE_INFO = {
     "name": "docker",

@@ -1,4 +1,4 @@
-from modules.services.routes import router
+from modules.services.routes import router as router
 
 MODULE_INFO = {
     "name": "services",

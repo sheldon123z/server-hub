@@ -1,4 +1,4 @@
-from modules.agents.routes import router
+from modules.agents.routes import router as router
 
 MODULE_INFO = {
     "name": "agents",
