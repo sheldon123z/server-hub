@@ -76,20 +76,38 @@ ISSUE_URL=$(gh issue create \
 if echo "$ISSUE_URL" | grep -q "https://"; then
     echo "roborev-issue: Issue 已创建 → $ISSUE_URL"
 
-    # ── 自动触发 Claude Code 修复 ──
-    # 提取 Issue 编号
+    # ── 自动触发 Claude Code 修复（worktree 隔离，不影响用户工作） ──
     ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oP '\d+$')
     if [ -n "$ISSUE_NUM" ] && command -v claude &>/dev/null; then
-        echo "roborev-issue: 触发 Claude Code 自动修复 Issue #$ISSUE_NUM ..."
-        # 非交互模式：自动修复 + 创建 PR
-        nohup claude --dangerously-skip-permissions -p \
-            "修复 GitHub Issue #$ISSUE_NUM 的 roborev 代码评审问题。
-             1. 用 gh issue view $ISSUE_NUM 查看评审内容
-             2. 逐项修复每个 Finding
-             3. 创建分支 fix/roborev-$ISSUE_NUM，提交并创建 PR (Closes #$ISSUE_NUM)
-             4. 用 roborev close $JOB_ID 关闭评审" \
-            >> /home/zhengxiaodong/scripts/server-hub/logs/roborev-autofix.log 2>&1 &
-        echo "roborev-issue: 自动修复已在后台启动 (PID: $!)"
+        MAIN_REPO="/home/zhengxiaodong/scripts/server-hub"
+        BRANCH="fix/roborev-${ISSUE_NUM}"
+        WT_DIR="${MAIN_REPO}/.claude/worktrees/roborev-${ISSUE_NUM}"
+        LOG_FILE="${MAIN_REPO}/logs/roborev-autofix.log"
+
+        echo "roborev-issue: 触发 Claude Code 自动修复 Issue #$ISSUE_NUM (worktree: $WT_DIR)" >> "$LOG_FILE"
+
+        nohup bash -c "
+            cd '$MAIN_REPO' || exit 1
+            # 创建隔离 worktree
+            git worktree add '$WT_DIR' -b '$BRANCH' origin/main 2>>'$LOG_FILE' || exit 1
+            cd '$WT_DIR' || exit 1
+
+            # Claude Code 在 worktree 中修复
+            claude --dangerously-skip-permissions -p \
+                '修复 GitHub Issue #$ISSUE_NUM 的 roborev 代码评审问题。
+                 1. 用 gh issue view $ISSUE_NUM 查看评审内容
+                 2. 逐项修复每个 Finding
+                 3. 确保 ruff check . 通过
+                 4. git add 修改的文件并 commit (message 包含 Closes #$ISSUE_NUM)
+                 5. git push origin $BRANCH 并用 gh pr create 创建 PR
+                 6. 运行 roborev close $JOB_ID' \
+                >>'$LOG_FILE' 2>&1
+
+            # 清理 worktree
+            cd '$MAIN_REPO'
+            git worktree remove '$WT_DIR' --force 2>/dev/null
+        " >> "$LOG_FILE" 2>&1 &
+        echo "roborev-issue: 自动修复已在后台 worktree 启动 (PID: $!)"
     fi
 else
     echo "roborev-issue: Issue 创建失败: $ISSUE_URL" >&2
