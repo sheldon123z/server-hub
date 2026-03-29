@@ -45,5 +45,5 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install pip-audit
-      - run: pip-audit -r requirements.txt || true
-      - run: cd frontend && npm audit --audit-level=high || true
+      - run: pip-audit -r requirements.txt
+      - run: cd frontend && npm audit --audit-level=high

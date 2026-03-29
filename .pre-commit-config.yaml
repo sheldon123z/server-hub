@@ -9,7 +9,7 @@ repos:
     hooks:
       # lint 检查 (自动修复安全的问题)
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        args: [--fix]
         types_or: [python, pyi]
       # 代码格式化
       - id: ruff-format
