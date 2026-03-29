@@ -206,6 +206,27 @@ Hub-Agent 架构：中心 Hub (本项目) + 每台被管理服务器部署 `serv
 - **Agent 安全层**: `supervised` 模式下危险操作触发 `interrupt_on` 审批；`autonomous` 模式（巡检用）不中断但仍有 Shell 黑名单底线防护
 - **Cron 服务**: Python 3.11 的 f-string 不支持反斜杠，匹配正则时先提取 match 对象再在 f-string 中引用
 
+## 代码质量工具
+
+### Ruff (lint + format)
+
+配置在 `pyproject.toml`，替代 flake8 + black + isort。
+
+```bash
+make check          # ruff check + format --check
+make lint-fix       # 自动修复
+make format         # 格式化
+```
+
+### RoboRev (AI 代码评审)
+
+- **配置**: `.roborev.toml` (agent=codex, backup=claude-code)
+- **触发**: 每次 `git commit` 自动通过 `.git/hooks/post-commit` 触发
+- **评审失败**: hook 自动调用 `.roborev-issue.sh` 创建 GitHub Issue + 启动 Claude Code 修复
+- **手动评审**: `/roborev-review HEAD` 或 `/roborev-review --type security`
+- **手动修复**: `/roborev-fix <job_id>`
+- **注意**: `roborev config set` 会重写 toml 文件，修改后需检查 `[[hooks]]` 是否被清空
+
 ## 已知陷阱
 
 - **LangChain content 格式**: `AIMessage.content` 可能是 `string` 或 `[{type:"text", text:"..."}]` 数组。前端必须用 `extractContent()` 统一处理，不能 `as string` 强转

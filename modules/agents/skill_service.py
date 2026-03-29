@@ -269,7 +269,7 @@ def _safe_extract_archive(source_name: str, content: bytes, destination: Path) -
                 member_path = Path(member.name)
                 if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError("上传压缩包包含非法路径")
-            archive.extractall(destination, filter="data")  # noqa: S202
+            archive.extractall(destination, filter="data")
     else:
         raise ValueError("仅支持 zip/tar.gz/tgz 上传")
 
