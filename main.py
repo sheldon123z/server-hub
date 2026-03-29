@@ -42,6 +42,10 @@ async def lifespan(app: FastAPI):
     global _start_time, _bg_init_task
     _start_time = time.time()
 
+    # ── workers=1 运行时断言（SQLite 单写 + agent checkpoint 内存一致性） ──
+    if os.getenv("WEB_CONCURRENCY", "1") != "1":
+        raise RuntimeError("ServerHub 必须以 workers=1 运行 (SQLite 单写)")
+
     # ── 关键路径（必须在服务 ready 前完成） ──
     await get_db()
     await ensure_admin()
