@@ -22,11 +22,12 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-echarts': ['echarts', 'echarts-for-react'],
-          'vendor-mermaid': ['mermaid'],
-          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit'],
-          'vendor-markdown': ['marked', 'highlight.js', 'dompurify'],
+        manualChunks(id: string) {
+          if (id.includes('echarts')) return 'vendor-echarts'
+          if (id.includes('mermaid')) return 'vendor-mermaid'
+          if (id.includes('@xterm')) return 'vendor-xterm'
+          if (id.includes('marked') || id.includes('highlight.js') || id.includes('dompurify'))
+            return 'vendor-markdown'
         },
       },
     },
