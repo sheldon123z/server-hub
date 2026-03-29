@@ -5,7 +5,7 @@
 ## 项目概述
 
 - ServerHub 是基于 FastAPI 的 Linux 服务器 Web 管理系统，面向实验室/团队运维场景
-- 技术栈: FastAPI + Jinja2 + HTMX + Alpine.js + SQLite(aiosqlite) + Deep Agents + xterm.js
+- 技术栈: FastAPI + React 19 + TypeScript + Tailwind CSS + Vite + SQLite(aiosqlite) + Deep Agents + xterm.js
 - Python 环境必须使用 `serverhub` conda 环境，版本为 Python 3.11
 - 启动时 `workers` 必须为 `1`，避免 SQLite 多进程写入问题和 agent checkpoint 不一致
 
@@ -13,7 +13,7 @@
 
 - `modules/__init__.py` 会自动发现 `modules/*/`，每个模块导出 `router` 和 `MODULE_INFO`
 - 页面路由主要定义在 `main.py`，模块目录主要承载 API router
-- 模板继承链为 `base.html -> page templates`
+- 前端为 React SPA，源码在 `frontend/src/`，构建产物在 `frontend/dist/`
 - AI Agent 主实现位于 `modules/agents/`
 - 运行时长期记忆文件位于 `data/agent-memory.md`
 - 自定义系统提示词位于 `data/custom_prompt.txt`
@@ -24,7 +24,7 @@
 - 主 Agent 由 `modules/agents/deep_agent.py` 构建
 - 管理 API 位于 `modules/agents/routes.py`
 - 系统提示词逻辑位于 `modules/agents/prompts.py`
-- SubAgent 定义位于 `modules/agents/subagents.py`
+- SubAgent 定义位于 `modules/agents/subagents/` 目录（每个 SubAgent 独立文件）
 - 安全与审批规则位于 `modules/agents/safety.py`
 - Shell backend 位于 `modules/agents/sandbox.py`
 - 巡检逻辑位于 `modules/agents/patrol.py`
@@ -46,7 +46,7 @@
 - 认证与鉴权必须通过依赖注入完成，优先使用 `get_current_user` 和 `require_role("admin")`，不要在 handler 内自行解析 token
 - 数据库访问统一走 `get_db()`；SQL 必须参数化，禁止字符串拼接；写操作优先 `commit` 后再执行通知等副作用
 - 模块开发遵循 `routes.py` 薄层、`services.py` 厚层原则；新增表统一放在 `database.py:init_tables()` 中
-- 前端交互遵循 Alpine.js `init()` 初始化约定；HTMX 与 Alpine.js 不处理同一交互；页面模板统一继承 `base.html`
+- 前端使用 React 19 + TypeScript + Tailwind CSS；使用 TanStack Query 管理服务端状态，Zustand 管理客户端状态；API 调用通过 `@/api/client` Axios 实例
 - Git 提交信息遵循 `feat|fix|docs|refactor|perf|test|chore|style: 中文描述` 格式；涉及功能/API/Agent 工具变更时，同步更新对应 `docs/` 文档
 
 ## 运行与验证

@@ -19,14 +19,14 @@ modules/agents/tools/
 ```
 
 通过 `get_server_tools(user_role)` 注册到主 Agent：
-- **admin**: 返回全部 44 个工具（含 5 个剧本工具）
+- **admin**: 返回全部 50 个工具（含 5 个剧本工具 + 2 个服务器管理工具）
 - **user**: 仅返回 SAFE 级别的只读工具
 
-工具使用 LangChain `@tool` 装饰器，框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
+工具使用 LangChain `@tool` 装饰器，分布在 14 个子模块中。框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
 
 ---
 
-## 自定义工具（37 个）
+## 自定义工具（50 个）
 
 ### safe — 只读查询（21 个）
 
