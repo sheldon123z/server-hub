@@ -140,7 +140,7 @@ async def resolve_parameters(playbook: dict, user_params: dict) -> dict:
 
         # 正则验证
         if pdef.get("validation") and resolved.get(name) and not re.match(pdef["validation"], str(resolved[name])):
-                raise ValueError(f"参数 '{name}' 格式不正确 (期望: {pdef['validation']})")
+            raise ValueError(f"参数 '{name}' 格式不正确 (期望: {pdef['validation']})")
     return resolved
 
 

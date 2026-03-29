@@ -327,7 +327,7 @@ def _resolve_current_config(instance: dict[str, Any]) -> tuple[str, str]:
                 for profile in profiles:
                     file_path = str(profile.get("file", "")).strip()
                     if file_path and os.path.exists(file_path) and os.path.realpath(file_path) == real_path:
-                            return profile.get("key", "unknown"), profile.get("name", "未知")
+                        return profile.get("key", "unknown"), profile.get("name", "未知")
         except Exception as e:
             logger.debug("解析活动配置文件失败: %s", e)
 
