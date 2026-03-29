@@ -101,7 +101,7 @@ def load_subagents() -> list[dict]:
             configs = json.loads(custom_path.read_text(encoding="utf-8"))
             return _build_subagents_from_config(configs)
         except Exception as e:
-            logger.warning(f"自定义 SubAgent 配置加载失败: {e}")
+            logger.warning("自定义 SubAgent 配置加载失败: %s", e)
     return get_subagents()
 
 

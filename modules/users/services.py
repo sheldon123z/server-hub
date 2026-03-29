@@ -579,8 +579,8 @@ def get_enforcement_config() -> dict:
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
             defaults.update(data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("处置策略配置读取失败: %s", e)
     return defaults
 
 

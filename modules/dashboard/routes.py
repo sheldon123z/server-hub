@@ -11,4 +11,4 @@ router = APIRouter(tags=["仪表盘"])
 
 @router.get("/api/dashboard/overview")
 async def dashboard_overview(user=Depends(get_current_user)):
-    return await asyncio.get_event_loop().run_in_executor(None, collect_all)
+    return await asyncio.to_thread(collect_all)

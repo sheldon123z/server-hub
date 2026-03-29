@@ -94,8 +94,8 @@ async def discover_all() -> dict:
             try:
                 from modules.services.services import list_services as _ls
                 service_names = [s["name"] for s in await _ls()]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("加载服务名列表失败: %s", e)
         for p in ports:
             port_str = f"{p['port']}/{p['proto']}"
             aid = f"port:{port_str}"

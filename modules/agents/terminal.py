@@ -34,7 +34,7 @@ class WebTerminal:
             # 设置非阻塞
             flag = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-            logger.info(f"Terminal spawned: pid={pid}, fd={fd}")
+            logger.info("Terminal spawned: pid=%d, fd=%d", pid, fd)
 
     def resize(self, cols: int, rows: int):
         """调整终端大小"""
@@ -75,15 +75,15 @@ class WebTerminal:
         if self.master_fd is not None:
             try:
                 os.close(self.master_fd)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("关闭 master_fd 失败: %s", e)
             self.master_fd = None
 
         if self.pid is not None:
             try:
                 os.kill(self.pid, 9)
                 os.waitpid(self.pid, 0)
-            except (ProcessLookupError, ChildProcessError):
-                pass
+            except (ProcessLookupError, ChildProcessError) as e:
+                logger.debug("终端进程清理: %s", e)
             self.pid = None
             logger.info("Terminal closed")

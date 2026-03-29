@@ -59,5 +59,5 @@ def load_async_subagent_specs() -> list[dict]:
         try:
             return json.loads(custom_path.read_text(encoding="utf-8"))
         except Exception as e:
-            logger.warning(f"自定义异步 SubAgent 配置加载失败: {e}")
+            logger.warning("自定义异步 SubAgent 配置加载失败: %s", e)
     return get_async_subagent_specs()

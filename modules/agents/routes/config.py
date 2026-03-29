@@ -56,7 +56,7 @@ async def update_agent_settings(request: Request, user=Depends(require_role("adm
                     lines.append(kv)
             env_path.write_text("\n".join(lines) + "\n")
         except Exception as e:
-            logger.error(f".env 写入失败，设置未持久化: {e}")
+            logger.error(".env 写入失败，设置未持久化: %s", e)
 
         from modules.agents.deep_agent import reset_agent_cache
         reset_agent_cache()
@@ -259,7 +259,7 @@ async def trigger_reindex(user=Depends(require_role("admin"))):
     """手动触发 RAG 知识库全量重建"""
     try:
         from modules.agents.rag import build_full_index, get_index_stats
-        await asyncio.get_event_loop().run_in_executor(None, build_full_index, True)
+        await asyncio.to_thread(build_full_index, True)
         stats = get_index_stats()
         return {"ok": True, "stats": stats}
     except Exception as e:

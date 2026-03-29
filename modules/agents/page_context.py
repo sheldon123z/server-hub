@@ -36,7 +36,7 @@ async def get_page_context(page_name: str) -> str:
 
 async def _dashboard_context() -> str:
     from modules.dashboard.collectors import get_system_info
-    info = await asyncio.get_event_loop().run_in_executor(None, get_system_info)
+    info = await asyncio.to_thread(get_system_info)
     gpu = info.get("gpu", {})
     gpu_line = (
         f"GPU: 利用率 {gpu['util']}%, 显存 {gpu['mem_used']}/{gpu['mem_total']}MiB, 温度 {gpu['temp']}°C"
@@ -56,7 +56,7 @@ async def _dashboard_context() -> str:
 
 async def _monitoring_context() -> str:
     from modules.monitoring.collectors import collect_realtime_fast
-    data = await asyncio.get_event_loop().run_in_executor(None, collect_realtime_fast)
+    data = await asyncio.to_thread(collect_realtime_fast)
     cpu = data.get("cpu", {})
     mem = data.get("memory", {})
     return (
@@ -90,8 +90,8 @@ async def _docker_context() -> str:
 
 async def _users_context() -> str:
     from modules.users.services import get_user_stats, read_quotas
-    users = await asyncio.get_event_loop().run_in_executor(None, get_user_stats)
-    quotas = await asyncio.get_event_loop().run_in_executor(None, read_quotas)
+    users = await asyncio.to_thread(get_user_stats)
+    quotas = await asyncio.to_thread(read_quotas)
     user_lines = []
     for u in users[:10]:
         mem_gb = u.get("mem_gb", round(u.get("mem_bytes", 0) / 1073741824, 1))

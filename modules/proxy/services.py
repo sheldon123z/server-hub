@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
+import logging
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -327,8 +331,8 @@ def _resolve_current_config(instance: dict[str, Any]) -> tuple[str, str]:
                     if file_path and os.path.exists(file_path):
                         if os.path.realpath(file_path) == real_path:
                             return profile.get("key", "unknown"), profile.get("name", "未知")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("解析活动配置文件失败: %s", e)
 
     default_key = str(instance.get("default_config_key", "")).strip()
     for profile in profiles:
@@ -577,8 +581,8 @@ async def _write_config_file(target_file: str, content: str) -> None:
         if os.access(target.parent, os.W_OK):
             target.write_text(content, encoding="utf-8")
             return
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("直接写入配置文件失败，尝试 sudo: %s", e)
 
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tmp:
         tmp.write(content)

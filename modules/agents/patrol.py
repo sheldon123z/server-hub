@@ -249,7 +249,7 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
 
     # 防止同一任务并发执行
     if task_id in _running_patrols:
-        logger.info(f"巡检 {display_name} 正在运行，跳过本次调度")
+        logger.info("巡检 %s 正在运行，跳过本次调度", display_name)
         return "skipped", ""
     _running_patrols.add(task_id)
 
@@ -312,8 +312,8 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
                 else:
                     alert_text = f"[巡检告警] {display_name}\n{report[:500]}"
                 await send_notification(alert_text[:1000])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("巡检告警通知发送失败: %s", e)
 
         # 触发告警规则引擎（从结构化报告提取指标）
         if report_json:
@@ -323,7 +323,7 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
                 if flat_metrics:
                     await evaluate_rules(flat_metrics)
             except Exception as e:
-                logger.error(f"告警规则引擎执行失败: {e}")
+                logger.error("告警规则引擎执行失败: %s", e)
 
         # critical 状态自动触发故障诊断（异步，不阻塞巡检流程）
         if status == "critical":
@@ -336,13 +336,13 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
                     alert_context=f"巡检任务 [{display_name}] 发现严重问题:\n{context}",
                 ))
             except Exception as e:
-                logger.error(f"触发故障诊断失败: {e}")
+                logger.error("触发故障诊断失败: %s", e)
 
-        logger.info(f"巡检 {display_name} 完成: {status} ({duration:.1f}s)")
+        logger.info("巡检 %s 完成: %s (%.1fs)", display_name, status, duration)
         return status, report
 
     except Exception as e:
-        logger.error(f"巡检 {display_name} 失败: {e}")
+        logger.error("巡检 %s 失败: %s", display_name, e)
         duration = time.time() - start_time
         db = await get_db()
         await db.execute(
@@ -402,7 +402,7 @@ async def _patrol_loop():
                     asyncio.create_task(execute_patrol(task_dict))
 
         except Exception as e:
-            logger.error(f"巡检调度器错误: {e}")
+            logger.error("巡检调度器错误: %s", e)
 
         await asyncio.sleep(60)  # 每分钟检查一次
 

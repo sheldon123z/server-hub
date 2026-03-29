@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from langchain_core.messages import AIMessage, ToolMessage
@@ -139,8 +140,8 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                                         tool_input=json.dumps(tc["args"], ensure_ascii=False)[:1000],
                                         risk_level=TOOL_RISK_MAP.get(tc["name"], "safe"),
                                     )
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.debug("记录 tool_call 事件失败: %s", e)
                         elif msg.content:
                             payload = {
                                 "run_id": run_id,
@@ -168,8 +169,8 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                                 tool_name=getattr(msg, "name", ""),
                                 tool_output=(msg.content[:500] if msg.content else ""),
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("记录 tool_result 事件失败: %s", e)
 
                 emitted_count = len(messages)
 
@@ -258,7 +259,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
 
             await db.execute(
                 "UPDATE agent_conversations SET updated_at = ?, message_count = message_count + 1 WHERE id = ?",
-                (__import__("datetime").datetime.now().isoformat(), conversation_id),
+                (datetime.now().isoformat(), conversation_id),
             )
             await db.commit()
         except asyncio.CancelledError:

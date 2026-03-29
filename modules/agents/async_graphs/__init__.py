@@ -54,7 +54,7 @@ async def _get_async_checkpointer() -> AsyncSqliteSaver:
         Path(cp_path).parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(cp_path)
         _async_checkpointer = AsyncSqliteSaver(conn)
-        logger.info(f"异步 SubAgent checkpointer: {cp_path}")
+        logger.info("异步 SubAgent checkpointer: %s", cp_path)
     return _async_checkpointer
 
 
@@ -102,9 +102,9 @@ async def build_all_async_graphs() -> dict:
                 checkpointer=checkpointer,
             )
             graphs[graph_id] = graph
-            logger.info(f"异步 graph '{graph_id}' 编译完成 (model={spec['model_purpose']}, tools={len(tools)})")
+            logger.info("异步 graph '%s' 编译完成 (model=%s, tools=%d)", graph_id, spec["model_purpose"], len(tools))
         except Exception as e:
-            logger.error(f"异步 graph '{graph_id}' 编译失败: {e}")
+            logger.error("异步 graph '%s' 编译失败: %s", graph_id, e)
 
     return graphs
 

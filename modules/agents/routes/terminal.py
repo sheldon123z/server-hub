@@ -53,8 +53,8 @@ async def terminal_ws(websocket: WebSocket):
                         parts = data.split(":")[1].rstrip("]").split(",")
                         cols, rows = int(parts[0]), int(parts[1])
                         terminal.resize(cols, rows)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("终端 resize 解析失败: %s", e)
                 else:
                     terminal.write(data)
 
@@ -63,6 +63,6 @@ async def terminal_ws(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("Terminal WebSocket disconnected")
     except Exception as e:
-        logger.error(f"Terminal error: {e}")
+        logger.error("Terminal error: %s", e)
     finally:
         terminal.close()

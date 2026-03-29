@@ -16,9 +16,7 @@ async def retrieve_knowledge(query: str, source: str = "", top_k: int = 5) -> st
         top_k: 返回结果数量，默认5
     """
     from modules.agents.rag import hybrid_search
-    results = await asyncio.get_event_loop().run_in_executor(
-        None, hybrid_search, query, top_k, source
-    )
+    results = await asyncio.to_thread(hybrid_search, query, top_k, source)
     if not results:
         return f"知识库中没有找到与 \"{query}\" 相关的信息。"
     lines = [f"## 知识检索: \"{query}\" ({len(results)} 条结果)\n"]
@@ -36,9 +34,7 @@ async def retrieve_knowledge(query: str, source: str = "", top_k: int = 5) -> st
 async def reindex_knowledge_base() -> str:
     """手动触发知识库全量重建索引。管理员在更新了运维文档或导入新故障案例后使用。"""
     from modules.agents.rag import build_full_index
-    stats = await asyncio.get_event_loop().run_in_executor(
-        None, build_full_index, True
-    )
+    stats = await asyncio.to_thread(build_full_index, True)
     lines = ["## 知识库重建完成\n"]
     for key, count in stats.items():
         if key not in ("total", "build_time_seconds", "skipped"):

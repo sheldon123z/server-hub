@@ -44,7 +44,7 @@ class MetricsWSManager:
         await ws.accept()
         subs = server_ids or {"local"}
         self._connections[ws] = subs
-        logger.info(f"WebSocket 客户端连接, 订阅={subs} (当前: {len(self._connections)})")
+        logger.info("WebSocket 客户端连接, 订阅=%s (当前: %d)", subs, len(self._connections))
 
         # Push cached data immediately so client doesn't wait
         for sid in subs:
@@ -57,14 +57,14 @@ class MetricsWSManager:
 
     def disconnect(self, ws: WebSocket):
         subs = self._connections.pop(ws, None)
-        logger.info(f"WebSocket 客户端断开, 订阅={subs} (当前: {len(self._connections)})")
+        logger.info("WebSocket 客户端断开, 订阅=%s (当前: %d)", subs, len(self._connections))
 
     async def update_subscription(self, ws: WebSocket, server_ids: set[str]):
         """Update a client's subscription list and push cached data for new subscriptions"""
         if ws in self._connections:
             old = self._connections[ws]
             self._connections[ws] = server_ids
-            logger.debug(f"WebSocket 订阅更新: {old} → {server_ids}")
+            logger.debug("WebSocket 订阅更新: %s → %s", old, server_ids)
 
             # Push cached snapshots for newly subscribed servers
             new_sids = server_ids - old if "*" not in old else set()
@@ -147,9 +147,9 @@ async def metrics_ws(websocket: WebSocket):
             except (json.JSONDecodeError, KeyError, TypeError):
                 pass  # heartbeat or malformed — ignore
     except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+        logger.debug("WebSocket 客户端主动断开")
+    except Exception as e:
+        logger.warning("WebSocket 异常断开: %s", e)
     finally:
         ws_manager.disconnect(websocket)
 
@@ -165,7 +165,7 @@ async def get_realtime(
 ):
     """获取当前系统指标快照，支持指定远程服务器"""
     if server_id == "local":
-        snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
+        snapshot = await asyncio.to_thread(collect_all)
         return snapshot  # 保持向后兼容：本机直接返回原始快照格式
 
     # 远程服务器 — 通过 AgentClient 获取（工厂函数自动解密 token）
@@ -238,7 +238,7 @@ async def get_gpu_detail(
 ):
     """获取详细 GPU 信息，支持远程服务器"""
     if server_id == "local":
-        gpu_info = await asyncio.get_event_loop().run_in_executor(None, collect_gpu)
+        gpu_info = await asyncio.to_thread(collect_gpu)
         return gpu_info
 
     from modules.servers.agent_client import get_agent_client
@@ -260,7 +260,7 @@ async def get_top_processes(
 ):
     """获取资源占用 Top N 进程排行，支持远程服务器"""
     if server_id == "local":
-        data = await asyncio.get_event_loop().run_in_executor(None, lambda: collect_top_processes(limit))
+        data = await asyncio.to_thread(collect_top_processes, limit)
         return data
 
     # 远程服务器暂不支持进程列表（Agent 端无专用端点）
@@ -270,7 +270,7 @@ async def get_top_processes(
 @router.get("/inode")
 async def get_inode(user=Depends(get_current_user)):
     """获取所有挂载点的 inode 使用情况"""
-    data = await asyncio.get_event_loop().run_in_executor(None, collect_inode)
+    data = await asyncio.to_thread(collect_inode)
     return data
 
 

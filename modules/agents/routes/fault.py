@@ -1,9 +1,12 @@
 """故障报告 + 案例库 + 事件路由"""
 
 import json
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from auth.dependencies import require_role
 from database import get_db
@@ -123,8 +126,8 @@ async def create_fault_case(request: Request, user=Depends(require_role("admin")
             (case_id, body["title"], body.get("symptoms", ""), body.get("root_cause", ""),
              body.get("solution", ""), body.get("tags", "")),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("FTS5 索引写入失败: %s", e)
     await db.commit()
     return {"ok": True, "id": case_id}
 
@@ -136,8 +139,8 @@ async def delete_fault_case(case_id: int, user=Depends(require_role("admin"))):
     await db.execute("DELETE FROM fault_cases WHERE id = ?", (case_id,))
     try:
         await db.execute("DELETE FROM fault_cases_fts WHERE rowid = ?", (case_id,))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("FTS5 索引删除失败: %s", e)
     await db.commit()
     return {"ok": True}
 

@@ -1,15 +1,19 @@
 """系统信息采集（移植自 server-panel.py）"""
 
+import logging
 import subprocess
 import psutil
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def run(cmd: str, timeout: int = 10) -> str:
     try:
         r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
         return r.stdout.strip()
-    except Exception:
+    except Exception as e:
+        logger.debug("命令执行失败 (%s): %s", cmd, e)
         return ""
 
 
@@ -73,6 +77,6 @@ def get_extra_disks() -> list[dict]:
                 "used": usage.used,
                 "percent": usage.percent,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("磁盘 %s 采集失败: %s", part.mountpoint, e)
     return disks

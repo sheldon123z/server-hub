@@ -88,7 +88,7 @@ async def delete_user(
 
     try:
         await user_store.delete_user(int(user_id))
-        return {"success": True, "deleted_user_id": user_id}
+        return {"ok": True, "deleted_user_id": user_id}
     except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     except Exception as e:

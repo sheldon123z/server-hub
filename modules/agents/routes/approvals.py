@@ -96,7 +96,7 @@ async def resolve_approval(approval_id: str, body: ApprovalAction, user=Depends(
 
         return {"ok": True, "action": body.action + "d", "result": final_content[:1000]}
     except Exception as e:
-        logger.error(f"Resume failed: {e}")
+        logger.error("Resume failed: %s", e)
         if run_id:
             await append_run_event(
                 run_id,
