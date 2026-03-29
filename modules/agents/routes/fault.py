@@ -1,5 +1,6 @@
 """故障报告 + 案例库 + 事件路由"""
 
+import contextlib
 import json
 import logging
 from datetime import datetime
@@ -67,10 +68,8 @@ async def get_fault_report(report_id: str, user=Depends(require_role("admin"))):
         "similar_cases",
     ):
         if result.get(field):
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 result[field] = json.loads(result[field])
-            except (json.JSONDecodeError, TypeError):
-                pass
     return result
 
 

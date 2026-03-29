@@ -1,7 +1,9 @@
 """告警规则引擎 — 可配置阈值 + 分级 + 去重"""
 
+import contextlib
 import json
 import logging
+import operator as op
 
 from database import get_db
 
@@ -98,19 +100,19 @@ async def seed_default_alert_rules():
     await db.commit()
 
 
+_COMPARE_OPS: dict[str, object] = {
+    ">": op.gt,
+    ">=": op.ge,
+    "<": op.lt,
+    "<=": op.le,
+    "==": op.eq,
+}
+
+
 def _compare(value: float, operator: str, threshold: float) -> bool:
     """比较值与阈值"""
-    if operator == ">":
-        return value > threshold
-    elif operator == ">=":
-        return value >= threshold
-    elif operator == "<":
-        return value < threshold
-    elif operator == "<=":
-        return value <= threshold
-    elif operator == "==":
-        return value == threshold
-    return False
+    cmp = _COMPARE_OPS.get(operator)
+    return cmp(value, threshold) if cmp else False
 
 
 async def _should_alert(rule_id: str, cooldown_minutes: int) -> bool:
@@ -236,10 +238,8 @@ def extract_metrics_from_report(report_json: dict | None) -> dict:
         name = item.get("name", "")
         val = item.get("current_value", "")
         if val:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 metrics[name] = float(val.rstrip("%").strip())
-            except (ValueError, TypeError):
-                pass
 
     return metrics
 

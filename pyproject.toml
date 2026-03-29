@@ -97,12 +97,6 @@ ignore = [
     "S324",    # hashlib md5 — 非安全用途 (文件哈希)
     "S501",    # request no cert validation — 自签名证书 Phase 1
     "S608",    # hardcoded SQL — 参数化改造需独立 PR
-    "SIM105",  # contextlib.suppress — 风格偏好
-    "SIM102",  # collapsible if — 可读性选择
-    "SIM109",  # compare with tuple — 风格偏好
-    "SIM116",  # dict lookup — 风格偏好
-    "SIM117",  # multiple with — 风格偏好
-    "SIM212",  # twisted if-expr — 风格偏好
     "ASYNC109", # async timeout — 项目使用 asyncio.wait_for
     "ASYNC240", # blocking path in async — 文件操作量小可接受
     "RUF005",  # collection concatenation — 风格偏好
@@ -115,8 +109,6 @@ ignore = [
     "B006",    # mutable argument default — 渐进修复
     "B007",    # unused loop variable — 渐进修复
     "B905",    # zip without strict — 渐进修复
-    "G201",    # logging exc_info — 风格偏好
-    "PIE810",  # multiple starts/ends with — 低优先级
     "TC001",   # typing-only first-party import — 渐进修复
     "TC003",   # typing-only stdlib import — 渐进修复
     "UP042",   # replace str enum — 需要 Python 3.11 StrEnum 迁移

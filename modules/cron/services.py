@@ -285,7 +285,7 @@ async def delete_cron_job(cron_user: str, schedule: str, command: str) -> bool:
 
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if stripped == target or stripped == disabled_target:
+        if stripped in (target, disabled_target):
             found = True
             # 如果前一行是注释，也删除
             if new_lines and new_lines[-1].strip().startswith("#"):
