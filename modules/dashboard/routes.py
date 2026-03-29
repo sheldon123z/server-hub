@@ -3,6 +3,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends
+
 from auth.dependencies import get_current_user
 from modules.monitoring.collectors import collect_all
 

@@ -16,7 +16,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 lg_router = APIRouter(prefix="/lg", tags=["LG Compat"])
 
 # ─── 状态存储 ───
+
 
 @dataclass
 class ThreadData:
@@ -63,7 +64,7 @@ def register_graph(graph_id: str, graph) -> None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 def _thread_to_dict(t: ThreadData) -> dict:
@@ -97,6 +98,7 @@ def _run_to_dict(r: RunData) -> dict:
 
 
 # ─── Graph 执行 ───
+
 
 async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
     """在后台执行 graph，更新 run 和 thread 状态"""
@@ -136,7 +138,7 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
         run.updated_at = _now_iso()
         logger.info("LG Compat: run %s 完成 (graph=%s)", run.run_id, run.assistant_id)
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         run.status = "error"
         run.error = "Execution timed out (300s limit)"
         run.updated_at = _now_iso()
@@ -161,6 +163,7 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
 
 
 # ─── HTTP 端点 ───
+
 
 @lg_router.post("/threads")
 async def create_thread(request: Request):
@@ -308,7 +311,7 @@ async def _cleanup_loop():
     while True:
         await asyncio.sleep(3600)
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stale_threads = []
             for tid, thread in _threads.items():
                 if thread.status != "idle":

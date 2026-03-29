@@ -13,16 +13,16 @@ Middleware 栈 (12 个):
 
 import logging
 import os
-import aiosqlite
 from pathlib import Path
 
+import aiosqlite
 from deepagents import create_deep_agent
 from langchain.agents.middleware import (
-    ModelRetryMiddleware,
-    ToolRetryMiddleware,
+    ContextEditingMiddleware,
     ModelCallLimitMiddleware,
     ModelFallbackMiddleware,
-    ContextEditingMiddleware,
+    ModelRetryMiddleware,
+    ToolRetryMiddleware,
 )
 from langchain.agents.middleware.context_editing import ClearToolUsesEdit
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -30,11 +30,11 @@ from langgraph.store.sqlite import AsyncSqliteStore
 
 from config import settings
 from modules.agents.llm import get_chat_model
-from modules.agents.tools import get_server_tools
-from modules.agents.safety import build_interrupt_config
 from modules.agents.prompts import get_system_prompt
-from modules.agents.subagents import load_subagents
+from modules.agents.safety import build_interrupt_config
 from modules.agents.sandbox import SafeLocalShellBackend
+from modules.agents.subagents import load_subagents
+from modules.agents.tools import get_server_tools
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,11 @@ def _build_extra_middleware(purpose: str = "chat") -> list:
     # 4. 上下文编辑 — 超 60K token 时清理旧工具输出（保留最近 5 个）
     #    与 SummarizationMiddleware 互补：ContextEditing 清理工具输出，
     #    Summarization 压缩消息历史，先清理减轻 Summarization 压力
-    extra.append(ContextEditingMiddleware(
-        edits=[ClearToolUsesEdit(trigger=60_000, keep=5)],
-    ))
+    extra.append(
+        ContextEditingMiddleware(
+            edits=[ClearToolUsesEdit(trigger=60_000, keep=5)],
+        )
+    )
 
     # 5. 模型降级 — chat 模式且主备不同时，失败自动切换备用模型
     if purpose == "chat":
@@ -142,6 +144,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
         # 异步 SubAgent — 框架按 graph_id 自动路由到 AsyncSubAgentMiddleware
         try:
             from modules.agents.subagents import load_async_subagent_specs
+
             async_specs = load_async_subagent_specs()
             subagents = subagents + async_specs
         except Exception as e:
@@ -151,9 +154,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     # Checkpoint — 短期记忆（per-conversation state 持久化）
     checkpoint_path = settings.agent_checkpoint_db
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-    checkpointer = AsyncSqliteSaver(
-        await aiosqlite.connect(checkpoint_path)
-    )
+    checkpointer = AsyncSqliteSaver(await aiosqlite.connect(checkpoint_path))
 
     # Memory — 长期记忆（data/agent-memory.md 文件，agent 通过 edit_file 更新）
     memory_path = get_memory_path()

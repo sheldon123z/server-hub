@@ -9,7 +9,7 @@ import aiosqlite
 
 from config import settings
 
-_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
@@ -580,15 +580,14 @@ async def init_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "agent_approvals", "run_id", "TEXT")
     # server_id 列就绪后才能创建复合索引
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)"
-    )
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
     # Issue #8: agent_token_hash 实际存 Fernet 加密值而非 hash，新增正确命名的字段
     # 不能 ALTER TABLE RENAME COLUMN (旧版 SQLite 不支持)，所以新增并双写
     await _ensure_column(db, "servers", "agent_token_encrypted", "TEXT")
 
     # 确保本机服务器记录存在
     import socket as _socket
+
     _hostname = _socket.gethostname()
     await db.execute(
         "INSERT OR IGNORE INTO servers (id, name, hostname, ip_address, is_local, status) "

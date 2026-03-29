@@ -47,9 +47,7 @@ class TeamStore:
     async def get_team(self, team_id: str) -> dict | None:
         """根据 ID 获取单个团队"""
         db = await get_db()
-        cursor = await db.execute(
-            "SELECT * FROM agent_teams WHERE id = ?", (team_id,)
-        )
+        cursor = await db.execute("SELECT * FROM agent_teams WHERE id = ?", (team_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
@@ -71,8 +69,14 @@ class TeamStore:
         values: list = []
 
         updatable_keys = (
-            "name", "description", "topology", "default_model",
-            "safety_mode", "max_steps", "timeout_seconds", "enabled",
+            "name",
+            "description",
+            "topology",
+            "default_model",
+            "safety_mode",
+            "max_steps",
+            "timeout_seconds",
+            "enabled",
         )
         for key in updatable_keys:
             if key in data:
@@ -121,9 +125,7 @@ class TeamStore:
     async def get_member(self, member_id: str) -> dict | None:
         """根据 ID 获取单个成员"""
         db = await get_db()
-        cursor = await db.execute(
-            "SELECT * FROM agent_team_members WHERE id = ?", (member_id,)
-        )
+        cursor = await db.execute("SELECT * FROM agent_team_members WHERE id = ?", (member_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
@@ -167,8 +169,13 @@ class TeamStore:
         values: list = []
 
         updatable_keys = (
-            "name", "agent_type", "description", "system_prompt",
-            "model_id", "max_calls", "position",
+            "name",
+            "agent_type",
+            "description",
+            "system_prompt",
+            "model_id",
+            "max_calls",
+            "position",
         )
         for key in updatable_keys:
             if key in data:
@@ -197,9 +204,7 @@ class TeamStore:
         )
 
         # 更新所属团队 updated_at 触发缓存失效
-        cursor = await db.execute(
-            "SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,)
-        )
+        cursor = await db.execute("SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,))
         row = await cursor.fetchone()
         if row:
             await db.execute(
@@ -215,14 +220,10 @@ class TeamStore:
         db = await get_db()
 
         # 先查所属团队以便更新 updated_at
-        cursor = await db.execute(
-            "SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,)
-        )
+        cursor = await db.execute("SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,))
         row = await cursor.fetchone()
 
-        result = await db.execute(
-            "DELETE FROM agent_team_members WHERE id = ?", (member_id,)
-        )
+        result = await db.execute("DELETE FROM agent_team_members WHERE id = ?", (member_id,))
         if row:
             await db.execute(
                 "UPDATE agent_teams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -234,7 +235,11 @@ class TeamStore:
     # ─── 执行记录 ───
 
     async def create_execution(
-        self, team_id: str, instruction: str, username: str, topology: str,
+        self,
+        team_id: str,
+        instruction: str,
+        username: str,
+        topology: str,
     ) -> dict:
         """创建执行记录，初始状态为 running"""
         db = await get_db()
@@ -287,27 +292,25 @@ class TeamStore:
     async def get_execution(self, exec_id: str) -> dict | None:
         """获取单条执行记录"""
         db = await get_db()
-        cursor = await db.execute(
-            "SELECT * FROM agent_team_executions WHERE id = ?", (exec_id,)
-        )
+        cursor = await db.execute("SELECT * FROM agent_team_executions WHERE id = ?", (exec_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
 
     async def list_executions(
-        self, team_id: str | None = None, limit: int = 20,
+        self,
+        team_id: str | None = None,
+        limit: int = 20,
     ) -> list[dict]:
         """列出执行记录，可按团队过滤"""
         db = await get_db()
         if team_id:
             cursor = await db.execute(
-                "SELECT * FROM agent_team_executions "
-                "WHERE team_id = ? ORDER BY started_at DESC LIMIT ?",
+                "SELECT * FROM agent_team_executions WHERE team_id = ? ORDER BY started_at DESC LIMIT ?",
                 (team_id, limit),
             )
         else:
             cursor = await db.execute(
-                "SELECT * FROM agent_team_executions "
-                "ORDER BY started_at DESC LIMIT ?",
+                "SELECT * FROM agent_team_executions ORDER BY started_at DESC LIMIT ?",
                 (limit,),
             )
         rows = await cursor.fetchall()
@@ -344,8 +347,7 @@ class TeamStore:
         """获取执行的完整消息流"""
         db = await get_db()
         cursor = await db.execute(
-            "SELECT * FROM agent_team_messages "
-            "WHERE execution_id = ? ORDER BY timestamp",
+            "SELECT * FROM agent_team_messages WHERE execution_id = ? ORDER BY timestamp",
             (exec_id,),
         )
         rows = await cursor.fetchall()

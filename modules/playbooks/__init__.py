@@ -11,4 +11,4 @@ MODULE_INFO = {
     "order": 55,
 }
 
-__all__ = ["router", "MODULE_INFO"]
+__all__ = ["MODULE_INFO", "router"]

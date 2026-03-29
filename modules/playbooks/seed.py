@@ -48,7 +48,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":300,"max_tool_calls":30}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 二、服务器健康检查
     # ═══════════════════════════════════════════════════════════
@@ -100,7 +99,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":300,"max_tool_calls":30}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 三、Docker / 容器运维
     # ═══════════════════════════════════════════════════════════
@@ -154,7 +152,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":180,"max_tool_calls":20}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 四、安全审计
     # ═══════════════════════════════════════════════════════════
@@ -203,7 +200,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":120,"max_tool_calls":10}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 五、用户资源管理
     # ═══════════════════════════════════════════════════════════
@@ -232,7 +228,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":180,"max_tool_calls":30}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 六、日志分析
     # ═══════════════════════════════════════════════════════════
@@ -261,7 +256,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":180,"max_tool_calls":20}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 七、定时任务管理
     # ═══════════════════════════════════════════════════════════
@@ -288,7 +282,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":120,"max_tool_calls":10}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 八、性能诊断
     # ═══════════════════════════════════════════════════════════
@@ -320,7 +313,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":180,"max_tool_calls":15}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 九、备份与恢复
     # ═══════════════════════════════════════════════════════════
@@ -345,7 +337,6 @@ DEFAULT_PLAYBOOKS = [
         ),
         "validation_rules": '{"timeout_seconds":120,"max_tool_calls":10}',
     },
-
     # ═══════════════════════════════════════════════════════════
     # 十、Nginx 运维
     # ═══════════════════════════════════════════════════════════
@@ -385,11 +376,7 @@ async def seed_builtin_playbooks():
 
     db = await get_db()
     for pb in DEFAULT_PLAYBOOKS:
-        existing = await (
-            await db.execute(
-                "SELECT id FROM playbooks WHERE id = ?", (pb["id"],)
-            )
-        ).fetchone()
+        existing = await (await db.execute("SELECT id FROM playbooks WHERE id = ?", (pb["id"],))).fetchone()
         if not existing:
             await db.execute(
                 "INSERT INTO playbooks "
@@ -397,9 +384,14 @@ async def seed_builtin_playbooks():
                 "tools_required, validation_rules, is_builtin, created_by) "
                 "VALUES (?,?,?,?,?,?,?,?,1,'system')",
                 (
-                    pb["id"], pb["name"], pb["description"], pb["category"],
-                    pb["system_prompt"], pb["parameters"],
-                    pb["tools_required"], pb["validation_rules"],
+                    pb["id"],
+                    pb["name"],
+                    pb["description"],
+                    pb["category"],
+                    pb["system_prompt"],
+                    pb["parameters"],
+                    pb["tools_required"],
+                    pb["validation_rules"],
                 ),
             )
     await db.commit()

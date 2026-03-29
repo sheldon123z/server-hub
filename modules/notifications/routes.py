@@ -6,15 +6,13 @@ from pydantic import BaseModel, Field
 from auth.dependencies import require_role
 from modules.notifications.channels import CHANNEL_TYPES
 from modules.notifications.services import (
-    send_notification,
-    send_telegram,
-    get_channels,
-    get_channel,
     create_channel,
-    update_channel,
     delete_channel,
-    test_channel,
+    get_channels,
     get_notification_history,
+    send_notification,
+    test_channel,
+    update_channel,
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["通知管理"])
@@ -40,6 +38,7 @@ class ChannelUpdate(BaseModel):
 
 # --- 渠道类型 ---
 
+
 @router.get("/channel-types")
 async def list_channel_types(user=Depends(require_role("admin"))):
     """返回可用渠道类型和配置 schema"""
@@ -53,6 +52,7 @@ async def list_channel_types(user=Depends(require_role("admin"))):
 
 
 # --- 渠道 CRUD ---
+
 
 @router.get("/channels")
 async def list_channels(user=Depends(require_role("admin"))):
@@ -100,6 +100,7 @@ async def test_channel_endpoint(channel_id: str, user=Depends(require_role("admi
 
 
 # --- 发送与历史 ---
+
 
 @router.post("/send")
 async def send_notification_endpoint(

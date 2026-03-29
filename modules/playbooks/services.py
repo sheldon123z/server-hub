@@ -13,9 +13,22 @@ from database import get_db
 logger = logging.getLogger(__name__)
 
 PLAYBOOK_COLUMNS = [
-    "id", "name", "description", "category", "system_prompt", "parameters",
-    "tools_required", "validation_rules", "trigger_config", "safety_mode",
-    "steps_visual", "is_builtin", "tags", "created_by", "created_at", "updated_at",
+    "id",
+    "name",
+    "description",
+    "category",
+    "system_prompt",
+    "parameters",
+    "tools_required",
+    "validation_rules",
+    "trigger_config",
+    "safety_mode",
+    "steps_visual",
+    "is_builtin",
+    "tags",
+    "created_by",
+    "created_at",
+    "updated_at",
 ]
 
 
@@ -29,9 +42,7 @@ def _row_to_dict(row) -> dict | None:
 async def get_playbook(playbook_id: str) -> dict | None:
     """获取单个剧本"""
     db = await get_db()
-    row = await (
-        await db.execute("SELECT * FROM playbooks WHERE id = ?", (playbook_id,))
-    ).fetchone()
+    row = await (await db.execute("SELECT * FROM playbooks WHERE id = ?", (playbook_id,))).fetchone()
     return _row_to_dict(row)
 
 
@@ -46,9 +57,7 @@ async def list_playbooks(category: str | None = None) -> list[dict]:
             )
         ).fetchall()
     else:
-        rows = await (
-            await db.execute("SELECT * FROM playbooks ORDER BY updated_at DESC")
-        ).fetchall()
+        rows = await (await db.execute("SELECT * FROM playbooks ORDER BY updated_at DESC")).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
@@ -62,13 +71,19 @@ async def create_playbook(data: dict, created_by: str) -> str:
         "steps_visual, tags, created_by) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
-            data["id"], data["name"], data.get("description", ""),
-            data.get("category", "general"), data["system_prompt"],
-            data.get("parameters", "[]"), data.get("tools_required", ""),
+            data["id"],
+            data["name"],
+            data.get("description", ""),
+            data.get("category", "general"),
+            data["system_prompt"],
+            data.get("parameters", "[]"),
+            data.get("tools_required", ""),
             data.get("validation_rules", "{}"),
             data.get("trigger_config", '{"type":"manual"}'),
-            data.get("safety_mode"), data.get("steps_visual"),
-            data.get("tags", ""), created_by,
+            data.get("safety_mode"),
+            data.get("steps_visual"),
+            data.get("tags", ""),
+            created_by,
         ),
     )
     await db.commit()
@@ -88,20 +103,14 @@ async def update_playbook(playbook_id: str, updates: dict) -> None:
     set_parts.append("updated_at = ?")
     values.append(datetime.now().isoformat())
     values.append(playbook_id)
-    await db.execute(
-        f"UPDATE playbooks SET {', '.join(set_parts)} WHERE id = ?", values
-    )
+    await db.execute(f"UPDATE playbooks SET {', '.join(set_parts)} WHERE id = ?", values)
     await db.commit()
 
 
 async def delete_playbook(playbook_id: str) -> None:
     """删除剧本（内置剧本不可删除）"""
     db = await get_db()
-    row = await (
-        await db.execute(
-            "SELECT is_builtin FROM playbooks WHERE id = ?", (playbook_id,)
-        )
-    ).fetchone()
+    row = await (await db.execute("SELECT is_builtin FROM playbooks WHERE id = ?", (playbook_id,))).fetchone()
     if row and row[0]:
         raise ValueError("内置剧本不可删除")
     await db.execute("DELETE FROM playbooks WHERE id = ?", (playbook_id,))
@@ -123,9 +132,7 @@ async def resolve_parameters(playbook: dict, user_params: dict) -> dict:
                 resolved[name] = await decrypt_credential(pdef["credential_ref"])
             except Exception:
                 if pdef.get("required"):
-                    raise ValueError(
-                        f"凭据 '{pdef['credential_ref']}' 不存在且参数 '{name}' 必填"
-                    )
+                    raise ValueError(f"凭据 '{pdef['credential_ref']}' 不存在且参数 '{name}' 必填")
         elif "default" in pdef:
             resolved[name] = pdef["default"]
         elif pdef.get("required"):
@@ -134,9 +141,7 @@ async def resolve_parameters(playbook: dict, user_params: dict) -> dict:
         # 正则验证
         if pdef.get("validation") and resolved.get(name):
             if not re.match(pdef["validation"], str(resolved[name])):
-                raise ValueError(
-                    f"参数 '{name}' 格式不正确 (期望: {pdef['validation']})"
-                )
+                raise ValueError(f"参数 '{name}' 格式不正确 (期望: {pdef['validation']})")
     return resolved
 
 
@@ -193,18 +198,20 @@ async def execute_playbook(
         "(id, playbook_id, parameters_json, status, triggered_by, trigger_type, thread_id) "
         "VALUES (?,?,?,?,?,?,?)",
         (
-            execution_id, playbook_id,
+            execution_id,
+            playbook_id,
             json.dumps(safe_params, ensure_ascii=False),
-            "running", triggered_by, trigger_type, thread_id,
+            "running",
+            triggered_by,
+            trigger_type,
+            thread_id,
         ),
     )
     await db.commit()
 
     # 构建 agent
     validation = json.loads(playbook.get("validation_rules") or "{}")
-    safety_mode = playbook.get("safety_mode") or (
-        "autonomous" if trigger_type == "schedule" else "supervised"
-    )
+    safety_mode = playbook.get("safety_mode") or ("autonomous" if trigger_type == "schedule" else "supervised")
     timeout = validation.get("timeout_seconds", 300)
 
     start_time = time.time()
@@ -231,20 +238,21 @@ async def execute_playbook(
         status = determine_status_from_text(report) if report else "success"
 
         await db.execute(
-            "UPDATE playbook_executions SET status=?, report=?, completed_at=?, "
-            "duration_seconds=? WHERE id=?",
+            "UPDATE playbook_executions SET status=?, report=?, completed_at=?, duration_seconds=? WHERE id=?",
             (
-                status, report[:20000], datetime.now().isoformat(),
-                round(duration, 1), execution_id,
+                status,
+                report[:20000],
+                datetime.now().isoformat(),
+                round(duration, 1),
+                execution_id,
             ),
         )
         await db.commit()
         return execution_id, status, report
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         await db.execute(
-            "UPDATE playbook_executions SET status='timeout', report='执行超时', "
-            "completed_at=? WHERE id=?",
+            "UPDATE playbook_executions SET status='timeout', report='执行超时', completed_at=? WHERE id=?",
             (datetime.now().isoformat(), execution_id),
         )
         await db.commit()
@@ -252,8 +260,7 @@ async def execute_playbook(
 
     except Exception as e:
         await db.execute(
-            "UPDATE playbook_executions SET status='error', report=?, "
-            "completed_at=? WHERE id=?",
+            "UPDATE playbook_executions SET status='error', report=?, completed_at=? WHERE id=?",
             (str(e)[:5000], datetime.now().isoformat(), execution_id),
         )
         await db.commit()

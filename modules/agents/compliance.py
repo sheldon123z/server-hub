@@ -10,8 +10,9 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from config import BASE_DIR
 from utils.command import run_command
+
+from config import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -165,26 +166,28 @@ def _fix_ssh_max_auth_tries() -> str:
 
 COMPLIANCE_CHECKS: dict[str, Callable[[], str]] = {
     "ssh_root_login": lambda: _first_matching_line(SSH_CONFIG_PATH, r"^\s*PermitRootLogin\b.*$") or "NOT_FOUND",
-    "ssh_empty_password": lambda: _first_matching_line(SSH_CONFIG_PATH, r"^\s*PermitEmptyPasswords\b.*$")
-    or "NOT_FOUND",
-    "ssh_max_auth_tries": lambda: _first_matching_line(SSH_CONFIG_PATH, r"^\s*MaxAuthTries\b.*$")
-    or "MaxAuthTries 6",
+    "ssh_empty_password": lambda: (
+        _first_matching_line(SSH_CONFIG_PATH, r"^\s*PermitEmptyPasswords\b.*$") or "NOT_FOUND"
+    ),
+    "ssh_max_auth_tries": lambda: _first_matching_line(SSH_CONFIG_PATH, r"^\s*MaxAuthTries\b.*$") or "MaxAuthTries 6",
     "ssh_protocol_2": lambda: (
         "FOUND_V1" if _first_matching_line(SSH_CONFIG_PATH, r"^\s*Protocol\s+1\b.*$") else "OK_V2"
     ),
-    "password_max_days": lambda: _first_matching_line(LOGIN_DEFS_PATH, r"^\s*PASS_MAX_DAYS\b.*$")
-    or "PASS_MAX_DAYS 99999",
-    "password_min_days": lambda: _first_matching_line(LOGIN_DEFS_PATH, r"^\s*PASS_MIN_DAYS\b.*$")
-    or "PASS_MIN_DAYS 0",
+    "password_max_days": lambda: (
+        _first_matching_line(LOGIN_DEFS_PATH, r"^\s*PASS_MAX_DAYS\b.*$") or "PASS_MAX_DAYS 99999"
+    ),
+    "password_min_days": lambda: _first_matching_line(LOGIN_DEFS_PATH, r"^\s*PASS_MIN_DAYS\b.*$") or "PASS_MIN_DAYS 0",
     "password_min_length": _password_min_length_line,
     "sudo_requiretty": _sudoers_nopasswd_lines,
     "world_writable_files": _find_world_writable_files,
     "firewall_active": _iptables_input_status,
     "fail2ban_running": lambda: _systemctl_active("fail2ban"),
     "kernel_randomize_va": lambda: _read_text(Path("/proc/sys/kernel/randomize_va_space")).strip() or "0",
-    "syslog_running": lambda: "active"
-    if "active" in {_systemctl_active("rsyslog").strip(), _systemctl_active("systemd-journald").strip()}
-    else "inactive",
+    "syslog_running": lambda: (
+        "active"
+        if "active" in {_systemctl_active("rsyslog").strip(), _systemctl_active("systemd-journald").strip()}
+        else "inactive"
+    ),
     "tmp_noexec": _tmp_mount_options,
     "core_dump_restricted": lambda: _read_text(Path("/proc/sys/fs/suid_dumpable")).strip() or "2",
 }
@@ -261,9 +264,7 @@ def run_compliance_checks(category: str = "") -> str:
         fix_info = ""
         if not passed and baseline.get("fix_guide"):
             fix_info = f" → {baseline['fix_guide']}"
-        rows.append(
-            f"| {name} | {'PASS' if passed else 'FAIL'} | {severity} | {detail}{fix_info} |"
-        )
+        rows.append(f"| {name} | {'PASS' if passed else 'FAIL'} | {severity} | {detail}{fix_info} |")
 
     compliance_rate = round(pass_count / total * 100, 1) if total else 0
     header = (

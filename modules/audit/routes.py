@@ -103,8 +103,15 @@ async def _get_audit_logs(page=1, limit=50, username=""):
     )
     rows = await cursor.fetchall()
     items = [
-        {"timestamp": r[0], "username": r[1], "action": r[2], "target": r[3],
-         "details": r[4], "ip_address": r[5], "success": bool(r[6])}
+        {
+            "timestamp": r[0],
+            "username": r[1],
+            "action": r[2],
+            "target": r[3],
+            "details": r[4],
+            "ip_address": r[5],
+            "success": bool(r[6]),
+        }
         for r in rows
     ]
     return {"total": total, "items": items}

@@ -32,6 +32,7 @@ ws_router = APIRouter()
 # WebSocket 管理器
 # ---------------------------------------------------------------------------
 
+
 class MetricsWSManager:
     """WebSocket 管理器 — 支持 per-client 服务器订阅过滤 + 内存缓存"""
 
@@ -113,6 +114,7 @@ ws_manager = MetricsWSManager()
 # WebSocket 端点
 # ---------------------------------------------------------------------------
 
+
 async def _ws_authenticate(websocket: WebSocket) -> dict | None:
     """从 WebSocket cookie 或 query param 验证 JWT"""
     token = websocket.cookies.get("access_token")
@@ -158,6 +160,7 @@ async def metrics_ws(websocket: WebSocket):
 # REST 端点
 # ---------------------------------------------------------------------------
 
+
 @router.get("/realtime")
 async def get_realtime(
     server_id: str = Query(default="local", description="服务器ID，默认 local 表示本机"),
@@ -175,6 +178,7 @@ async def get_realtime(
         client = await get_agent_client(server_id)
     except ValueError:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail=f"服务器 {server_id} 不存在")
 
     try:
@@ -187,6 +191,7 @@ async def get_realtime(
         return snapshot
     except Exception as e:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=502, detail=f"远程指标获取失败: {e}")
 
 
@@ -242,6 +247,7 @@ async def get_gpu_detail(
         return gpu_info
 
     from modules.servers.agent_client import get_agent_client
+
     try:
         client = await get_agent_client(server_id)
         result = await asyncio.wait_for(client.get_metrics(), timeout=10)
@@ -249,6 +255,7 @@ async def get_gpu_detail(
         return data.get("gpu", {}) if isinstance(data, dict) else {}
     except Exception as e:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=502, detail=f"远程 GPU 信��获取失败: {e}")
 
 
@@ -283,9 +290,7 @@ async def get_alerts_summary(
     db = await get_db()
 
     # 活跃告警规则数
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM alert_rules WHERE enabled = 1"
-    )
+    cursor = await db.execute("SELECT COUNT(*) FROM alert_rules WHERE enabled = 1")
     row = await cursor.fetchone()
     active_rules = row[0] if row else 0
 

@@ -367,8 +367,4 @@ async def load_skill_context(skill_id: str) -> str:
     skill = await get_skill(skill_id, include_content=True)
     if not skill or not skill["enabled"]:
         return ""
-    return (
-        f"[已启用技能: {skill['name']}]\n"
-        f"摘要: {skill['summary']}\n\n"
-        f"{skill['skill_markdown']}\n"
-    )
+    return f"[已启用技能: {skill['name']}]\n摘要: {skill['summary']}\n\n{skill['skill_markdown']}\n"

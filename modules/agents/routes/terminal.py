@@ -30,10 +30,12 @@ async def terminal_ws(websocket: WebSocket):
     await websocket.accept()
 
     from modules.agents.terminal import WebTerminal
+
     terminal = WebTerminal()
     terminal.spawn()
 
     try:
+
         async def read_terminal():
             """持续读取终端输出并发送到 WebSocket"""
             while terminal.is_alive():

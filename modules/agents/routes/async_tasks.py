@@ -19,8 +19,12 @@ async def list_async_tasks(user=Depends(require_role("admin"))):
     rows = await cursor.fetchall()
     return [
         {
-            "id": r[0], "task_type": r[1], "instruction": (r[2] or "")[:200],
-            "status": r[3], "created_at": r[4], "completed_at": r[5],
+            "id": r[0],
+            "task_type": r[1],
+            "instruction": (r[2] or "")[:200],
+            "status": r[3],
+            "created_at": r[4],
+            "completed_at": r[5],
         }
         for r in rows
     ]
@@ -39,9 +43,13 @@ async def get_async_task(task_id: str, user=Depends(require_role("admin"))):
     if not row:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {
-        "id": row[0], "task_type": row[1], "instruction": row[2],
-        "status": row[3], "result": row[4],
-        "created_at": row[5], "completed_at": row[6],
+        "id": row[0],
+        "task_type": row[1],
+        "instruction": row[2],
+        "status": row[3],
+        "result": row[4],
+        "created_at": row[5],
+        "completed_at": row[6],
     }
 
 
@@ -49,5 +57,6 @@ async def get_async_task(task_id: str, user=Depends(require_role("admin"))):
 async def cancel_async_task_api(task_id: str, user=Depends(require_role("admin"))):
     """取消后台任务"""
     from modules.agents.async_tasks import cancel_task
+
     result = await cancel_task(task_id)
     return {"ok": True, "message": result}

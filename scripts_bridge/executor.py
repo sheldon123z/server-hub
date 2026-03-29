@@ -6,8 +6,8 @@
 import asyncio
 import re
 
-from scripts_bridge.registry import SCRIPT_REGISTRY
 from modules.audit.middleware import log_audit
+from scripts_bridge.registry import SCRIPT_REGISTRY
 
 # 禁止 shell 元字符
 _SHELL_META_RE = re.compile(r"[;&|`$(){}!\\\n\r]")
@@ -71,10 +71,8 @@ async def execute_script(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
         proc.kill()
         await proc.communicate()
         # 记录超时审计

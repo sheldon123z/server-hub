@@ -20,6 +20,9 @@ DATABASES=(
     "agent-store.db"
 )
 
+# Telegram 通知（可选，失败时告警）
+TELEGRAM_SCRIPT="/home/zhengxiaodong/scripts/notification/send-telegram-report.sh"
+
 # ─── 函数 ───
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
@@ -74,5 +77,10 @@ log "备份完成: ${SUCCESS}/${TOTAL} 成功，保留 ${RETENTION_DAYS} 天"
 
 if [[ "$FAIL_COUNT" -gt 0 ]]; then
     log "ERROR: ${FAIL_COUNT} 个数据库备份失败"
+    # 备份失败时发送 Telegram 告警
+    if [[ -x "$TELEGRAM_SCRIPT" ]]; then
+        echo "⚠️ ServerHub 数据库备份失败: ${FAIL_COUNT}/${TOTAL} 个库备份异常，请检查 ${LOG_FILE}" \
+            | "$TELEGRAM_SCRIPT" --stdin
+    fi
     exit 1
 fi

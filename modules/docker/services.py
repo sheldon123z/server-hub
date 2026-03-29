@@ -6,7 +6,6 @@ Docker 容器管理服务层
 import asyncio
 import json
 import re
-from typing import Optional
 
 from config import settings
 
@@ -51,7 +50,7 @@ async def run_cmd(cmd: list[str], timeout: int = 30) -> str:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.communicate()
         raise RuntimeError(f"命令超时 ({timeout}s): {' '.join(cmd)}")
@@ -88,15 +87,17 @@ async def list_containers(all: bool = True) -> list[dict]:
             continue
         try:
             raw = json.loads(line)
-            containers.append({
-                "name": raw.get("Names", ""),
-                "id": raw.get("ID", ""),
-                "image": raw.get("Image", ""),
-                "status": raw.get("Status", ""),
-                "ports": raw.get("Ports", ""),
-                "state": raw.get("State", ""),
-                "created": raw.get("CreatedAt", ""),
-            })
+            containers.append(
+                {
+                    "name": raw.get("Names", ""),
+                    "id": raw.get("ID", ""),
+                    "image": raw.get("Image", ""),
+                    "status": raw.get("Status", ""),
+                    "ports": raw.get("Ports", ""),
+                    "state": raw.get("State", ""),
+                    "created": raw.get("CreatedAt", ""),
+                }
+            )
         except json.JSONDecodeError:
             continue
 
@@ -150,7 +151,12 @@ async def container_logs(name: str, tail: int = 100) -> str:
     tail = min(max(tail, 1), 5000)
 
     proc = await asyncio.create_subprocess_exec(
-        "docker", "logs", "--tail", str(tail), "--timestamps", name,
+        "docker",
+        "logs",
+        "--tail",
+        str(tail),
+        "--timestamps",
+        name,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
@@ -285,6 +291,7 @@ async def compose_action(stack_name: str, action: str) -> str:
 
 # ─── 网络管理 ───
 
+
 async def list_networks() -> list[dict]:
     """列出 Docker 网络"""
     raw = await run_cmd(
@@ -297,18 +304,21 @@ async def list_networks() -> list[dict]:
             continue
         try:
             data = json.loads(line)
-            networks.append({
-                "name": data.get("Name", ""),
-                "id": data.get("ID", "")[:12],
-                "driver": data.get("Driver", ""),
-                "scope": data.get("Scope", ""),
-            })
+            networks.append(
+                {
+                    "name": data.get("Name", ""),
+                    "id": data.get("ID", "")[:12],
+                    "driver": data.get("Driver", ""),
+                    "scope": data.get("Scope", ""),
+                }
+            )
         except json.JSONDecodeError:
             continue
     return networks
 
 
 # ─── 卷管理 ───
+
 
 async def list_volumes() -> list[dict]:
     """列出 Docker 卷"""
@@ -322,17 +332,20 @@ async def list_volumes() -> list[dict]:
             continue
         try:
             data = json.loads(line)
-            volumes.append({
-                "name": data.get("Name", ""),
-                "driver": data.get("Driver", ""),
-                "mountpoint": data.get("Mountpoint", ""),
-            })
+            volumes.append(
+                {
+                    "name": data.get("Name", ""),
+                    "driver": data.get("Driver", ""),
+                    "mountpoint": data.get("Mountpoint", ""),
+                }
+            )
         except json.JSONDecodeError:
             continue
     return volumes
 
 
 # ─── 镜像拉取 ───
+
 
 async def pull_image(image: str) -> str:
     """拉取 Docker 镜像"""
@@ -341,6 +354,7 @@ async def pull_image(image: str) -> str:
 
 
 # ─── 容器 exec ───
+
 
 async def container_exec(name: str, command: str) -> str:
     """在运行中的容器内执行命令
@@ -366,6 +380,7 @@ async def container_exec(name: str, command: str) -> str:
 
 # ─── 资源清理 ───
 
+
 async def prune_resources(resource_type: str) -> str:
     """清理未使用的 Docker 资源
 
@@ -382,6 +397,7 @@ async def prune_resources(resource_type: str) -> str:
 
 # ─── 容器环境变量 ───
 
+
 async def get_container_env(name: str) -> list[str]:
     """获取容器的环境变量列表（过滤敏感值）"""
     _validate_name(name)
@@ -397,7 +413,7 @@ async def get_container_env(name: str) -> list[str]:
     # 过滤敏感环境变量的值
     sensitive_patterns = ("KEY", "SECRET", "TOKEN", "PASSWORD", "PASS")
     filtered = []
-    for env in (envs or []):
+    for env in envs or []:
         key = env.split("=", 1)[0] if "=" in env else env
         if any(p in key.upper() for p in sensitive_patterns):
             filtered.append(f"{key}=***")

@@ -1,6 +1,6 @@
 """多服务器管理 Pydantic 请求模型"""
 
-from typing import Optional, Union
+from typing import Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -21,9 +21,9 @@ class ServerCreateRequest(BaseModel):
     hostname: str = Field(default="", max_length=255)
     ip_address: str = Field(..., min_length=1, max_length=45)
     agent_port: int = Field(default=9901, ge=1, le=65535)
-    ssh_user: Optional[str] = None
+    ssh_user: str | None = None
     ssh_port: int = Field(default=22, ge=1, le=65535)
-    ssh_key_credential: Optional[str] = None
+    ssh_key_credential: str | None = None
     tags: Union[str, list[str]] = Field(default_factory=list)
 
     @field_validator("tags", mode="before")
@@ -41,14 +41,14 @@ class ServerCreateRequest(BaseModel):
 
 
 class ServerUpdateRequest(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    hostname: Optional[str] = Field(default=None, max_length=255)
-    ip_address: Optional[str] = Field(default=None, min_length=1, max_length=45)
-    agent_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    ssh_user: Optional[str] = None
-    ssh_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    ssh_key_credential: Optional[str] = None
-    tags: Optional[Union[str, list[str]]] = None
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    hostname: str | None = Field(default=None, max_length=255)
+    ip_address: str | None = Field(default=None, min_length=1, max_length=45)
+    agent_port: int | None = Field(default=None, ge=1, le=65535)
+    ssh_user: str | None = None
+    ssh_port: int | None = Field(default=None, ge=1, le=65535)
+    ssh_key_credential: str | None = None
+    tags: Union[str, list[str]] | None = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -60,5 +60,5 @@ class ServerUpdateRequest(BaseModel):
 
 class ServerGroupCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
-    description: Optional[str] = None
+    description: str | None = None
     color: str = Field(default="#38bdf8", pattern=r"^#[0-9a-fA-F]{6}$")

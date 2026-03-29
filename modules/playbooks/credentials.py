@@ -76,7 +76,5 @@ async def list_credentials() -> list[dict]:
 async def delete_credential(name: str) -> None:
     """删除凭据"""
     db = await get_db()
-    await db.execute(
-        "DELETE FROM playbook_credentials WHERE name = ?", (name,)
-    )
+    await db.execute("DELETE FROM playbook_credentials WHERE name = ?", (name,))
     await db.commit()

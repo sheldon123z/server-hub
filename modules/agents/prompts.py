@@ -3,7 +3,6 @@
 from collections import defaultdict
 from pathlib import Path
 
-
 SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务器。
 
 ## 服务器信息
@@ -107,6 +106,7 @@ def build_subagent_section() -> str:
     """从 SubAgent 配置动态生成委派段落（注入主 agent 系统提示词）"""
     try:
         from modules.agents.subagents import load_subagents
+
         subagents = load_subagents()
     except Exception:
         subagents = []
@@ -131,6 +131,7 @@ def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
         user_role: "admin" 或 "user"
     """
     from config import settings
+
     custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
     if custom_path.exists():
         try:
@@ -144,13 +145,15 @@ def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
     subagent_section = build_subagent_section() if user_role == "admin" else ""
 
     # defaultdict 兼容旧 custom_prompt.txt（可能缺少新占位符）
-    return template.format_map(defaultdict(
-        str,
-        safety_mode=safety_mode,
-        user_role=user_role,
-        role_instruction=role_instruction,
-        subagent_section=subagent_section,
-    ))
+    return template.format_map(
+        defaultdict(
+            str,
+            safety_mode=safety_mode,
+            user_role=user_role,
+            role_instruction=role_instruction,
+            subagent_section=subagent_section,
+        )
+    )
 
 
 PATROL_PROMPT = """你是 ServerHub 自动巡检助手。请执行以下巡检任务，调用相应工具收集数据并分析。

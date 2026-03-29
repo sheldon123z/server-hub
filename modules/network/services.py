@@ -12,7 +12,8 @@ async def get_listening_ports() -> list[dict]:
         List of dicts with proto, local_addr, port, pid, process.
     """
     proc = await asyncio.create_subprocess_exec(
-        "ss", "-tlnp",
+        "ss",
+        "-tlnp",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -56,13 +57,15 @@ async def get_listening_ports() -> list[dict]:
             process = users_match.group(1)
             pid = int(users_match.group(2))
 
-        results.append({
-            "proto": proto,
-            "local_addr": local_addr,
-            "port": port,
-            "pid": pid,
-            "process": process,
-        })
+        results.append(
+            {
+                "proto": proto,
+                "local_addr": local_addr,
+                "port": port,
+                "pid": pid,
+                "process": process,
+            }
+        )
 
     return results
 
@@ -78,7 +81,9 @@ async def get_proxy_status() -> dict:
 
     # Check if clash is running
     proc = await asyncio.create_subprocess_exec(
-        "pgrep", "-x", "clash",
+        "pgrep",
+        "-x",
+        "clash",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -102,7 +107,8 @@ async def get_connections_summary() -> dict:
         Dict with connection type counts.
     """
     proc = await asyncio.create_subprocess_exec(
-        "ss", "-s",
+        "ss",
+        "-s",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -144,7 +150,11 @@ async def get_firewall_rules() -> str:
         Raw iptables output text.
     """
     proc = await asyncio.create_subprocess_exec(
-        "sudo", "iptables", "-L", "-n", "--line-numbers",
+        "sudo",
+        "iptables",
+        "-L",
+        "-n",
+        "--line-numbers",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

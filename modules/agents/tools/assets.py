@@ -15,12 +15,18 @@ async def get_asset_inventory(asset_type: str = "") -> str:
         asset_type: 可选，按类型过滤（service/container/compose/port/storage）。留空返回全部。
     """
     from modules.assets.services import get_assets
+
     assets = await get_assets(asset_type)
     if not assets:
         return f"没有找到{'类型为 ' + asset_type + ' 的' if asset_type else ''}资产。请先执行资产发现。"
 
-    type_names = {"service": "系统服务", "container": "Docker容器", "compose": "Compose堆栈",
-                  "port": "监听端口", "storage": "存储挂载"}
+    type_names = {
+        "service": "系统服务",
+        "container": "Docker容器",
+        "compose": "Compose堆栈",
+        "port": "监听端口",
+        "storage": "存储挂载",
+    }
     lines = ["## 资产清单\n"]
 
     current_type = ""
@@ -32,7 +38,9 @@ async def get_asset_inventory(asset_type: str = "") -> str:
             lines.append("|---|---|---|")
         props = a.get("properties", {})
         detail = ", ".join(f"{k}={v}" for k, v in (props.items() if isinstance(props, dict) else []))[:80]
-        status_icon = {"running": "🟢", "stopped": "🔴", "listening": "🔵", "ok": "🟢", "warning": "🟡"}.get(a["status"], "⚪")
+        status_icon = {"running": "🟢", "stopped": "🔴", "listening": "🔵", "ok": "🟢", "warning": "🟡"}.get(
+            a["status"], "⚪"
+        )
         lines.append(f"| {a['name']} | {status_icon} {a['status']} | {detail} |")
 
     lines.append(f"\n共 {len(assets)} 项资产")
@@ -42,7 +50,7 @@ async def get_asset_inventory(asset_type: str = "") -> str:
 @tool
 async def get_asset_topology() -> str:
     """生成服务器资产拓扑关系图（Mermaid 格式）并分析潜在风险（单点故障、冗余不足等）。"""
-    from modules.assets.services import get_assets, generate_topology_mermaid
+    from modules.assets.services import generate_topology_mermaid, get_assets
 
     assets = await get_assets()
     if not assets:
@@ -70,7 +78,9 @@ async def get_asset_topology() -> str:
 
 
 @tool
-async def save_fault_case(title: str, category: str, symptoms: str, root_cause: str, solution: str, tags: str = "") -> str:
+async def save_fault_case(
+    title: str, category: str, symptoms: str, root_cause: str, solution: str, tags: str = ""
+) -> str:
     """将故障案例保存到案例库。
 
     Args:
@@ -82,6 +92,7 @@ async def save_fault_case(title: str, category: str, symptoms: str, root_cause: 
         tags: 标签（逗号分隔，如 "内存,超限,kill"）
     """
     import aiosqlite
+
     from config import settings
 
     try:
@@ -118,6 +129,7 @@ async def search_fault_cases(query: str) -> str:
         query: 搜索关键词（如 "内存超限"、"Docker 重启"、"SSH 连接"）
     """
     import aiosqlite
+
     from config import settings
 
     try:
@@ -141,9 +153,9 @@ async def search_fault_cases(query: str) -> str:
             rows = await cursor.fetchall()
 
         if not rows:
-            return f"没有找到与 \"{query}\" 相关的故障案例。"
+            return f'没有找到与 "{query}" 相关的故障案例。'
 
-        lines = [f"## 故障案例搜索: \"{query}\" ({len(rows)} 条结果)\n"]
+        lines = [f'## 故障案例搜索: "{query}" ({len(rows)} 条结果)\n']
         for r in rows:
             lines.append(f"### [{r[2] or '通用'}] {r[1]}")
             if r[3]:

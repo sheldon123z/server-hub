@@ -11,6 +11,7 @@ async def get_page_data(page_name: str) -> str:
         page_name: 页面标识，可选值: dashboard, monitoring, docker, users, services, cron, network, proxy, logs, notifications, settings, assets, audit, panel_users
     """
     from modules.agents.page_context import get_page_context
+
     result = await get_page_context(page_name)
     if not result:
         return f"未找到页面 '{page_name}' 的数据提供器。可用页面: dashboard, docker, users, services, cron, monitoring, network, proxy"

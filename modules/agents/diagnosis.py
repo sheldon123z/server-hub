@@ -3,9 +3,7 @@
 import json
 import logging
 import re
-import time
 import uuid
-from datetime import datetime
 
 from database import get_db
 
@@ -101,7 +99,9 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
                 "root_cause, evidence, immediate_actions, long_term_solutions, status) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
                 (
-                    report_id, source, severity,
+                    report_id,
+                    source,
+                    severity,
                     json.dumps(parsed.get("affected_components", []), ensure_ascii=False),
                     json.dumps(parsed.get("symptoms", []), ensure_ascii=False),
                     parsed.get("root_cause", ""),
@@ -126,9 +126,14 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
                 # 从 source 推断分类
                 category = "general"
                 source_lower = (source + " " + alert_context).lower()
-                for cat, kws in [("memory", ["内存","memory","swap"]), ("docker", ["docker","容器","container"]),
-                                 ("gpu", ["gpu","显存","温度"]), ("service", ["服务","service","systemd"]),
-                                 ("network", ["网络","端口","port","firewall"]), ("security", ["安全","ssh","权限"])]:
+                for cat, kws in [
+                    ("memory", ["内存", "memory", "swap"]),
+                    ("docker", ["docker", "容器", "container"]),
+                    ("gpu", ["gpu", "显存", "温度"]),
+                    ("service", ["服务", "service", "systemd"]),
+                    ("network", ["网络", "端口", "port", "firewall"]),
+                    ("security", ["安全", "ssh", "权限"]),
+                ]:
                     if any(k in source_lower for k in kws):
                         category = cat
                         break
@@ -136,15 +141,28 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
                 cursor = await db.execute(
                     "INSERT INTO fault_cases (title, category, symptoms, root_cause, solution, tags, source, source_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, 'auto', ?)",
-                    (f"[自动] {parsed['root_cause'][:60]}", category, symptoms_text[:500],
-                     parsed["root_cause"][:1000], solutions_text[:1000], f"{severity},{category}", report_id),
+                    (
+                        f"[自动] {parsed['root_cause'][:60]}",
+                        category,
+                        symptoms_text[:500],
+                        parsed["root_cause"][:1000],
+                        solutions_text[:1000],
+                        f"{severity},{category}",
+                        report_id,
+                    ),
                 )
                 case_id = cursor.lastrowid
                 try:
                     await db.execute(
                         "INSERT INTO fault_cases_fts(rowid, title, symptoms, root_cause, solution, tags) VALUES (?, ?, ?, ?, ?, ?)",
-                        (case_id, f"[自动] {parsed['root_cause'][:60]}", symptoms_text[:500],
-                         parsed["root_cause"][:1000], solutions_text[:1000], f"{severity},{category}"),
+                        (
+                            case_id,
+                            f"[自动] {parsed['root_cause'][:60]}",
+                            symptoms_text[:500],
+                            parsed["root_cause"][:1000],
+                            solutions_text[:1000],
+                            f"{severity},{category}",
+                        ),
                     )
                 except Exception as e:
                     logger.debug("FTS5 索引写入失败: %s", e)
@@ -155,6 +173,7 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
         # 发送 Telegram 摘要
         try:
             from modules.notifications.services import send_telegram
+
             if parsed:
                 summary = (
                     f"🔍 故障诊断报告\n"

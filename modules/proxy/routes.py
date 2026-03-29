@@ -157,6 +157,7 @@ async def api_instance_test_delays(instance_id: str, group: str, user=Depends(re
 
 # ─── 兼容旧版 Clash 单实例 API ───
 
+
 @router.get("/status")
 async def api_status(user=Depends(require_role("admin"))):
     return await get_clash_status()

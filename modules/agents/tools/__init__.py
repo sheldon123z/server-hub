@@ -1,65 +1,6 @@
 """运维工具集 — 封装现有 services 为 LangChain @tool"""
 
 # ─── 系统 ───
-from modules.agents.tools.system import (
-    get_system_overview,
-    get_disk_info,
-    analyze_resource_trend,
-)
-
-# ─── Docker ───
-from modules.agents.tools.docker import (
-    list_docker_containers,
-    get_container_logs,
-    docker_container_action,
-    docker_compose_action,
-    list_docker_networks,
-    docker_container_exec,
-    docker_prune,
-)
-
-# ─── Systemd 服务 ───
-from modules.agents.tools.services import (
-    list_systemd_services,
-    get_service_logs,
-    service_control,
-    service_enable_disable_tool,
-    get_service_dependencies_tool,
-)
-
-# ─── 用户 ───
-from modules.agents.tools.users import (
-    get_user_resources,
-    get_user_quotas,
-    update_user_quotas,
-    kill_user_processes,
-    get_user_login_history_tool,
-    get_active_sessions_tool,
-    manage_linux_user,
-    kill_single_process_tool,
-    get_user_full_processes,
-    check_quota_violations,
-)
-
-# ─── 定时任务 ───
-from modules.agents.tools.cron import (
-    list_cron_jobs,
-    validate_cron_expr,
-    create_cron_job,
-    modify_cron_schedule,
-    toggle_cron_job_tool,
-    delete_cron_job_tool,
-)
-
-# ─── 安全合规 ───
-from modules.agents.tools.security import (
-    check_compliance,
-    auto_fix_compliance,
-)
-
-# ─── 通知 ───
-from modules.agents.tools.notifications import send_notification
-
 # ─── 资产与故障案例 ───
 from modules.agents.tools.assets import (
     get_asset_inventory,
@@ -68,25 +9,55 @@ from modules.agents.tools.assets import (
     search_fault_cases,
 )
 
-# ─── 运维脚本 ───
-from modules.agents.tools.scripts import execute_ops_script
+# ─── 定时任务 ───
+from modules.agents.tools.cron import (
+    create_cron_job,
+    delete_cron_job_tool,
+    list_cron_jobs,
+    modify_cron_schedule,
+    toggle_cron_job_tool,
+    validate_cron_expr,
+)
+
+# ─── Docker ───
+from modules.agents.tools.docker import (
+    docker_compose_action,
+    docker_container_action,
+    docker_container_exec,
+    docker_prune,
+    get_container_logs,
+    list_docker_containers,
+    list_docker_networks,
+)
 
 # ─── RAG 知识库 ───
 from modules.agents.tools.knowledge import (
-    retrieve_knowledge,
     reindex_knowledge_base,
+    retrieve_knowledge,
 )
+
+# ─── 通知 ───
+from modules.agents.tools.notifications import send_notification
 
 # ─── 页面上下文 ───
 from modules.agents.tools.page_context_tool import get_page_data
 
 # ─── 运维剧本 ───
 from modules.agents.tools.playbook import (
-    ssh_execute_command,
     playbook_create,
     playbook_execute,
     playbook_list,
     playbook_search,
+    ssh_execute_command,
+)
+
+# ─── 运维脚本 ───
+from modules.agents.tools.scripts import execute_ops_script
+
+# ─── 安全合规 ───
+from modules.agents.tools.security import (
+    auto_fix_compliance,
+    check_compliance,
 )
 
 # ─── 服务器舰队管理 ───
@@ -95,6 +66,33 @@ from modules.agents.tools.servers import (
     server_test_connectivity,
 )
 
+# ─── Systemd 服务 ───
+from modules.agents.tools.services import (
+    get_service_dependencies_tool,
+    get_service_logs,
+    list_systemd_services,
+    service_control,
+    service_enable_disable_tool,
+)
+from modules.agents.tools.system import (
+    analyze_resource_trend,
+    get_disk_info,
+    get_system_overview,
+)
+
+# ─── 用户 ───
+from modules.agents.tools.users import (
+    check_quota_violations,
+    get_active_sessions_tool,
+    get_user_full_processes,
+    get_user_login_history_tool,
+    get_user_quotas,
+    get_user_resources,
+    kill_single_process_tool,
+    kill_user_processes,
+    manage_linux_user,
+    update_user_quotas,
+)
 
 # ─── 工具注册表 ───
 
@@ -170,11 +168,10 @@ def get_server_tools(user_role: str = "admin") -> list:
 
     # 普通用户：只返回 SAFE 级别工具
     from modules.agents.safety import TOOL_RISK_MAP, RiskLevel
+
     excluded = {"send_notification", "save_fault_case"}
     return [
-        t for t in all_tools
-        if TOOL_RISK_MAP.get(t.name, RiskLevel.DANGER) == RiskLevel.SAFE
-        and t.name not in excluded
+        t for t in all_tools if TOOL_RISK_MAP.get(t.name, RiskLevel.DANGER) == RiskLevel.SAFE and t.name not in excluded
     ]
 
 

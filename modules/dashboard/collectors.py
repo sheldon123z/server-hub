@@ -2,8 +2,9 @@
 
 import logging
 import subprocess
-import psutil
 from datetime import datetime
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,9 @@ def get_system_info() -> dict:
     cpu_percent = psutil.cpu_percent(interval=0.5)
 
     gpu = {}
-    gpu_raw = run("nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null")
+    gpu_raw = run(
+        "nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null"
+    )
     if gpu_raw:
         parts = [x.strip() for x in gpu_raw.split(",")]
         if len(parts) >= 4:
@@ -70,13 +73,15 @@ def get_extra_disks() -> list[dict]:
             continue
         try:
             usage = psutil.disk_usage(part.mountpoint)
-            disks.append({
-                "mountpoint": part.mountpoint,
-                "device": part.device,
-                "total": usage.total,
-                "used": usage.used,
-                "percent": usage.percent,
-            })
+            disks.append(
+                {
+                    "mountpoint": part.mountpoint,
+                    "device": part.device,
+                    "total": usage.total,
+                    "used": usage.used,
+                    "percent": usage.percent,
+                }
+            )
         except Exception as e:
             logger.debug("磁盘 %s 采集失败: %s", part.mountpoint, e)
     return disks

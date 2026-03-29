@@ -32,6 +32,7 @@ async def _collect_and_store():
         # 基线偏离检测（不阻塞采集流程）
         try:
             from modules.agents.alert_engine import check_baseline_deviation
+
             await check_baseline_deviation(snapshot)
         except Exception as e:
             logger.debug("基线检测跳过: %s", e)
@@ -39,6 +40,7 @@ async def _collect_and_store():
         # 全量数据也通过 WS 广播
         try:
             from modules.monitoring.routes import ws_manager
+
             await ws_manager.broadcast({"type": "metrics_full", "server_id": "local", "data": snapshot})
         except Exception as e:
             logger.debug("WS全量广播跳过: %s", e)
@@ -57,9 +59,9 @@ async def _cleanup_old_metrics():
         cutoff = (datetime.now() - timedelta(days=settings.metrics_retention_days)).isoformat()
         db = await get_db()
         # 获取所有 server_id 以利用 idx_metrics_server_time 复合索引
-        rows = await (await db.execute(
-            "SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,)
-        )).fetchall()
+        rows = await (
+            await db.execute("SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,))
+        ).fetchall()
         if not rows:
             return
         for (sid,) in rows:
@@ -76,6 +78,7 @@ async def _check_quota_enforcement():
     """配额处置检查（非阻塞，异常不影响主循环）"""
     try:
         from modules.users.services import check_and_enforce_quotas
+
         await check_and_enforce_quotas()
     except Exception as e:
         logger.debug("配额处置检查跳过: %s", e)
@@ -84,8 +87,7 @@ async def _check_quota_enforcement():
 async def _scheduler_loop():
     """调度器主循环 - 60s 全量采集存库 + 配额处置"""
     logger.info(
-        f"指标采集调度器已启动 (间隔: {settings.metrics_interval_seconds}s, "
-        f"保留: {settings.metrics_retention_days}天)"
+        f"指标采集调度器已启动 (间隔: {settings.metrics_interval_seconds}s, 保留: {settings.metrics_retention_days}天)"
     )
     while True:
         await _collect_and_store()
@@ -157,15 +159,13 @@ async def _remote_collect_loop():
 async def _collect_remote_metrics():
     """从所有在线远程服务器采集指标并批量存储"""
     db = await get_db()
-    rows = await (await db.execute(
-        "SELECT * FROM servers WHERE is_local = 0 AND status = 'online'"
-    )).fetchall()
+    rows = await (await db.execute("SELECT * FROM servers WHERE is_local = 0 AND status = 'online'")).fetchall()
 
     if not rows:
         return
 
-    from modules.servers.services import _row_to_dict, decrypt_agent_token
     from modules.servers.agent_client import AgentClient
+    from modules.servers.services import _row_to_dict, decrypt_agent_token
 
     sem = asyncio.Semaphore(10)
     # 收集所有成功结果，最后批量写入
@@ -178,7 +178,7 @@ async def _collect_remote_metrics():
             )
             client = AgentClient(server_dict)
             try:
-                getter = getattr(client, "get_metrics_full", None) or getattr(client, "get_metrics")
+                getter = getattr(client, "get_metrics_full", None) or client.get_metrics
                 result = await asyncio.wait_for(getter(), timeout=15)
                 if result.get("ok"):
                     snapshot = result["data"]
@@ -193,11 +193,14 @@ async def _collect_remote_metrics():
             # 通过 WS 广播（带 server_id）
             try:
                 from modules.monitoring.routes import ws_manager
-                await ws_manager.broadcast({
-                    "type": "metrics_full",
-                    "server_id": server_dict["id"],
-                    "data": snapshot,
-                })
+
+                await ws_manager.broadcast(
+                    {
+                        "type": "metrics_full",
+                        "server_id": server_dict["id"],
+                        "data": snapshot,
+                    }
+                )
             except Exception as e:
                 logger.debug("远程指标WS广播跳过 [%s]: %s", server_dict["name"], e)
 
@@ -207,8 +210,7 @@ async def _collect_remote_metrics():
     # 批量写入 — 单次 executemany + 单次 commit
     if collected:
         insert_rows = [
-            (server_dict["id"], "all", json.dumps(snapshot, ensure_ascii=False))
-            for server_dict, snapshot in collected
+            (server_dict["id"], "all", json.dumps(snapshot, ensure_ascii=False)) for server_dict, snapshot in collected
         ]
         await db.executemany(
             "INSERT INTO metrics (server_id, metric_type, value_json) VALUES (?, ?, ?)",

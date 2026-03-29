@@ -1,6 +1,6 @@
 """SubAgent 定义 — 知识检索专家"""
 
-from ._tools import _get_tools_by_names, web_search, think
+from ._tools import _get_tools_by_names, think, web_search
 
 PROMPT = """\
 你是 ServerHub 知识检索专家。多策略检索本地知识库和互联网信息回答运维问题。
@@ -31,9 +31,15 @@ DEFINITION = {
         "best-practice lookups and historical case matching."
     ),
     "system_prompt": PROMPT,
-    "tools_fn": lambda: _get_tools_by_names([
-        "retrieve_knowledge", "search_fault_cases",
-    ]) + [web_search, think],
+    "tools_fn": lambda: (
+        _get_tools_by_names(
+            [
+                "retrieve_knowledge",
+                "search_fault_cases",
+            ]
+        )
+        + [web_search, think]
+    ),
     "model_purpose": "patrol",
     "middleware_profile": "light",
 }

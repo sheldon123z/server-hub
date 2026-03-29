@@ -1,7 +1,6 @@
 """认证相关数据模型"""
 
 from pydantic import BaseModel
-from typing import Optional
 
 
 class LoginRequest(BaseModel):
@@ -20,8 +19,8 @@ class UserInfo(BaseModel):
     display_name: str
     role: str
     disabled: bool
-    created_at: Optional[str] = None
-    last_login: Optional[str] = None
+    created_at: str | None = None
+    last_login: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):

@@ -1,9 +1,9 @@
 """通知渠道策略模式 — 多渠道消息发送抽象层"""
 
 import asyncio
+import base64
 import hashlib
 import hmac
-import base64
 import logging
 import smtplib
 import time
@@ -63,7 +63,9 @@ class TelegramChannel(NotificationChannel):
         try:
             script_path = self.config.get("script_path", "")
             proc = await asyncio.create_subprocess_exec(
-                "bash", script_path, message,
+                "bash",
+                script_path,
+                message,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -241,10 +243,24 @@ class EmailChannel(NotificationChannel):
     def config_schema(cls) -> list[dict]:
         return [
             {"name": "smtp_host", "label": "SMTP 服务器", "type": "text", "required": True, "sensitive": False},
-            {"name": "smtp_port", "label": "端口", "type": "number", "required": True, "sensitive": False, "default": 465},
+            {
+                "name": "smtp_port",
+                "label": "端口",
+                "type": "number",
+                "required": True,
+                "sensitive": False,
+                "default": 465,
+            },
             {"name": "username", "label": "用户名", "type": "text", "required": True, "sensitive": False},
             {"name": "password", "label": "密码", "type": "password", "required": True, "sensitive": True},
-            {"name": "use_tls", "label": "使用 TLS", "type": "boolean", "required": False, "sensitive": False, "default": True},
+            {
+                "name": "use_tls",
+                "label": "使用 TLS",
+                "type": "boolean",
+                "required": False,
+                "sensitive": False,
+                "default": True,
+            },
             {"name": "from_addr", "label": "发件地址", "type": "text", "required": True, "sensitive": False},
             {"name": "to_addrs", "label": "收件地址(逗号分隔)", "type": "text", "required": True, "sensitive": False},
         ]

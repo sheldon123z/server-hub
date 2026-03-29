@@ -1,11 +1,11 @@
 """巡检任务 + 模板路由"""
 
-import json
 import asyncio
+import json
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth.dependencies import require_role
 from database import get_db
@@ -18,6 +18,7 @@ router = APIRouter()
 
 # ─── 巡检任务 ───
 
+
 @router.get("/patrols")
 async def list_patrols(user=Depends(require_role("admin"))):
     db = await get_db()
@@ -27,9 +28,18 @@ async def list_patrols(user=Depends(require_role("admin"))):
     )
     rows = await cursor.fetchall()
     return [
-        {"id": r[0], "display_name": r[1], "description": r[2], "interval_minutes": r[3],
-         "enabled": bool(r[4]), "last_run": r[5], "last_status": r[6],
-         "last_report": (r[7] or "")[:500], "check_tools": r[8] or "", "prompt": r[9] or ""}
+        {
+            "id": r[0],
+            "display_name": r[1],
+            "description": r[2],
+            "interval_minutes": r[3],
+            "enabled": bool(r[4]),
+            "last_run": r[5],
+            "last_status": r[6],
+            "last_report": (r[7] or "")[:500],
+            "check_tools": r[8] or "",
+            "prompt": r[9] or "",
+        }
         for r in rows
     ]
 
@@ -68,6 +78,7 @@ async def trigger_patrol(patrol_id: str, user=Depends(require_role("admin"))):
 
     task_dict = {"id": row[0], "display_name": row[1], "description": row[2], "prompt": row[5]}
     from modules.agents.patrol import execute_patrol
+
     asyncio.create_task(execute_patrol(task_dict, triggered_by=user["username"]))
     return {"ok": True, "message": f"巡检 {row[1]} 已触发"}
 
@@ -106,8 +117,10 @@ async def get_patrol_report(patrol_id: str, history_id: int, user=Depends(requir
     if not row:
         raise HTTPException(404, "巡检记录不存在")
     result = {
-        "timestamp": row[0], "status": row[1],
-        "report": row[2], "duration": row[4],
+        "timestamp": row[0],
+        "status": row[1],
+        "report": row[2],
+        "duration": row[4],
     }
     if row[3]:
         try:
@@ -119,6 +132,7 @@ async def get_patrol_report(patrol_id: str, history_id: int, user=Depends(requir
 
 # ─── 巡检模板 ───
 
+
 @router.get("/templates")
 async def list_templates(category: str = "", user=Depends(require_role("admin"))):
     """列出所有巡检模板"""
@@ -126,7 +140,8 @@ async def list_templates(category: str = "", user=Depends(require_role("admin"))
     if category:
         cursor = await db.execute(
             "SELECT id, name, category, description, check_tools, prompt_template, variables, is_builtin "
-            "FROM patrol_templates WHERE category = ? ORDER BY name", (category,),
+            "FROM patrol_templates WHERE category = ? ORDER BY name",
+            (category,),
         )
     else:
         cursor = await db.execute(
@@ -137,8 +152,13 @@ async def list_templates(category: str = "", user=Depends(require_role("admin"))
     results = []
     for r in rows:
         item = {
-            "id": r[0], "name": r[1], "category": r[2], "description": r[3],
-            "check_tools": r[4], "prompt_template": r[5], "is_builtin": bool(r[7]),
+            "id": r[0],
+            "name": r[1],
+            "category": r[2],
+            "description": r[3],
+            "check_tools": r[4],
+            "prompt_template": r[5],
+            "is_builtin": bool(r[7]),
         }
         try:
             item["variables"] = json.loads(r[6]) if r[6] else []
@@ -168,8 +188,15 @@ async def create_template(request: Request, user=Depends(require_role("admin")))
     await db.execute(
         "INSERT INTO patrol_templates (id, name, category, description, check_tools, prompt_template, variables, is_builtin) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-        (body["id"], body["name"], body.get("category", "general"), body.get("description", ""),
-         body["check_tools"], body["prompt_template"], variables),
+        (
+            body["id"],
+            body["name"],
+            body.get("category", "general"),
+            body.get("description", ""),
+            body["check_tools"],
+            body["prompt_template"],
+            variables,
+        ),
     )
     await db.commit()
     return {"ok": True, "id": body["id"]}

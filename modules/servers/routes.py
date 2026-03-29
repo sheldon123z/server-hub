@@ -12,7 +12,6 @@ from modules.servers.schemas import (
 from modules.servers.services import (
     add_server_to_group,
     create_group,
-    create_server,
     create_server_with_token,
     delete_group,
     delete_server,

@@ -4,9 +4,11 @@
 模型 ID 格式: "provider:model_name"，如 "openrouter:deepseek/deepseek-chat"
 """
 
-import os
 import logging
+import os
+
 from langchain_openai import ChatOpenAI
+
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -196,12 +198,14 @@ def get_provider_status() -> list[dict]:
     for key, provider in PROVIDERS.items():
         api_key_env = provider.get("api_key_env", "")
         has_key = bool(os.getenv(api_key_env, "")) if api_key_env else (key == "ollama")
-        result.append({
-            "id": key,
-            "name": provider["name"],
-            "description": provider["description"],
-            "has_key": has_key,
-            "api_key_env": api_key_env,
-            "models": provider.get("default_models", []),
-        })
+        result.append(
+            {
+                "id": key,
+                "name": provider["name"],
+                "description": provider["description"],
+                "has_key": has_key,
+                "api_key_env": api_key_env,
+                "models": provider.get("default_models", []),
+            }
+        )
     return result

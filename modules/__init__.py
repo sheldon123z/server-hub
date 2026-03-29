@@ -49,10 +49,12 @@ def get_sidebar_items(user_role: str = "user"):
             continue
         required = role_level.get(m.get("required_role", "user"), 1)
         if user_level >= required:
-            items.append({
-                "name": m["name"],
-                "display_name": m["display_name"],
-                "icon": m.get("icon", "circle"),
-                "category": m.get("category", "其他"),
-            })
+            items.append(
+                {
+                    "name": m["name"],
+                    "display_name": m["display_name"],
+                    "icon": m.get("icon", "circle"),
+                    "category": m.get("category", "其他"),
+                }
+            )
     return items

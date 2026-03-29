@@ -1,6 +1,5 @@
 """多服务器管理模块测试 — 覆盖 Schema 校验、服务层 CRUD、Agent 客户端、心跳、远程采集、路由"""
 
-import asyncio
 import json
 import os
 import sys
@@ -32,6 +31,7 @@ class TestServerCreateRequest:
 
     def test_missing_required_name(self):
         from pydantic import ValidationError
+
         from modules.servers.schemas import ServerCreateRequest
 
         with pytest.raises(ValidationError):
@@ -39,6 +39,7 @@ class TestServerCreateRequest:
 
     def test_missing_required_ip(self):
         from pydantic import ValidationError
+
         from modules.servers.schemas import ServerCreateRequest
 
         with pytest.raises(ValidationError):
@@ -46,6 +47,7 @@ class TestServerCreateRequest:
 
     def test_ip_max_length(self):
         from pydantic import ValidationError
+
         from modules.servers.schemas import ServerCreateRequest
 
         with pytest.raises(ValidationError):
@@ -117,6 +119,7 @@ class TestServerGroupCreateRequest:
 
     def test_invalid_color(self):
         from pydantic import ValidationError
+
         from modules.servers.schemas import ServerGroupCreateRequest
 
         with pytest.raises(ValidationError):
@@ -176,6 +179,7 @@ class TestNormalizeTags:
 async def test_db():
     """Initialize an in-memory test database and patch database._db"""
     import aiosqlite
+
     import database
 
     db = await aiosqlite.connect(":memory:")
@@ -407,7 +411,8 @@ class TestAgentClient:
 
     async def test_health_check_success(self):
         import httpx
-        from modules.servers.agent_client import AgentClient, _get_http_client
+
+        from modules.servers.agent_client import _get_http_client
 
         client = self._make_client()
 
@@ -455,9 +460,7 @@ class TestAgentClient:
         client = self._make_client()
         metrics_data = {"cpu": {"overall_percent": 25.0}, "memory": {"ram": {"percent": 60.0}}}
 
-        mock_response = httpx.Response(
-            200, json=metrics_data, request=httpx.Request("GET", "http://test")
-        )
+        mock_response = httpx.Response(200, json=metrics_data, request=httpx.Request("GET", "http://test"))
         mock_http = AsyncMock()
         mock_http.request = AsyncMock(return_value=mock_response)
         mock_http.is_closed = False
@@ -489,9 +492,7 @@ class TestAgentClient:
         client = self._make_client()
         exec_data = {"stdout": "Hello\n", "stderr": "", "exit_code": 0}
 
-        mock_response = httpx.Response(
-            200, json=exec_data, request=httpx.Request("POST", "http://test")
-        )
+        mock_response = httpx.Response(200, json=exec_data, request=httpx.Request("POST", "http://test"))
         mock_http = AsyncMock()
         mock_http.request = AsyncMock(return_value=mock_response)
         mock_http.is_closed = False
@@ -535,8 +536,8 @@ class TestAgentClient:
 
 class TestGetAgentClientFactory:
     async def test_creates_client(self, test_db):
-        from modules.servers.services import create_server
         from modules.servers.agent_client import get_agent_client
+        from modules.servers.services import create_server
 
         sid = await create_server(
             {"name": "factory-test", "hostname": "h", "ip_address": "10.0.0.60"},
@@ -580,6 +581,7 @@ class TestHeartbeat:
             instance.health_check = mock_health
             MockClient.return_value = instance
             from modules.servers.heartbeat import _check_all_servers
+
             await _check_all_servers()
 
         server = await get_server(sid)
@@ -587,8 +589,8 @@ class TestHeartbeat:
 
     async def test_check_offline_server(self, test_db):
         """When health_check times out, server status should be offline"""
-        from modules.servers.services import create_server, get_server
         from database import get_db
+        from modules.servers.services import create_server, get_server
 
         sid = await create_server(
             {"name": "hb-test-offline", "hostname": "h", "ip_address": "10.0.0.71"},
@@ -600,13 +602,14 @@ class TestHeartbeat:
         await db.execute("UPDATE servers SET status = 'online' WHERE id = ?", (sid,))
         await db.commit()
 
-        mock_health = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_health = AsyncMock(side_effect=TimeoutError())
 
         with patch("modules.servers.agent_client.AgentClient") as MockClient:
             instance = MagicMock()
             instance.health_check = mock_health
             MockClient.return_value = instance
             from modules.servers.heartbeat import _check_all_servers
+
             await _check_all_servers()
 
         server = await get_server(sid)
@@ -621,8 +624,8 @@ class TestHeartbeat:
 class TestRemoteCollect:
     async def test_remote_collect_stores_metrics(self, test_db):
         """Mock agent client, verify metrics stored with server_id"""
-        from modules.servers.services import create_server
         from database import get_db
+        from modules.servers.services import create_server
 
         sid = await create_server(
             {"name": "remote-collect-test", "hostname": "h", "ip_address": "10.0.0.80"},
@@ -645,20 +648,21 @@ class TestRemoteCollect:
         with patch("modules.servers.agent_client.AgentClient", return_value=mock_client_instance):
             with patch("modules.monitoring.scheduler.ws_manager", mock_ws, create=True):
                 from modules.monitoring.scheduler import _collect_remote_metrics
+
                 await _collect_remote_metrics()
 
         # Check that metrics were stored
-        row = await (await db.execute(
-            "SELECT * FROM metrics WHERE server_id = ? ORDER BY id DESC LIMIT 1", (sid,)
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT * FROM metrics WHERE server_id = ? ORDER BY id DESC LIMIT 1", (sid,))
+        ).fetchone()
         assert row is not None
         stored = json.loads(row["value_json"])
         assert stored["cpu"]["overall_percent"] == 50.0
 
     async def test_remote_collect_skips_offline(self, test_db):
         """Offline servers should not be queried"""
-        from modules.servers.services import create_server
         from database import get_db
+        from modules.servers.services import create_server
 
         sid = await create_server(
             {"name": "remote-offline-skip", "hostname": "h", "ip_address": "10.0.0.81"},
@@ -672,6 +676,7 @@ class TestRemoteCollect:
 
         with patch("modules.servers.agent_client.AgentClient") as MockClient:
             from modules.monitoring.scheduler import _collect_remote_metrics
+
             await _collect_remote_metrics()
 
         # Count metrics after - should be same (no new metrics)
@@ -688,6 +693,7 @@ class TestAgentCollectors:
     def test_collect_fast(self):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "serverhub-agent"))
         from serverhub_agent_collectors import collect_fast
+
         result = collect_fast()
         assert "cpu_percent" in result
         assert "memory_percent" in result
@@ -697,6 +703,7 @@ class TestAgentCollectors:
 
     def test_collect_all(self):
         from serverhub_agent_collectors import collect_all
+
         result = collect_all()
         assert "cpu" in result
         assert "memory" in result
@@ -740,24 +747,18 @@ class TestAgentEndpoints:
         import importlib.util
 
         # Load config first
-        config_spec = importlib.util.spec_from_file_location(
-            "agent_config", os.path.join(agent_dir, "config.py")
-        )
+        config_spec = importlib.util.spec_from_file_location("agent_config", os.path.join(agent_dir, "config.py"))
         config_mod = importlib.util.module_from_spec(config_spec)
         config_spec.loader.exec_module(config_mod)
 
         # Load collectors
-        coll_spec = importlib.util.spec_from_file_location(
-            "agent_collectors", os.path.join(agent_dir, "collectors.py")
-        )
+        coll_spec = importlib.util.spec_from_file_location("agent_collectors", os.path.join(agent_dir, "collectors.py"))
         coll_mod = importlib.util.module_from_spec(coll_spec)
         coll_spec.loader.exec_module(coll_mod)
 
         # Load main with patched imports
         with patch.dict(sys.modules, {"config": config_mod, "collectors": coll_mod}):
-            main_spec = importlib.util.spec_from_file_location(
-                "agent_main", os.path.join(agent_dir, "main.py")
-            )
+            main_spec = importlib.util.spec_from_file_location("agent_main", os.path.join(agent_dir, "main.py"))
             main_mod = importlib.util.module_from_spec(main_spec)
             main_spec.loader.exec_module(main_mod)
 
@@ -812,6 +813,7 @@ class TestServerRoutes:
         """
         import httpx
         from fastapi import FastAPI
+
         from modules.servers.routes import router
 
         app = FastAPI()

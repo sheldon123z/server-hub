@@ -1,7 +1,5 @@
 """Pydantic 请求/响应模型"""
 
-from typing import Optional
-
 from pydantic import BaseModel
 
 
@@ -15,23 +13,23 @@ class PlaybookCreateRequest(BaseModel):
     tools_required: str = ""
     validation_rules: str = "{}"
     trigger_config: str = '{"type":"manual"}'
-    safety_mode: Optional[str] = None
-    steps_visual: Optional[str] = None
+    safety_mode: str | None = None
+    steps_visual: str | None = None
     tags: str = ""
 
 
 class PlaybookUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    system_prompt: Optional[str] = None
-    parameters: Optional[str] = None
-    tools_required: Optional[str] = None
-    validation_rules: Optional[str] = None
-    trigger_config: Optional[str] = None
-    safety_mode: Optional[str] = None
-    steps_visual: Optional[str] = None
-    tags: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    category: str | None = None
+    system_prompt: str | None = None
+    parameters: str | None = None
+    tools_required: str | None = None
+    validation_rules: str | None = None
+    trigger_config: str | None = None
+    safety_mode: str | None = None
+    steps_visual: str | None = None
+    tags: str | None = None
 
 
 class PlaybookRunRequest(BaseModel):

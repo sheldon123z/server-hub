@@ -6,17 +6,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth.dependencies import get_current_user, require_role
+from modules.audit.middleware import log_audit
 from modules.services.services import (
     list_services,
-    service_status,
     service_action,
-    service_journal,
+    service_dependencies,
     service_enable_disable,
+    service_journal,
     service_reload,
     service_resource_usage,
-    service_dependencies,
+    service_status,
 )
-from modules.audit.middleware import log_audit
 
 router = APIRouter(prefix="/api/services", tags=["服务管理"])
 
@@ -29,6 +29,7 @@ async def get_services(
     """列出所有受管 systemd 服务的状态"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.get_services()
         if not result.get("ok"):
@@ -68,6 +69,7 @@ async def do_service_action(
     """对服务执行 start / stop / restart（仅管理员）"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         if action not in ("start", "stop", "restart"):
             raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
         client = await get_agent_client(server_id)
@@ -108,7 +110,9 @@ async def do_enable(name: str, request: Request, user=Depends(require_role("admi
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     await log_audit(
-        username=user["username"], action="service.enable", target=name,
+        username=user["username"],
+        action="service.enable",
+        target=name,
         ip=request.client.host if request.client else "unknown",
     )
     return {"ok": True, "service": name, "output": result}
@@ -122,7 +126,9 @@ async def do_disable(name: str, request: Request, user=Depends(require_role("adm
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     await log_audit(
-        username=user["username"], action="service.disable", target=name,
+        username=user["username"],
+        action="service.disable",
+        target=name,
         ip=request.client.host if request.client else "unknown",
     )
     return {"ok": True, "service": name, "output": result}
@@ -136,7 +142,9 @@ async def do_reload(name: str, request: Request, user=Depends(require_role("admi
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     await log_audit(
-        username=user["username"], action="service.reload", target=name,
+        username=user["username"],
+        action="service.reload",
+        target=name,
         ip=request.client.host if request.client else "unknown",
     )
     return {"ok": True, "service": name, "output": result}
@@ -170,6 +178,7 @@ async def get_service_journal(
     """获取服务的 journal 日志"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.service_journal(name, lines=lines)
         if not result.get("ok"):

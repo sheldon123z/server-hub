@@ -10,28 +10,32 @@
 
 import logging
 import os
+from pathlib import Path
 
 import aiosqlite
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
     ModelRetryMiddleware,
     ToolRetryMiddleware,
-    ModelCallLimitMiddleware,
 )
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from pathlib import Path
 
 from config import settings
 from modules.agents.llm import get_chat_model
 from modules.agents.sandbox import SafeLocalShellBackend
 
-# 各 graph 的 SPEC + get_tools
-from .researcher import SPEC as RESEARCHER_SPEC, get_tools as researcher_tools
-from .security_auditor import SPEC as SECURITY_AUDITOR_SPEC, get_tools as security_auditor_tools
-from .correlation_analyzer import SPEC as CORRELATION_ANALYZER_SPEC, get_tools as correlation_analyzer_tools
-
 # 向后兼容: deep_agent.py 可能从 subagents 导入，这里也 re-export
 from modules.agents.subagents._async_specs import get_async_subagent_specs
+
+from .correlation_analyzer import SPEC as CORRELATION_ANALYZER_SPEC
+from .correlation_analyzer import get_tools as correlation_analyzer_tools
+
+# 各 graph 的 SPEC + get_tools
+from .researcher import SPEC as RESEARCHER_SPEC
+from .researcher import get_tools as researcher_tools
+from .security_auditor import SPEC as SECURITY_AUDITOR_SPEC
+from .security_auditor import get_tools as security_auditor_tools
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +114,7 @@ async def build_all_async_graphs() -> dict:
 
 
 __all__ = [
+    "ALL_SPECS",
     "build_all_async_graphs",
     "get_async_subagent_specs",
-    "ALL_SPECS",
 ]

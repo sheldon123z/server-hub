@@ -5,7 +5,6 @@ from typing import Literal
 
 from langchain_core.tools import tool
 
-
 _tavily_client = None
 
 
@@ -16,6 +15,7 @@ def _get_tavily_client():
         if not api_key:
             return None
         from tavily import TavilyClient
+
         _tavily_client = TavilyClient(api_key=api_key)
     return _tavily_client
 
@@ -59,6 +59,7 @@ def think(thought: str) -> str:
 def _get_tools_by_names(names: list[str]) -> list:
     """从主 agent 的工具集中按名称提取工具对象"""
     from modules.agents.tools import get_server_tools
+
     server_tools = {t.name: t for t in get_server_tools()}
     result = []
     for name in names:

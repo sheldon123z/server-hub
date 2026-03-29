@@ -1,6 +1,5 @@
 """WebSocket PTY 终端 — 在浏览器中提供完整的 bash 终端"""
 
-import asyncio
 import fcntl
 import logging
 import os
@@ -56,7 +55,7 @@ class WebTerminal:
             if ready:
                 data = os.read(self.master_fd, max_bytes)
                 return data.decode("utf-8", errors="replace")
-        except (OSError, IOError):
+        except OSError:
             return None
         return None
 

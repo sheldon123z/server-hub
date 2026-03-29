@@ -1,6 +1,6 @@
 """SubAgent 定义 — 联网研究员"""
 
-from ._tools import web_search, think
+from ._tools import think, web_search
 
 PROMPT = """\
 你是 ServerHub 联网研究员。服务器环境: Ubuntu 23.04, Xeon 8380 (160核), 503GB RAM, A800 GPU。

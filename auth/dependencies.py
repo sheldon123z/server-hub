@@ -67,9 +67,11 @@ async def get_current_user(request: Request) -> dict:
 
 def require_role(*roles: str):
     """角色校验依赖工厂"""
+
     async def checker(request: Request) -> dict:
         user = await get_current_user(request)
         if user["role"] not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
         return user
+
     return checker

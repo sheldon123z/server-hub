@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth.dependencies import require_role
 
@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 
 # ─── 配置 ───
 
+
 @router.get("/settings")
 async def get_agent_settings(user=Depends(require_role("admin"))):
     from config import settings
     from modules.agents.llm import get_provider_status
+
     return {
         "default_model": settings.agent_default_model,
         "patrol_model": settings.agent_patrol_model,
@@ -29,7 +31,8 @@ async def get_agent_settings(user=Depends(require_role("admin"))):
 
 @router.put("/settings")
 async def update_agent_settings(request: Request, user=Depends(require_role("admin"))):
-    from config import settings, BASE_DIR
+    from config import BASE_DIR, settings
+
     body = await request.json()
 
     changed = []
@@ -59,6 +62,7 @@ async def update_agent_settings(request: Request, user=Depends(require_role("adm
             logger.error(".env 写入失败，设置未持久化: %s", e)
 
         from modules.agents.deep_agent import reset_agent_cache
+
         reset_agent_cache()
 
     return {"ok": True, "default_model": settings.agent_default_model, "patrol_model": settings.agent_patrol_model}
@@ -66,7 +70,10 @@ async def update_agent_settings(request: Request, user=Depends(require_role("adm
 
 @router.post("/settings/refresh-models/{provider_id}")
 async def refresh_provider_models(provider_id: str, user=Depends(require_role("admin"))):
-    import os, httpx
+    import os
+
+    import httpx
+
     from modules.agents.llm import PROVIDERS
 
     if provider_id not in PROVIDERS:
@@ -82,13 +89,16 @@ async def refresh_provider_models(provider_id: str, user=Depends(require_role("a
                 resp = await client.get("https://openrouter.ai/api/v1/models", headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
-            models = [{"id": m["id"], "name": m.get("name", m["id"])}
-                      for m in data.get("data", []) if m.get("id") and ":free" not in m["id"]]
+            models = [
+                {"id": m["id"], "name": m.get("name", m["id"])}
+                for m in data.get("data", [])
+                if m.get("id") and ":free" not in m["id"]
+            ]
             models.sort(key=lambda x: x["name"])
             provider["default_models"] = models[:200]
             return {"ok": True, "count": len(models[:200]), "models": models[:20]}
         except Exception as e:
-            raise HTTPException(500, f"刷新失败: {str(e)}")
+            raise HTTPException(500, f"刷新失败: {e!s}")
 
     elif provider_id == "ollama":
         try:
@@ -99,7 +109,7 @@ async def refresh_provider_models(provider_id: str, user=Depends(require_role("a
             provider["default_models"] = models
             return {"ok": True, "count": len(models), "models": models}
         except Exception as e:
-            raise HTTPException(500, f"Ollama 连接失败: {str(e)}")
+            raise HTTPException(500, f"Ollama 连接失败: {e!s}")
 
     return {"ok": False, "message": f"服务商 {provider_id} 不支持动态刷新"}
 
@@ -107,6 +117,7 @@ async def refresh_provider_models(provider_id: str, user=Depends(require_role("a
 @router.put("/settings/api-key/{provider_id}")
 async def update_provider_api_key(provider_id: str, request: Request, user=Depends(require_role("admin"))):
     import os
+
     from config import BASE_DIR
     from modules.agents.llm import PROVIDERS
 
@@ -139,21 +150,25 @@ async def update_provider_api_key(provider_id: str, request: Request, user=Depen
             lines.append(kv)
         env_path.write_text("\n".join(lines) + "\n")
     except Exception as e:
-        raise HTTPException(500, f"写入 .env 失败: {str(e)}")
+        raise HTTPException(500, f"写入 .env 失败: {e!s}")
 
     from modules.agents.deep_agent import reset_agent_cache
+
     reset_agent_cache()
     return {"ok": True, "provider": provider_id, "env_var": env_var}
 
 
 # ─── Agent 管理 API ───
 
+
 @router.get("/admin/prompt")
 async def get_prompt(user=Depends(require_role("admin"))):
     """获取当前系统提示词"""
-    from modules.agents.prompts import SYSTEM_PROMPT
     from pathlib import Path
+
     from config import settings
+    from modules.agents.prompts import SYSTEM_PROMPT
+
     custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
     is_custom = custom_path.exists()
     content = custom_path.read_text(encoding="utf-8") if is_custom else SYSTEM_PROMPT
@@ -164,17 +179,21 @@ async def get_prompt(user=Depends(require_role("admin"))):
 async def update_prompt(request: Request, user=Depends(require_role("admin"))):
     """保存自定义系统提示词"""
     from pathlib import Path
+
     from config import settings
+
     body = await request.json()
     content = body.get("content", body.get("prompt", ""))
     custom_path = Path(settings.db_path).parent / "custom_prompt.txt"
     if body.get("reset") or body.get("prompt") is None:
         custom_path.unlink(missing_ok=True)
         from modules.agents.deep_agent import reset_agent_cache
+
         reset_agent_cache()
         return {"ok": True, "message": "已重置为默认提示词"}
     custom_path.write_text(content, encoding="utf-8")
     from modules.agents.deep_agent import reset_agent_cache
+
     reset_agent_cache()
     return {"ok": True, "message": "提示词已保存"}
 
@@ -182,8 +201,9 @@ async def update_prompt(request: Request, user=Depends(require_role("admin"))):
 @router.get("/admin/subagents")
 async def list_subagents(user=Depends(require_role("admin"))):
     """获取所有 SubAgent 配置 + 可用工具列表"""
-    from modules.agents.subagents import get_subagents_config, get_available_tools
     from modules.agents.llm import get_provider_status
+    from modules.agents.subagents import get_available_tools, get_subagents_config
+
     subagents = get_subagents_config()
     available_tools = get_available_tools()
     for item in subagents:
@@ -203,18 +223,23 @@ async def list_subagents(user=Depends(require_role("admin"))):
 async def save_subagents(request: Request, user=Depends(require_role("admin"))):
     """保存全部 SubAgent 配置"""
     from modules.agents.subagents import save_subagents_config
+
     body = await request.json()
     configs = body.get("subagents", [])
     if body.get("reset"):
         from pathlib import Path
+
         from config import settings
+
         custom_path = Path(settings.db_path).parent / "custom_subagents.json"
         custom_path.unlink(missing_ok=True)
         from modules.agents.deep_agent import reset_agent_cache
+
         reset_agent_cache()
         return {"ok": True, "message": "已重置为默认 SubAgent"}
     save_subagents_config(configs)
     from modules.agents.deep_agent import reset_agent_cache
+
     reset_agent_cache()
     return {"ok": True, "message": f"已保存 {len(configs)} 个 SubAgent"}
 
@@ -223,6 +248,7 @@ async def save_subagents(request: Request, user=Depends(require_role("admin"))):
 async def get_memory(user=Depends(require_role("admin"))):
     """获取运行时长期记忆文件内容"""
     from modules.agents.deep_agent import get_memory_path
+
     memory_path = get_memory_path()
     content = memory_path.read_text(encoding="utf-8") if memory_path.exists() else ""
     return {"content": content, "path": str(memory_path)}
@@ -232,6 +258,7 @@ async def get_memory(user=Depends(require_role("admin"))):
 async def update_memory(request: Request, user=Depends(require_role("admin"))):
     """保存运行时长期记忆文件"""
     from modules.agents.deep_agent import get_memory_path, reset_agent_cache
+
     body = await request.json()
     content = body.get("content", "")
     memory_path = get_memory_path()
@@ -243,11 +270,13 @@ async def update_memory(request: Request, user=Depends(require_role("admin"))):
 
 # ─── RAG 知识库管理 ───
 
+
 @router.get("/admin/rag")
 async def get_rag_stats(user=Depends(require_role("admin"))):
     """获取 RAG 知识库统计信息"""
     try:
         from modules.agents.rag import get_index_stats
+
         stats = get_index_stats()
         return {"ok": True, "stats": stats}
     except Exception as e:
@@ -259,6 +288,7 @@ async def trigger_reindex(user=Depends(require_role("admin"))):
     """手动触发 RAG 知识库全量重建"""
     try:
         from modules.agents.rag import build_full_index, get_index_stats
+
         await asyncio.to_thread(build_full_index, True)
         stats = get_index_stats()
         return {"ok": True, "stats": stats}

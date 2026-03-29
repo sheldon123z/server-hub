@@ -1,11 +1,12 @@
 """资产台账 API 路由"""
 
 import json
-from fastapi import APIRouter, Request, Depends, HTTPException
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth.dependencies import require_role
 from database import get_db
-from modules.assets.services import discover_all, get_assets, generate_topology_mermaid
+from modules.assets.services import discover_all, generate_topology_mermaid, get_assets
 
 router = APIRouter(prefix="/api/assets", tags=["资产台账"])
 
@@ -60,10 +61,18 @@ async def update_asset(asset_id: str, request: Request, user=Depends(require_rol
         vals.append(body["status"])
     if "properties" in body:
         sets.append("properties = ?")
-        vals.append(json.dumps(body["properties"], ensure_ascii=False) if isinstance(body["properties"], dict) else body["properties"])
+        vals.append(
+            json.dumps(body["properties"], ensure_ascii=False)
+            if isinstance(body["properties"], dict)
+            else body["properties"]
+        )
     if "dependencies" in body:
         sets.append("dependencies = ?")
-        vals.append(json.dumps(body["dependencies"], ensure_ascii=False) if isinstance(body["dependencies"], list) else body["dependencies"])
+        vals.append(
+            json.dumps(body["dependencies"], ensure_ascii=False)
+            if isinstance(body["dependencies"], list)
+            else body["dependencies"]
+        )
     if not sets:
         raise HTTPException(400, "没有要更新的字段")
     vals.append(asset_id)
@@ -87,8 +96,7 @@ async def add_manual_asset(request: Request, user=Depends(require_role("admin"))
     props = json.dumps(body.get("properties", {}), ensure_ascii=False)
     deps = json.dumps(body.get("dependencies", []), ensure_ascii=False)
     await db.execute(
-        "INSERT INTO assets (id, type, name, status, properties, dependencies, is_manual) "
-        "VALUES (?, ?, ?, ?, ?, ?, 1)",
+        "INSERT INTO assets (id, type, name, status, properties, dependencies, is_manual) VALUES (?, ?, ?, ?, ?, ?, 1)",
         (aid, body["type"], body["name"], body.get("status", "unknown"), props, deps),
     )
     await db.commit()

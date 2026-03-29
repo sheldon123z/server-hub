@@ -1,15 +1,13 @@
 """Cron 任务解析、描述、CRUD 和备份管理"""
 
 import asyncio
-import os
 import re
 from datetime import datetime
-from pathlib import Path
 
 from config import BASE_DIR
 
-
 # ─── 表达式描述 ───
+
 
 def describe_schedule(schedule: str) -> str:
     """将 cron 表达式转为中文描述"""
@@ -40,6 +38,7 @@ def describe_schedule(schedule: str) -> str:
 
 # ─── 表达式验证 ───
 
+
 def validate_cron_expression(expression: str) -> dict:
     """验证 cron 表达式并计算未来 5 次执行时间
 
@@ -52,6 +51,7 @@ def validate_cron_expression(expression: str) -> dict:
 
     try:
         from croniter import croniter
+
         cron = croniter(expression, datetime.now())
         next_runs = []
         for _ in range(5):
@@ -98,7 +98,9 @@ async def _read_crontab_raw(cron_user: str) -> str:
     """读取原始 crontab 内容"""
     cmd = _crontab_read_cmd(cron_user)
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
@@ -113,7 +115,8 @@ async def _write_crontab_raw(cron_user: str, content: str):
     cmd = _crontab_write_cmd(cron_user)
     proc = await asyncio.create_subprocess_exec(
         *cmd,
-        stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        stdin=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate(input=content.encode())
     if proc.returncode != 0:
@@ -121,6 +124,7 @@ async def _write_crontab_raw(cron_user: str, content: str):
 
 
 # ─── 解析 ───
+
 
 def _parse_crontab_lines(output: str) -> list[dict]:
     """解析 crontab 输出，保留注释结构
@@ -136,20 +140,22 @@ def _parse_crontab_lines(output: str) -> list[dict]:
 
         # 检查 #DISABLED# 前缀的禁用行
         if stripped.startswith(_DISABLED_PREFIX):
-            disabled_line = stripped[len(_DISABLED_PREFIX):]
+            disabled_line = stripped[len(_DISABLED_PREFIX) :]
             parts = disabled_line.split(None, 5)
             if len(parts) >= 6:
                 schedule = " ".join(parts[:5])
                 command = parts[5]
-                entries.append({
-                    "schedule": schedule,
-                    "description": describe_schedule(schedule),
-                    "command": command,
-                    "comment": comment_buffer,
-                    "raw_line": stripped,
-                    "enabled": False,
-                    "index": idx,
-                })
+                entries.append(
+                    {
+                        "schedule": schedule,
+                        "description": describe_schedule(schedule),
+                        "command": command,
+                        "comment": comment_buffer,
+                        "raw_line": stripped,
+                        "enabled": False,
+                        "index": idx,
+                    }
+                )
                 idx += 1
                 comment_buffer = ""
                 continue
@@ -168,21 +174,24 @@ def _parse_crontab_lines(output: str) -> list[dict]:
 
         schedule = " ".join(parts[:5])
         command = parts[5]
-        entries.append({
-            "schedule": schedule,
-            "description": describe_schedule(schedule),
-            "command": command,
-            "comment": comment_buffer,
-            "raw_line": stripped,
-            "enabled": True,
-            "index": idx,
-        })
+        entries.append(
+            {
+                "schedule": schedule,
+                "description": describe_schedule(schedule),
+                "command": command,
+                "comment": comment_buffer,
+                "raw_line": stripped,
+                "enabled": True,
+                "index": idx,
+            }
+        )
         idx += 1
         comment_buffer = ""
     return entries
 
 
 # ─── 读取 ───
+
 
 async def get_user_crontab(username: str = "zhengxiaodong") -> list[dict]:
     _validate_username(username)
@@ -196,6 +205,7 @@ async def get_root_crontab() -> list[dict]:
 
 
 # ─── 修改计划 ───
+
 
 async def update_cron_schedule(cron_user: str, old_schedule: str, old_command: str, new_schedule: str) -> bool:
     """修改某条 cron 任务的时间表达式"""
@@ -225,6 +235,7 @@ async def update_cron_schedule(cron_user: str, old_schedule: str, old_command: s
 
 
 # ─── 新增任务 ───
+
 
 async def add_cron_job(cron_user: str, schedule: str, command: str, comment: str = "") -> bool:
     """添加一条新的 cron 任务
@@ -260,6 +271,7 @@ async def add_cron_job(cron_user: str, schedule: str, command: str, comment: str
 
 # ─── 删除任务 ───
 
+
 async def delete_cron_job(cron_user: str, schedule: str, command: str) -> bool:
     """删除一条 cron 任务（连同上方的注释行）"""
     raw = await _read_crontab_raw(cron_user)
@@ -289,6 +301,7 @@ async def delete_cron_job(cron_user: str, schedule: str, command: str) -> bool:
 
 
 # ─── 启用/禁用 ───
+
 
 async def toggle_cron_job(cron_user: str, schedule: str, command: str, enabled: bool) -> bool:
     """启用或禁用 cron 任务（通过 #DISABLED# 前缀）"""
@@ -320,6 +333,7 @@ async def toggle_cron_job(cron_user: str, schedule: str, command: str, enabled: 
 
 # ─── 执行历史 ───
 
+
 async def get_cron_history(command_pattern: str = "", hours: int = 24) -> list[dict]:
     """从 journal 获取 cron 执行历史
 
@@ -327,32 +341,40 @@ async def get_cron_history(command_pattern: str = "", hours: int = 24) -> list[d
         [{"timestamp": str, "user": str, "command": str}]
     """
     cmd = [
-        "journalctl", "-u", "cron", "--no-pager", "-q",
-        "--since", f"{hours} hours ago",
-        "-o", "short-iso",
+        "journalctl",
+        "-u",
+        "cron",
+        "--no-pager",
+        "-q",
+        "--since",
+        f"{hours} hours ago",
+        "-o",
+        "short-iso",
     ]
     if command_pattern:
         cmd.extend(["--grep", command_pattern])
 
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await proc.communicate()
     output = stdout.decode(errors="replace")
 
     entries = []
     # 格式: 2024-03-20T08:00:01+0800 hostname CRON[12345]: (user) CMD (command)
-    cron_re = re.compile(
-        r"^(\S+)\s+\S+\s+CRON\[\d+\]:\s+\((\w+)\)\s+CMD\s+\((.+)\)\s*$"
-    )
+    cron_re = re.compile(r"^(\S+)\s+\S+\s+CRON\[\d+\]:\s+\((\w+)\)\s+CMD\s+\((.+)\)\s*$")
     for line in output.strip().splitlines():
         m = cron_re.match(line)
         if m:
-            entries.append({
-                "timestamp": m.group(1),
-                "user": m.group(2),
-                "command": m.group(3),
-            })
+            entries.append(
+                {
+                    "timestamp": m.group(1),
+                    "user": m.group(2),
+                    "command": m.group(3),
+                }
+            )
 
     return entries[-100:]  # 最多返回 100 条
 
@@ -400,10 +422,12 @@ def list_cron_backups(cron_user: str = "") -> list[dict]:
             continue
         if cron_user and not f.name.startswith(f"{cron_user}_"):
             continue
-        backups.append({
-            "filename": f.name,
-            "cron_user": f.name.rsplit("_", 2)[0],
-            "size": f.stat().st_size,
-            "created_at": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-        })
+        backups.append(
+            {
+                "filename": f.name,
+                "cron_user": f.name.rsplit("_", 2)[0],
+                "size": f.stat().st_size,
+                "created_at": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
     return backups[:20]  # 最多 20 条

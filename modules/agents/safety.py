@@ -100,11 +100,7 @@ def build_interrupt_config(safety_mode: str, user_role: str = "admin") -> dict:
     """
     # 普通用户：拦截所有非 SAFE 工具
     if user_role != "admin":
-        return {
-            name: True
-            for name, risk in TOOL_RISK_MAP.items()
-            if risk != RiskLevel.SAFE
-        }
+        return {name: True for name, risk in TOOL_RISK_MAP.items() if risk != RiskLevel.SAFE}
 
     if safety_mode == "autonomous":
         return {}
@@ -181,5 +177,5 @@ def check_shell_command(command: str) -> tuple[bool, str]:
     """检查 shell 命令安全性（用于 autonomous 模式的底线防护）"""
     for pattern in _SHELL_PATTERNS:
         if pattern.search(command):
-            return False, f"命令被安全策略拦截: 匹配黑名单规则"
+            return False, "命令被安全策略拦截: 匹配黑名单规则"
     return True, ""

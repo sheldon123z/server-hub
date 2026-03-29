@@ -4,27 +4,27 @@ Docker 管理 API 路由
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from auth.dependencies import get_current_user, require_role
-from pydantic import BaseModel, Field
+from modules.audit.middleware import log_audit
 from modules.docker.services import (
-    list_containers,
+    compose_action,
+    container_action,
+    container_exec,
+    container_inspect,
     container_logs,
     container_stats,
-    container_inspect,
-    container_action,
-    list_images,
-    remove_image,
+    get_container_env,
     list_compose_stacks,
-    compose_action,
+    list_containers,
+    list_images,
     list_networks,
     list_volumes,
-    pull_image,
-    container_exec,
     prune_resources,
-    get_container_env,
+    pull_image,
+    remove_image,
 )
-from modules.audit.middleware import log_audit
 
 router = APIRouter(prefix="/api/docker", tags=["Docker"])
 
@@ -38,6 +38,7 @@ async def get_containers(
     """列出所有 Docker 容器"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.get_docker_containers()
         if not result.get("ok"):
@@ -61,6 +62,7 @@ async def get_container_logs(
     """获取容器日志"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.docker_action(name, "logs", tail=tail)
         if not result.get("ok"):
@@ -114,6 +116,7 @@ async def do_container_action(
     """对容器执行 start / stop / restart（仅管理员）"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         if action not in ("start", "stop", "restart"):
             raise HTTPException(status_code=400, detail=f"不支持的操作: {action}")
         client = await get_agent_client(server_id)
@@ -154,11 +157,13 @@ async def get_images(
     """列出本地 Docker 镜像"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.docker_images()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         import json
+
         images = []
         for line in result["data"].get("output", "").strip().splitlines():
             line = line.strip()
@@ -206,8 +211,10 @@ async def get_stacks(
 ):
     """列出 Docker Compose 堆栈"""
     if server_id != "local":
-        from modules.servers.agent_client import get_agent_client
         import json
+
+        from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.docker_stacks()
         if not result.get("ok"):
@@ -251,6 +258,7 @@ async def do_stack_action(
 
 # ─── 网络 ───
 
+
 @router.get("/networks")
 async def get_networks(user=Depends(get_current_user)):
     """列出 Docker 网络"""
@@ -262,6 +270,7 @@ async def get_networks(user=Depends(get_current_user)):
 
 # ─── 卷 ───
 
+
 @router.get("/volumes")
 async def get_volumes(user=Depends(get_current_user)):
     """列出 Docker 卷"""
@@ -272,6 +281,7 @@ async def get_volumes(user=Depends(get_current_user)):
 
 
 # ─── 镜像拉取 ───
+
 
 class PullImageRequest(BaseModel):
     image: str = Field(..., min_length=1, max_length=200)
@@ -295,6 +305,7 @@ async def do_pull_image(body: PullImageRequest, request: Request, user=Depends(r
 
 
 # ─── 容器 Exec ───
+
 
 class ExecRequest(BaseModel):
     command: str = Field(..., min_length=1, max_length=500)
@@ -320,6 +331,7 @@ async def do_container_exec(name: str, body: ExecRequest, request: Request, user
 
 # ─── 资源清理 ───
 
+
 @router.post("/prune/{resource_type}")
 async def do_prune(resource_type: str, request: Request, user=Depends(require_role("admin"))):
     """清理未使用的 Docker 资源"""
@@ -341,6 +353,7 @@ async def do_prune(resource_type: str, request: Request, user=Depends(require_ro
 
 
 # ─── 容器环境变量 ───
+
 
 @router.get("/containers/{name}/env")
 async def get_env(name: str, user=Depends(require_role("admin"))):

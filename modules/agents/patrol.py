@@ -6,11 +6,12 @@ import logging
 import time
 from datetime import datetime
 
-from config import settings
 from database import get_db
 from modules.agents.prompts import PATROL_PROMPT
 from modules.agents.report_schema import (
-    parse_patrol_report, determine_status_from_text, report_summary_text,
+    determine_status_from_text,
+    parse_patrol_report,
+    report_summary_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,9 +96,11 @@ DEFAULT_TEMPLATES = [
         "description": "检查系统内存和用户内存使用，超配额告警",
         "check_tools": "get_system_overview,get_user_resources,get_user_quotas",
         "prompt_template": "检查系统内存使用率（超过{warning_threshold}%告警）和每个用户的内存使用是否超过其配额。对超配额的用户发出告警。",
-        "variables": json.dumps([
-            {"name": "warning_threshold", "type": "number", "default": 85, "description": "告警阈值(%)"},
-        ]),
+        "variables": json.dumps(
+            [
+                {"name": "warning_threshold", "type": "number", "default": 85, "description": "告警阈值(%)"},
+            ]
+        ),
     },
     {
         "id": "tpl_docker",
@@ -115,11 +118,13 @@ DEFAULT_TEMPLATES = [
         "description": "检查 GPU 利用率、显存、温度",
         "check_tools": "get_system_overview",
         "prompt_template": "检查GPU温度（超过{temp_warning}°C警告，超过{temp_critical}°C紧急告警）和显存使用率（超过{mem_threshold}%告警）。",
-        "variables": json.dumps([
-            {"name": "temp_warning", "type": "number", "default": 80, "description": "温度警告阈值(°C)"},
-            {"name": "temp_critical", "type": "number", "default": 85, "description": "温度紧急阈值(°C)"},
-            {"name": "mem_threshold", "type": "number", "default": 95, "description": "显存告警阈值(%)"},
-        ]),
+        "variables": json.dumps(
+            [
+                {"name": "temp_warning", "type": "number", "default": 80, "description": "温度警告阈值(°C)"},
+                {"name": "temp_critical", "type": "number", "default": 85, "description": "温度紧急阈值(°C)"},
+                {"name": "mem_threshold", "type": "number", "default": 95, "description": "显存告警阈值(%)"},
+            ]
+        ),
     },
     {
         "id": "tpl_service",
@@ -137,9 +142,11 @@ DEFAULT_TEMPLATES = [
         "description": "检查所有磁盘使用率",
         "check_tools": "get_system_overview,get_disk_info",
         "prompt_template": "检查所有磁盘挂载点使用率。任何挂载点超过{threshold}%需要告警。",
-        "variables": json.dumps([
-            {"name": "threshold", "type": "number", "default": 90, "description": "磁盘告警阈值(%)"},
-        ]),
+        "variables": json.dumps(
+            [
+                {"name": "threshold", "type": "number", "default": 90, "description": "磁盘告警阈值(%)"},
+            ]
+        ),
     },
     {
         "id": "tpl_daily_report",
@@ -193,9 +200,11 @@ DEFAULT_TEMPLATES = [
         "description": "分析系统资源的历史趋势，预测未来走势",
         "check_tools": "analyze_resource_trend,get_system_overview",
         "prompt_template": "分析过去{hours}小时的资源趋势（调用 analyze_resource_trend 工具），结合当前系统状态，输出资源评估报告。重点关注持续上升的指标。",
-        "variables": json.dumps([
-            {"name": "hours", "type": "number", "default": 168, "description": "分析时间范围(小时)"},
-        ]),
+        "variables": json.dumps(
+            [
+                {"name": "hours", "type": "number", "default": 168, "description": "分析时间范围(小时)"},
+            ]
+        ),
     },
 ]
 
@@ -225,13 +234,21 @@ async def seed_default_patrols():
             await db.execute(
                 "INSERT INTO patrol_templates (id, name, category, description, check_tools, prompt_template, variables, is_builtin) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
-                (t["id"], t["name"], t.get("category", "general"), t.get("description", ""),
-                 t["check_tools"], t["prompt_template"], variables),
+                (
+                    t["id"],
+                    t["name"],
+                    t.get("category", "general"),
+                    t.get("description", ""),
+                    t["check_tools"],
+                    t["prompt_template"],
+                    variables,
+                ),
             )
     await db.commit()
 
     # 种子告警规则 + 基线规则
-    from modules.agents.alert_engine import seed_default_alert_rules, seed_baseline_rules
+    from modules.agents.alert_engine import seed_baseline_rules, seed_default_alert_rules
+
     await seed_default_alert_rules()
     await seed_baseline_rules()
 
@@ -307,6 +324,7 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
         if status in ("warning", "critical"):
             try:
                 from modules.notifications.services import send_notification
+
                 if report_json:
                     alert_text = f"[巡检告警] {display_name}\n{report_summary_text(report_json)}"
                 else:
@@ -319,6 +337,7 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
         if report_json:
             try:
                 from modules.agents.alert_engine import evaluate_rules, extract_metrics_from_report
+
                 flat_metrics = extract_metrics_from_report(report_json)
                 if flat_metrics:
                     await evaluate_rules(flat_metrics)
@@ -329,12 +348,15 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
         if status == "critical":
             try:
                 from modules.agents.diagnosis import trigger_diagnosis
+
                 context = report_summary_text(report_json) if report_json else report[:500]
-                asyncio.create_task(trigger_diagnosis(
-                    source=f"patrol:{task_id}",
-                    severity="critical",
-                    alert_context=f"巡检任务 [{display_name}] 发现严重问题:\n{context}",
-                ))
+                asyncio.create_task(
+                    trigger_diagnosis(
+                        source=f"patrol:{task_id}",
+                        severity="critical",
+                        alert_context=f"巡检任务 [{display_name}] 发现严重问题:\n{context}",
+                    )
+                )
             except Exception as e:
                 logger.error("触发故障诊断失败: %s", e)
 
@@ -396,8 +418,10 @@ async def _patrol_loop():
 
                 if should_run:
                     task_dict = {
-                        "id": task_id, "display_name": display_name,
-                        "description": desc, "prompt": prompt,
+                        "id": task_id,
+                        "display_name": display_name,
+                        "description": desc,
+                        "prompt": prompt,
                     }
                     asyncio.create_task(execute_patrol(task_dict))
 

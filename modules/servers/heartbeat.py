@@ -15,7 +15,7 @@
 import asyncio
 import inspect
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,7 @@ async def _check_all_servers():
     from modules.servers.services import decrypt_agent_token
 
     db = await get_db()
-    rows = await (await db.execute(
-        "SELECT * FROM servers WHERE is_local = 0"
-    )).fetchall()
+    rows = await (await db.execute("SELECT * FROM servers WHERE is_local = 0")).fetchall()
 
     if not rows:
         return
@@ -94,7 +92,7 @@ async def _check_all_servers():
                                 new_status = "auth_failed"
                             else:
                                 new_status = "degraded"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     new_status = "degraded"
                 except Exception:
                     new_status = "degraded"
@@ -104,12 +102,17 @@ async def _check_all_servers():
 
             # Update status
             old_status = server_dict.get("status", "unknown")
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
 
             await db.execute(
                 "UPDATE servers SET status = ?, last_heartbeat = ?, agent_version = ?, updated_at = ? WHERE id = ?",
-                (new_status, now if new_status != "offline" else server_dict.get("last_heartbeat"),
-                 agent_version, now, server_dict["id"]),
+                (
+                    new_status,
+                    now if new_status != "offline" else server_dict.get("last_heartbeat"),
+                    agent_version,
+                    now,
+                    server_dict["id"],
+                ),
             )
 
             # Alert on status change
@@ -119,6 +122,7 @@ async def _check_all_servers():
 
     # Convert rows to dicts
     from modules.servers.services import _row_to_dict
+
     server_dicts = [_row_to_dict(r) for r in rows]
 
     await asyncio.gather(*[check_one(s) for s in server_dicts], return_exceptions=True)

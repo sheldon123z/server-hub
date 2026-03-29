@@ -108,7 +108,6 @@ BUILTIN_TEMPLATES: list[dict] = [
             },
         ],
     },
-
     # ── 模板 2: 故障诊断团队 (Swarm) ──
     {
         "id": "tpl-fault-diagnosis",
@@ -211,7 +210,6 @@ BUILTIN_TEMPLATES: list[dict] = [
             },
         ],
     },
-
     # ── 模板 3: 全面巡检流水线 (Pipeline) ──
     {
         "id": "tpl-full-patrol",
@@ -299,7 +297,6 @@ BUILTIN_TEMPLATES: list[dict] = [
             },
         ],
     },
-
     # ── 模板 4: 容器运维团队 (Supervisor) ──
     {
         "id": "tpl-docker-ops",
@@ -374,7 +371,6 @@ BUILTIN_TEMPLATES: list[dict] = [
             },
         ],
     },
-
     # ── 模板 5: 用户资源管理流水线 (Pipeline) ──
     {
         "id": "tpl-user-resource",
@@ -481,18 +477,20 @@ async def seed_builtin_teams():
                 continue
 
             # 创建团队
-            team = await store.create_team({
-                "id": tmpl["id"],
-                "name": tmpl["name"],
-                "description": tmpl.get("description", ""),
-                "topology": tmpl["topology"],
-                "config": tmpl.get("config", {}),
-                "safety_mode": tmpl.get("safety_mode", "supervised"),
-                "max_steps": tmpl.get("max_steps", 50),
-                "timeout_seconds": tmpl.get("timeout_seconds", 300),
-                "is_builtin": 1,
-                "created_by": "system",
-            })
+            team = await store.create_team(
+                {
+                    "id": tmpl["id"],
+                    "name": tmpl["name"],
+                    "description": tmpl.get("description", ""),
+                    "topology": tmpl["topology"],
+                    "config": tmpl.get("config", {}),
+                    "safety_mode": tmpl.get("safety_mode", "supervised"),
+                    "max_steps": tmpl.get("max_steps", 50),
+                    "timeout_seconds": tmpl.get("timeout_seconds", 300),
+                    "is_builtin": 1,
+                    "created_by": "system",
+                }
+            )
 
             # 添加成员
             for member in tmpl.get("members", []):
@@ -516,24 +514,28 @@ def get_template_list() -> list[dict]:
     for tmpl in BUILTIN_TEMPLATES:
         member_summary = []
         for m in tmpl.get("members", []):
-            member_summary.append({
-                "name": m["name"],
-                "agent_type": m.get("agent_type", "worker"),
-                "description": m.get("description", ""),
-                "tools_count": len(m.get("tools", [])),
-            })
+            member_summary.append(
+                {
+                    "name": m["name"],
+                    "agent_type": m.get("agent_type", "worker"),
+                    "description": m.get("description", ""),
+                    "tools_count": len(m.get("tools", [])),
+                }
+            )
 
-        result.append({
-            "id": tmpl["id"],
-            "name": tmpl["name"],
-            "description": tmpl.get("description", ""),
-            "topology": tmpl["topology"],
-            "member_count": len(tmpl.get("members", [])),
-            "members": member_summary,
-            "safety_mode": tmpl.get("safety_mode", "supervised"),
-            "max_steps": tmpl.get("max_steps", 50),
-            "timeout_seconds": tmpl.get("timeout_seconds", 300),
-        })
+        result.append(
+            {
+                "id": tmpl["id"],
+                "name": tmpl["name"],
+                "description": tmpl.get("description", ""),
+                "topology": tmpl["topology"],
+                "member_count": len(tmpl.get("members", [])),
+                "members": member_summary,
+                "safety_mode": tmpl.get("safety_mode", "supervised"),
+                "max_steps": tmpl.get("max_steps", 50),
+                "timeout_seconds": tmpl.get("timeout_seconds", 300),
+            }
+        )
     return result
 
 

@@ -6,7 +6,6 @@
 
 import json
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -24,11 +23,12 @@ router = APIRouter(prefix="/teams", tags=["agent-teams"])
 
 class TeamCreateRequest(BaseModel):
     """创建团队请求"""
+
     name: str = Field(..., min_length=1, max_length=50)
     description: str = Field(default="", max_length=500)
     topology: str = Field(default="supervisor", pattern=r"^(supervisor|swarm|pipeline)$")
     config: dict = Field(default_factory=dict)
-    default_model: Optional[str] = None
+    default_model: str | None = None
     safety_mode: str = Field(default="supervised", pattern=r"^(supervised|autonomous)$")
     max_steps: int = Field(default=50, ge=10, le=200)
     timeout_seconds: int = Field(default=300, ge=30, le=1800)
@@ -36,25 +36,27 @@ class TeamCreateRequest(BaseModel):
 
 class TeamUpdateRequest(BaseModel):
     """更新团队请求"""
-    name: Optional[str] = Field(default=None, min_length=1, max_length=50)
-    description: Optional[str] = Field(default=None, max_length=500)
-    topology: Optional[str] = Field(default=None, pattern=r"^(supervisor|swarm|pipeline)$")
-    config: Optional[dict] = None
-    default_model: Optional[str] = None
-    safety_mode: Optional[str] = Field(default=None, pattern=r"^(supervised|autonomous)$")
-    max_steps: Optional[int] = Field(default=None, ge=10, le=200)
-    timeout_seconds: Optional[int] = Field(default=None, ge=30, le=1800)
-    enabled: Optional[int] = Field(default=None, ge=0, le=1)
+
+    name: str | None = Field(default=None, min_length=1, max_length=50)
+    description: str | None = Field(default=None, max_length=500)
+    topology: str | None = Field(default=None, pattern=r"^(supervisor|swarm|pipeline)$")
+    config: dict | None = None
+    default_model: str | None = None
+    safety_mode: str | None = Field(default=None, pattern=r"^(supervised|autonomous)$")
+    max_steps: int | None = Field(default=None, ge=10, le=200)
+    timeout_seconds: int | None = Field(default=None, ge=30, le=1800)
+    enabled: int | None = Field(default=None, ge=0, le=1)
 
 
 class MemberCreateRequest(BaseModel):
     """添加成员请求"""
+
     name: str = Field(..., min_length=1, max_length=30)
     agent_type: str = Field(default="worker", pattern=r"^(leader|worker|reviewer)$")
     description: str = Field(default="", max_length=200)
     system_prompt: str = Field(..., min_length=1)
     tools: list[str] = Field(default_factory=list)
-    model_id: Optional[str] = None
+    model_id: str | None = None
     max_calls: int = Field(default=15, ge=1, le=100)
     handoff_targets: list[str] = Field(default_factory=list)
     position: int = Field(default=0, ge=0, le=20)
@@ -63,20 +65,22 @@ class MemberCreateRequest(BaseModel):
 
 class MemberUpdateRequest(BaseModel):
     """更新成员请求"""
-    name: Optional[str] = Field(default=None, min_length=1, max_length=30)
-    agent_type: Optional[str] = Field(default=None, pattern=r"^(leader|worker|reviewer)$")
-    description: Optional[str] = Field(default=None, max_length=200)
-    system_prompt: Optional[str] = None
-    tools: Optional[list[str]] = None
-    model_id: Optional[str] = None
-    max_calls: Optional[int] = Field(default=None, ge=1, le=100)
-    handoff_targets: Optional[list[str]] = None
-    position: Optional[int] = Field(default=None, ge=0, le=20)
-    config: Optional[dict] = None
+
+    name: str | None = Field(default=None, min_length=1, max_length=30)
+    agent_type: str | None = Field(default=None, pattern=r"^(leader|worker|reviewer)$")
+    description: str | None = Field(default=None, max_length=200)
+    system_prompt: str | None = None
+    tools: list[str] | None = None
+    model_id: str | None = None
+    max_calls: int | None = Field(default=None, ge=1, le=100)
+    handoff_targets: list[str] | None = None
+    position: int | None = Field(default=None, ge=0, le=20)
+    config: dict | None = None
 
 
 class ExecuteRequest(BaseModel):
     """执行团队任务请求"""
+
     instruction: str = Field(..., min_length=1, max_length=5000)
 
 
@@ -162,18 +166,20 @@ async def instantiate_template(
         )
 
     try:
-        team = await store.create_team({
-            "id": tmpl["id"],
-            "name": tmpl["name"],
-            "description": tmpl.get("description", ""),
-            "topology": tmpl["topology"],
-            "config": tmpl.get("config", {}),
-            "safety_mode": tmpl.get("safety_mode", "supervised"),
-            "max_steps": tmpl.get("max_steps", 50),
-            "timeout_seconds": tmpl.get("timeout_seconds", 300),
-            "is_builtin": 1,
-            "created_by": user["username"],
-        })
+        team = await store.create_team(
+            {
+                "id": tmpl["id"],
+                "name": tmpl["name"],
+                "description": tmpl.get("description", ""),
+                "topology": tmpl["topology"],
+                "config": tmpl.get("config", {}),
+                "safety_mode": tmpl.get("safety_mode", "supervised"),
+                "max_steps": tmpl.get("max_steps", 50),
+                "timeout_seconds": tmpl.get("timeout_seconds", 300),
+                "is_builtin": 1,
+                "created_by": user["username"],
+            }
+        )
 
         for member in tmpl.get("members", []):
             await store.add_member(team["id"], member)
@@ -400,10 +406,9 @@ async def remove_member(
 
     # 先查到 team_id 以便清缓存
     from database import get_db
+
     db = await get_db()
-    row = await (await db.execute(
-        "SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,)
-    )).fetchone()
+    row = await (await db.execute("SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,))).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="成员不存在")

@@ -13,16 +13,18 @@ async def _schedule_loop():
     while True:
         try:
             from database import get_db
+
             db = await get_db()
-            rows = await (await db.execute(
-                "SELECT id, trigger_config FROM playbooks WHERE trigger_config LIKE '%schedule%'"
-            )).fetchall()
+            rows = await (
+                await db.execute("SELECT id, trigger_config FROM playbooks WHERE trigger_config LIKE '%schedule%'")
+            ).fetchall()
             for pid, trigger_json in rows:
                 trigger = json.loads(trigger_json or "{}")
                 if trigger.get("type") != "schedule" or not trigger.get("schedule"):
                     continue
                 if _should_run(pid, trigger.get("schedule")):
                     from modules.playbooks.services import execute_playbook
+
                     asyncio.create_task(execute_playbook(pid, {}, "scheduler", "schedule"))
                     logger.info("定时剧本已触发: %s", pid)
         except Exception as e:
@@ -33,6 +35,7 @@ async def _schedule_loop():
 def _should_run(playbook_id: str, cron_expr: str) -> bool:
     try:
         from croniter import croniter
+
         now = datetime.now()
         cron = croniter(cron_expr, now)
         prev = cron.get_prev(datetime)

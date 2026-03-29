@@ -6,16 +6,23 @@ from pydantic import BaseModel, Field
 from auth.dependencies import get_current_user, require_role
 from modules.audit.middleware import log_audit
 from modules.cron.services import (
-    get_user_crontab, get_root_crontab, update_cron_schedule,
-    validate_cron_expression, add_cron_job, delete_cron_job,
-    toggle_cron_job, get_cron_history, backup_crontab,
+    add_cron_job,
+    backup_crontab,
+    delete_cron_job,
+    get_cron_history,
+    get_root_crontab,
+    get_user_crontab,
     list_cron_backups,
+    toggle_cron_job,
+    update_cron_schedule,
+    validate_cron_expression,
 )
 
 router = APIRouter(prefix="/api/cron", tags=["定时任务"])
 
 
 # ─── Request Models ───
+
 
 class UpdateScheduleRequest(BaseModel):
     cron_user: str
@@ -50,6 +57,7 @@ class ValidateRequest(BaseModel):
 
 # ─── 查询端点 ───
 
+
 @router.get("/")
 async def list_user_crontab(
     server_id: str = Query(default="local", description="目标服务器"),
@@ -57,6 +65,7 @@ async def list_user_crontab(
 ):
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.cron_list()
         if not result.get("ok"):
@@ -76,6 +85,7 @@ async def list_root_crontab(
 ):
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.cron_list(user="root")
         if not result.get("ok"):
@@ -90,6 +100,7 @@ async def list_root_crontab(
 
 # ─── 验证 ───
 
+
 @router.post("/validate")
 async def validate_expression(body: ValidateRequest, user=Depends(get_current_user)):
     """验证 cron 表达式，返回中文描述和未来 5 次执行时间"""
@@ -97,6 +108,7 @@ async def validate_expression(body: ValidateRequest, user=Depends(get_current_us
 
 
 # ─── CRUD 端点 ───
+
 
 @router.put("/schedule")
 async def update_schedule(body: UpdateScheduleRequest, request: Request, user=Depends(require_role("admin"))):
@@ -199,6 +211,7 @@ async def toggle_job(body: ToggleJobRequest, request: Request, user=Depends(requ
 
 # ─── 历史 ───
 
+
 @router.get("/history")
 async def cron_history(
     pattern: str = "",
@@ -216,6 +229,7 @@ async def cron_history(
 
 
 # ─── 备份 ───
+
 
 @router.post("/backup")
 async def do_backup(request: Request, cron_user: str = "zhengxiaodong", user=Depends(require_role("admin"))):

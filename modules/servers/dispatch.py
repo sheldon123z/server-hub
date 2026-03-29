@@ -2,13 +2,13 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-async def dispatch(server_id: str, local_fn: Callable[..., Awaitable[Any]],
-                   agent_endpoint: str = "", **kwargs) -> Any:
+async def dispatch(server_id: str, local_fn: Callable[..., Awaitable[Any]], agent_endpoint: str = "", **kwargs) -> Any:
     """根据 server_id 调度到本地或远程执行
 
     Args:
@@ -21,6 +21,7 @@ async def dispatch(server_id: str, local_fn: Callable[..., Awaitable[Any]],
         return await local_fn(**kwargs)
 
     from modules.servers.agent_client import get_agent_client
+
     client = await get_agent_client(server_id)
 
     if agent_endpoint:
@@ -40,6 +41,7 @@ async def dispatch_command(server_id: str, command: str, timeout: int = 30) -> d
     保留仅为向后兼容，不应在新代码中使用。
     """
     import warnings
+
     warnings.warn(
         "dispatch_command 使用 shell 执行，存在注入风险，请迁移到结构化 action 方法",
         DeprecationWarning,
@@ -59,5 +61,6 @@ async def dispatch_command(server_id: str, command: str, timeout: int = 30) -> d
         }
 
     from modules.servers.agent_client import get_agent_client
+
     client = await get_agent_client(server_id)
     return await client.execute_command(command, timeout=timeout)

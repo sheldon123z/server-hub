@@ -1,7 +1,7 @@
+import asyncio
 import io
 import json
 import zipfile
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -167,9 +167,7 @@ class FakeInterruptAgent:
                     interrupts=[
                         SimpleNamespace(
                             value={
-                                "action_requests": [
-                                    {"name": "restart_service", "args": {"service": "nginx"}}
-                                ],
+                                "action_requests": [{"name": "restart_service", "args": {"service": "nginx"}}],
                                 "review_configs": [{"action": "approve"}],
                             }
                         )

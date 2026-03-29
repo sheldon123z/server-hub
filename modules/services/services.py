@@ -5,8 +5,9 @@ Systemd 服务管理服务层
 
 import asyncio
 
-from config import settings
 from utils.command import run_command_async
+
+from config import settings
 
 
 async def _run(cmd: list[str], timeout: int = 15, check: bool = True) -> tuple[int, str]:
@@ -46,16 +47,16 @@ async def list_services() -> list[dict]:
         active_task = _run(["systemctl", "is-active", name], check=False)
         enabled_task = _run(["systemctl", "is-enabled", name], check=False)
 
-        (active_rc, active_out), (enabled_rc, enabled_out) = await asyncio.gather(
-            active_task, enabled_task
-        )
+        (active_rc, active_out), (enabled_rc, enabled_out) = await asyncio.gather(active_task, enabled_task)
 
-        services.append({
-            "name": name,
-            "active": active_rc == 0,
-            "enabled": enabled_out.strip() == "enabled",
-            "status_text": active_out.strip(),
-        })
+        services.append(
+            {
+                "name": name,
+                "active": active_rc == 0,
+                "enabled": enabled_out.strip() == "enabled",
+                "status_text": active_out.strip(),
+            }
+        )
 
     return services
 
@@ -122,6 +123,7 @@ async def service_journal(name: str, lines: int = 100) -> str:
 
 # ─── 自启动管理 ───
 
+
 async def service_enable_disable(name: str, action: str) -> str:
     """启用或禁用服务自启动
 
@@ -152,13 +154,14 @@ async def service_reload(name: str) -> str:
 
 # ─── 资源使用 ───
 
+
 async def service_resource_usage(name: str) -> dict:
     """获取服务的资源使用情况"""
     _validate_service(name)
     _, output = await _run(
-        ["systemctl", "show", name,
-         "-p", "MemoryCurrent,CPUUsageNSec,MainPID,Tasks"],
-        check=False, timeout=10,
+        ["systemctl", "show", name, "-p", "MemoryCurrent,CPUUsageNSec,MainPID,Tasks"],
+        check=False,
+        timeout=10,
     )
     result = {}
     for line in output.splitlines():
@@ -183,12 +186,14 @@ async def service_resource_usage(name: str) -> dict:
 
 # ─── 依赖关系 ───
 
+
 async def service_dependencies(name: str) -> dict:
     """获取服务的依赖关系"""
     _validate_service(name)
     _, output = await _run(
         ["systemctl", "list-dependencies", name, "--no-pager"],
-        check=False, timeout=10,
+        check=False,
+        timeout=10,
     )
     # 解析缩进树形结构
     deps = []

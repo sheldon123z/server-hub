@@ -13,9 +13,9 @@ import threading
 import time
 
 import psutil
+from utils.command import run_command, run_command_text
 
 from config import settings
-from utils.command import run_command, run_command_text
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ _top_process_cpu_primed = False
 def _read_os_pretty_name() -> str:
     """读取当前系统发行版名称"""
     try:
-        with open("/etc/os-release", "r", encoding="utf-8") as f:
+        with open("/etc/os-release", encoding="utf-8") as f:
             for line in f:
                 if line.startswith("PRETTY_NAME="):
                     return line.split("=", 1)[1].strip().strip('"')
@@ -41,7 +41,7 @@ def _read_os_pretty_name() -> str:
 def _read_cpu_model() -> str:
     """读取 CPU 型号"""
     try:
-        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
+        with open("/proc/cpuinfo", encoding="utf-8") as f:
             for line in f:
                 if line.lower().startswith("model name"):
                     return line.split(":", 1)[1].strip()
@@ -80,6 +80,7 @@ def collect_system_info() -> dict:
 # CPU
 # ---------------------------------------------------------------------------
 
+
 def collect_cpu() -> dict:
     """采集 CPU 指标: 每核使用率、整体使用率、负载均值、核心数"""
     per_cpu = psutil.cpu_percent(interval=1, percpu=True)
@@ -100,6 +101,7 @@ def collect_cpu() -> dict:
 # ---------------------------------------------------------------------------
 # Memory
 # ---------------------------------------------------------------------------
+
 
 def collect_memory() -> dict:
     """采集内存指标: RAM 和 Swap 的总量、已用、可用、百分比"""
@@ -124,6 +126,7 @@ def collect_memory() -> dict:
 # ---------------------------------------------------------------------------
 # GPU
 # ---------------------------------------------------------------------------
+
 
 def collect_gpu() -> dict:
     """
@@ -188,14 +191,16 @@ def collect_gpu() -> dict:
                     user = psutil.Process(pid).username()
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
-                result["processes"].append({
-                    "pid": pid,
-                    "user": user,
-                    "gpu_mem_mb": int(pparts[1]),
-                    "used_memory": int(pparts[1]),
-                    "gpu_memory_usage": int(pparts[1]),
-                    "name": pparts[2],
-                })
+                result["processes"].append(
+                    {
+                        "pid": pid,
+                        "user": user,
+                        "gpu_mem_mb": int(pparts[1]),
+                        "used_memory": int(pparts[1]),
+                        "gpu_memory_usage": int(pparts[1]),
+                        "name": pparts[2],
+                    }
+                )
 
     with _gpu_cache_lock:
         _gpu_cache["ts"] = now
@@ -207,21 +212,24 @@ def collect_gpu() -> dict:
 # Disk (usage)
 # ---------------------------------------------------------------------------
 
+
 def collect_disk() -> list:
     """采集所有挂载点的磁盘使用情况"""
     disks = []
     for part in psutil.disk_partitions(all=False):
         try:
             usage = psutil.disk_usage(part.mountpoint)
-            disks.append({
-                "device": part.device,
-                "mountpoint": part.mountpoint,
-                "fstype": part.fstype,
-                "total": usage.total,
-                "used": usage.used,
-                "free": usage.free,
-                "percent": usage.percent,
-            })
+            disks.append(
+                {
+                    "device": part.device,
+                    "mountpoint": part.mountpoint,
+                    "fstype": part.fstype,
+                    "total": usage.total,
+                    "used": usage.used,
+                    "free": usage.free,
+                    "percent": usage.percent,
+                }
+            )
         except (PermissionError, OSError):
             continue
     return disks
@@ -292,10 +300,15 @@ def collect_network() -> dict:
 _SIZE_RE = re.compile(r"([\d.]+)\s*([KMGT]?i?B)", re.IGNORECASE)
 
 _SIZE_UNITS = {
-    "B": 1, "KB": 1e3, "KIB": 1024,
-    "MB": 1e6, "MIB": 1024**2,
-    "GB": 1e9, "GIB": 1024**3,
-    "TB": 1e12, "TIB": 1024**4,
+    "B": 1,
+    "KB": 1e3,
+    "KIB": 1024,
+    "MB": 1e6,
+    "MIB": 1024**2,
+    "GB": 1e9,
+    "GIB": 1024**3,
+    "TB": 1e12,
+    "TIB": 1024**4,
 }
 
 
@@ -394,7 +407,7 @@ def collect_docker_stats() -> dict:
             "docker",
             "inspect",
             "--format",
-            "{{.Name}}|{{.RestartCount}}|{{index .Config.Labels \"com.docker.compose.project\"}}|{{.State.Status}}",
+            '{{.Name}}|{{.RestartCount}}|{{index .Config.Labels "com.docker.compose.project"}}|{{.State.Status}}',
             *names,
         ],
         timeout=15,
@@ -539,6 +552,7 @@ def collect_disk_io() -> dict:
 # Inode
 # ---------------------------------------------------------------------------
 
+
 def collect_inode() -> list:
     """采集所有挂载点的 inode 使用情况"""
     result = []
@@ -553,19 +567,22 @@ def collect_inode() -> list:
             continue
         used = total - free
         percent = round(used / total * 100, 1)
-        result.append({
-            "mountpoint": part.mountpoint,
-            "total": total,
-            "used": used,
-            "free": free,
-            "percent": percent,
-        })
+        result.append(
+            {
+                "mountpoint": part.mountpoint,
+                "total": total,
+                "used": used,
+                "free": free,
+                "percent": percent,
+            }
+        )
     return result
 
 
 # ---------------------------------------------------------------------------
 # Top Processes
 # ---------------------------------------------------------------------------
+
 
 def collect_top_processes(limit: int = 15, gpu_snapshot: dict | None = None) -> dict:
     """
@@ -605,17 +622,19 @@ def collect_top_processes(limit: int = 15, gpu_snapshot: dict | None = None) -> 
             mem_percent = round(p.memory_percent(), 1)
             cmdline_parts = info.get("cmdline") or []
             cmdline = " ".join(cmdline_parts)[:200] if cmdline_parts else info.get("name", "")
-            procs.append({
-                "pid": info["pid"],
-                "name": info["name"] or "",
-                "user": info.get("username") or "",
-                "cpu_percent": info.get("cpu_percent") or 0.0,
-                "mem_percent": mem_percent,
-                "rss": rss,
-                "mem_rss_mb": round(rss / 1024 / 1024, 1),
-                "cmd": cmdline,
-                "cmdline": cmdline,
-            })
+            procs.append(
+                {
+                    "pid": info["pid"],
+                    "name": info["name"] or "",
+                    "user": info.get("username") or "",
+                    "cpu_percent": info.get("cpu_percent") or 0.0,
+                    "mem_percent": mem_percent,
+                    "rss": rss,
+                    "mem_rss_mb": round(rss / 1024 / 1024, 1),
+                    "cmd": cmdline,
+                    "cmdline": cmdline,
+                }
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
@@ -650,6 +669,7 @@ def collect_top_processes(limit: int = 15, gpu_snapshot: dict | None = None) -> 
 # Realtime Fast (lightweight, no blocking)
 # ---------------------------------------------------------------------------
 
+
 def collect_realtime_fast() -> dict:
     """5秒快速快照 - 仅轻量指标，不含 Docker/进程排行"""
     uptime = _format_uptime(time.time() - psutil.boot_time())
@@ -678,6 +698,7 @@ def collect_realtime_fast() -> dict:
 # ---------------------------------------------------------------------------
 # Full Snapshot
 # ---------------------------------------------------------------------------
+
 
 def collect_all() -> dict:
     """完整快照（含Docker和进程，60s周期用）"""

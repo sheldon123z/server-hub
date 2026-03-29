@@ -2,8 +2,6 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
-from pathlib import Path
 
 from database import get_db
 
@@ -87,8 +85,15 @@ async def seed_default_alert_rules():
             await db.execute(
                 "INSERT INTO alert_rules (id, name, metric, operator, warning_threshold, critical_threshold, cooldown_minutes) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (rule["id"], rule["name"], rule["metric"], rule["operator"],
-                 rule["warning_threshold"], rule["critical_threshold"], rule["cooldown_minutes"]),
+                (
+                    rule["id"],
+                    rule["name"],
+                    rule["metric"],
+                    rule["operator"],
+                    rule["warning_threshold"],
+                    rule["critical_threshold"],
+                    rule["cooldown_minutes"],
+                ),
             )
     await db.commit()
 
@@ -140,12 +145,14 @@ async def fire_alert(rule: dict, severity: str, value: float):
     if rule.get("notify", True):
         try:
             from modules.notifications.services import send_telegram
+
             emoji = "🚨" if severity == "critical" else "⚠️"
             await send_telegram(f"{emoji} 告警: {rule['name']}\n当前值: {value}\n级别: {severity}")
             await db.execute(
                 "UPDATE alert_history SET notified = 1 WHERE rowid = ("
                 "SELECT rowid FROM alert_history WHERE rule_id = ? AND message = ? ORDER BY created_at DESC LIMIT 1"
-                ")", (rule["id"], message),
+                ")",
+                (rule["id"], message),
             )
             await db.commit()
         except Exception as e:
@@ -175,9 +182,14 @@ async def evaluate_rules(metrics: dict) -> list[dict]:
     fired = []
     for row in rules:
         rule = {
-            "id": row[0], "name": row[1], "metric": row[2], "operator": row[3],
-            "warning_threshold": row[4], "critical_threshold": row[5],
-            "cooldown_minutes": row[6], "notify": bool(row[7]),
+            "id": row[0],
+            "name": row[1],
+            "metric": row[2],
+            "operator": row[3],
+            "warning_threshold": row[4],
+            "critical_threshold": row[5],
+            "cooldown_minutes": row[6],
+            "notify": bool(row[7]),
             "rule_type": row[8] if len(row) > 8 else "threshold",
         }
 
@@ -290,7 +302,7 @@ async def _compute_baseline(metric_key: str, window_hours: int = 168) -> dict | 
     n = len(values)
     mean = sum(values) / n
     variance = sum((v - mean) ** 2 for v in values) / n
-    stddev = variance ** 0.5
+    stddev = variance**0.5
 
     result = {"mean": mean, "stddev": stddev, "sample_count": n, "computed_at": time.time()}
     _baseline_cache[metric_key] = result
@@ -353,7 +365,9 @@ async def check_baseline_deviation(snapshot: dict):
             if await _should_alert(rule_id, cooldown or 60):
                 direction = "偏高" if current > upper else "偏低"
                 rule = {
-                    "id": rule_id, "name": name, "notify": bool(notify),
+                    "id": rule_id,
+                    "name": name,
+                    "notify": bool(notify),
                     "warning_threshold": f"μ±{multiplier}σ",
                 }
                 await fire_alert(rule, "warning", current)
@@ -406,8 +420,15 @@ async def seed_baseline_rules():
                 await db.execute(
                     "INSERT INTO alert_rules (id, name, metric, operator, cooldown_minutes, rule_type, baseline_window_hours, stddev_multiplier) "
                     "VALUES (?, ?, ?, '>', ?, ?, ?, ?)",
-                    (rule["id"], rule["name"], rule["metric"], rule["cooldown_minutes"],
-                     rule["rule_type"], rule["baseline_window_hours"], rule["stddev_multiplier"]),
+                    (
+                        rule["id"],
+                        rule["name"],
+                        rule["metric"],
+                        rule["cooldown_minutes"],
+                        rule["rule_type"],
+                        rule["baseline_window_hours"],
+                        rule["stddev_multiplier"],
+                    ),
                 )
             except Exception as e:
                 logger.debug("基线规则 %s 创建失败（可能列不存在）: %s", rule["id"], e)

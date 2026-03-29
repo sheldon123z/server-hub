@@ -1,10 +1,10 @@
 """剧本 CRUD 路由"""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from auth.dependencies import require_role
-from modules.playbooks.schemas import PlaybookCreateRequest, PlaybookUpdateRequest
 from modules.playbooks import services
+from modules.playbooks.schemas import PlaybookCreateRequest, PlaybookUpdateRequest
 
 playbooks_router = APIRouter()
 

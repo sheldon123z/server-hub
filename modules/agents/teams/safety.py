@@ -12,7 +12,6 @@ SafeLocalShellBackend，因此需要独立的安全包装。
 import logging
 import os
 import re
-from copy import deepcopy
 
 from langchain_core.tools import BaseTool, StructuredTool
 
@@ -25,11 +24,22 @@ _EXECUTE_TOOLS = {"execute", "execute_ops_script", "ssh_execute_command", "docke
 
 # 敏感环境变量模式 — 与 sandbox.py 保持一致
 _SENSITIVE_ENV_PATTERNS = [
-    re.compile(p, re.IGNORECASE) for p in [
-        r".*API_KEY.*", r".*SECRET.*", r".*TOKEN.*", r".*PASSWORD.*",
-        r"OPENROUTER_.*", r"VOLCENGINE_.*", r"ZHIPU_.*", r"MOONSHOT_.*",
-        r"MINIMAX_.*", r"DEEPSEEK_.*", r"OPENAI_.*", r"TAVILY_.*",
-        r"SERVERHUB_SECRET.*", r"SERVERHUB_ADMIN_PASSWORD",
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        r".*API_KEY.*",
+        r".*SECRET.*",
+        r".*TOKEN.*",
+        r".*PASSWORD.*",
+        r"OPENROUTER_.*",
+        r"VOLCENGINE_.*",
+        r"ZHIPU_.*",
+        r"MOONSHOT_.*",
+        r"MINIMAX_.*",
+        r"DEEPSEEK_.*",
+        r"OPENAI_.*",
+        r"TAVILY_.*",
+        r"SERVERHUB_SECRET.*",
+        r"SERVERHUB_ADMIN_PASSWORD",
     ]
 ]
 
@@ -54,8 +64,8 @@ def resolve_tools(tool_names: list[str], user_role: str = "admin") -> list[BaseT
         tool_names: 工具名字符串列表，如 ["get_system_overview", "web_search"]
         user_role: 用户角色，影响主工具集的过滤策略
     """
-    from modules.agents.tools import get_server_tools
     from modules.agents.subagents._tools import TOOL_REGISTRY
+    from modules.agents.tools import get_server_tools
 
     # 构建名称到工具的映射
     all_tools: dict[str, BaseTool] = {t.name: t for t in get_server_tools(user_role)}
@@ -129,7 +139,9 @@ def _make_logged_tool(
             if not is_safe:
                 logger.warning(
                     "[Team/BLOCKED] %s 的 %s 被黑名单拦截: %s",
-                    member_name, tool_name, reason,
+                    member_name,
+                    tool_name,
+                    reason,
                 )
                 return f"安全拦截: {reason}"
 
@@ -137,7 +149,8 @@ def _make_logged_tool(
         if risk == RiskLevel.DANGER and safety_mode == "supervised":
             logger.warning(
                 "[Team/BLOCKED] %s 的 %s (DANGER) 在 supervised 模式下被阻止，需管理员审批",
-                member_name, tool_name,
+                member_name,
+                tool_name,
             )
             return f"操作被阻止: {tool_name} 为高危工具，需管理员在 supervised 模式下审批后方可执行"
 
@@ -146,7 +159,10 @@ def _make_logged_tool(
     async def async_wrapper(*args, **kwargs):
         logger.info(
             "[Team] %s 调用 %s (risk=%s) args=%s",
-            member_name, tool_name, risk.value, kwargs,
+            member_name,
+            tool_name,
+            risk.value,
+            kwargs,
         )
         # 安全检查
         block_reason = _pre_check(kwargs)
@@ -170,7 +186,10 @@ def _make_logged_tool(
     def sync_wrapper(*args, **kwargs):
         logger.info(
             "[Team] %s 调用 %s (risk=%s) args=%s",
-            member_name, tool_name, risk.value, kwargs,
+            member_name,
+            tool_name,
+            risk.value,
+            kwargs,
         )
         # 安全检查
         block_reason = _pre_check(kwargs)

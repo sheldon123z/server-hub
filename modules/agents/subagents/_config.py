@@ -21,9 +21,9 @@ def _build_subagent_middleware(profile: str) -> list:
         profile: "heavy"(工具密集) / "light"(轻量) / "ops"(操作型)
     """
     from langchain.agents.middleware import (
+        ModelCallLimitMiddleware,
         ModelRetryMiddleware,
         ToolRetryMiddleware,
-        ModelCallLimitMiddleware,
     )
 
     if profile == "heavy":
@@ -49,6 +49,7 @@ def _get_subagent_model(purpose: str):
     """获取 SubAgent 模型实例，失败返回 None（由框架回退到主模型）"""
     try:
         from modules.agents.llm import get_chat_model
+
         return get_chat_model(purpose)
     except Exception:
         return None
@@ -76,6 +77,7 @@ _MIDDLEWARE_PROFILE_MAP = {
 
 
 # ─── 持久化 ───
+
 
 def _build_subagents_from_config(configs: list[dict]) -> list[dict]:
     """从 JSON 配置重建 SubAgent 对象列表"""
@@ -110,26 +112,30 @@ def _build_subagents_from_config(configs: list[dict]) -> list[dict]:
 
 def save_subagents_config(configs: list[dict]):
     from config import settings
+
     custom_path = Path(settings.db_path).parent / "custom_subagents.json"
     custom_path.parent.mkdir(parents=True, exist_ok=True)
     serializable = []
     for cfg in configs:
         name = cfg["name"]
-        serializable.append({
-            "name": name,
-            "description": cfg["description"],
-            "system_prompt": cfg["system_prompt"],
-            "tools": [t.name if hasattr(t, 'name') else str(t) for t in cfg.get("tools", [])],
-            "model_purpose": cfg.get("model_purpose", _MODEL_PURPOSE_MAP.get(name)),
-            "middleware_profile": cfg.get("middleware_profile", _MIDDLEWARE_PROFILE_MAP.get(name)),
-            "interrupt_on": cfg.get("interrupt_on"),
-        })
+        serializable.append(
+            {
+                "name": name,
+                "description": cfg["description"],
+                "system_prompt": cfg["system_prompt"],
+                "tools": [t.name if hasattr(t, "name") else str(t) for t in cfg.get("tools", [])],
+                "model_purpose": cfg.get("model_purpose", _MODEL_PURPOSE_MAP.get(name)),
+                "middleware_profile": cfg.get("middleware_profile", _MIDDLEWARE_PROFILE_MAP.get(name)),
+                "interrupt_on": cfg.get("interrupt_on"),
+            }
+        )
     custom_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def get_subagents_config() -> list[dict]:
     """返回可序列化的 SubAgent 配置（供 admin API 使用）"""
     from config import settings
+
     custom_path = Path(settings.db_path).parent / "custom_subagents.json"
     if custom_path.exists():
         try:
@@ -138,6 +144,7 @@ def get_subagents_config() -> list[dict]:
             logger.warning("自定义 SubAgent 配置加载失败: %s", e)
     # 延迟导入避免循环
     from . import get_subagents
+
     defaults = get_subagents()
     return [
         {
@@ -154,21 +161,32 @@ def get_subagents_config() -> list[dict]:
 
 
 def get_available_tools() -> list[dict]:
-    from modules.agents.tools import get_server_tools
     from modules.agents.safety import TOOL_RISK_MAP
+    from modules.agents.tools import get_server_tools
+
     from ._tools import TOOL_REGISTRY
+
     tools = []
     for t in get_server_tools():
-        tools.append({
-            "name": t.name,
-            "description": (t.description or "")[:100],
-            "risk": TOOL_RISK_MAP.get(t.name, "safe"),
-            "source": "custom",
-        })
+        tools.append(
+            {
+                "name": t.name,
+                "description": (t.description or "")[:100],
+                "risk": TOOL_RISK_MAP.get(t.name, "safe"),
+                "source": "custom",
+            }
+        )
     for name, t in TOOL_REGISTRY.items():
         tools.append({"name": name, "description": (t.description or "")[:100], "risk": "safe", "source": "subagent"})
-    builtins = [("execute","danger"),("read_file","safe"),("write_file","moderate"),
-                ("edit_file","moderate"),("ls","safe"),("glob","safe"),("grep","safe")]
+    builtins = [
+        ("execute", "danger"),
+        ("read_file", "safe"),
+        ("write_file", "moderate"),
+        ("edit_file", "moderate"),
+        ("ls", "safe"),
+        ("glob", "safe"),
+        ("grep", "safe"),
+    ]
     for name, risk in builtins:
         tools.append({"name": name, "description": f"内置: {name}", "risk": risk, "source": "builtin"})
     return tools

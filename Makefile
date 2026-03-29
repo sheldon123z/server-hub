@@ -1,14 +1,27 @@
-.PHONY: test lint build dev clean
+.PHONY: test lint format check build dev clean setup backup
 
 # ─── 后端 ───
 
 test:
 	pytest tests/ -q --tb=short
 
+test-cov:
+	pytest tests/ --cov --cov-report=term-missing --cov-report=html
+
 lint:
-	python -m py_compile main.py
-	python -m py_compile config.py
-	python -m py_compile database.py
+	ruff check .
+
+lint-fix:
+	ruff check . --fix
+
+format:
+	ruff format .
+
+format-check:
+	ruff format . --check
+
+# lint + format 一步到位
+check: lint format-check
 
 dev:
 	uvicorn main:app --host 0.0.0.0 --port 9900 --reload --workers 1
@@ -23,8 +36,18 @@ frontend-dev:
 
 # ─── 组合 ───
 
-ci: lint test build
+ci: check test build
+
+# ─── 工具 ───
+
+setup:
+	pip install ruff pytest pytest-cov pre-commit
+	pre-commit install
+	@echo "✓ 开发环境就绪"
+
+backup:
+	bash scripts/backup-db.sh
 
 clean:
-	rm -rf frontend/dist __pycache__ .pytest_cache
+	rm -rf frontend/dist __pycache__ .pytest_cache htmlcov .ruff_cache
 	find . -name '*.pyc' -delete

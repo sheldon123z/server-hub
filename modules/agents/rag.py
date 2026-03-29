@@ -17,7 +17,6 @@
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -32,12 +31,15 @@ _last_index_time: float = 0
 
 # ─── Embedding ───
 
+
 def get_embeddings():
     """获取或创建 OllamaEmbeddings 单例"""
     global _embeddings
     if _embeddings is None:
         from langchain_ollama import OllamaEmbeddings
+
         from config import settings
+
         model = getattr(settings, "rag_embedding_model", "bge-m3")
         base_url = getattr(settings, "rag_ollama_url", "http://localhost:11434")
         _embeddings = OllamaEmbeddings(model=model, base_url=base_url)
@@ -47,8 +49,10 @@ def get_embeddings():
 
 # ─── Vector Store ───
 
+
 def _get_persist_dir() -> str:
     from config import settings
+
     return str(Path(settings.db_path).parent / "chroma_db")
 
 
@@ -57,6 +61,7 @@ def get_vectorstore():
     global _vectorstore
     if _vectorstore is None:
         from langchain_chroma import Chroma
+
         persist_dir = _get_persist_dir()
         Path(persist_dir).mkdir(parents=True, exist_ok=True)
         _vectorstore = Chroma(
@@ -76,9 +81,11 @@ def _reset_vectorstore():
 
 # ─── 文档分块 ───
 
+
 def _split_markdown(text: str, file_path: str, source_tag: str) -> list[dict]:
     """按 Markdown 标题拆分文档，返回 [{text, metadata}, ...]"""
     from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+
     from config import settings
 
     chunk_size = getattr(settings, "rag_chunk_size", 800)
@@ -104,31 +111,36 @@ def _split_markdown(text: str, file_path: str, source_tag: str) -> list[dict]:
             sub_chunks = text_splitter.split_text(content)
             for i, sc in enumerate(sub_chunks):
                 title = chunk.metadata.get("h2") or chunk.metadata.get("h1") or file_name
-                results.append({
-                    "text": sc,
+                results.append(
+                    {
+                        "text": sc,
+                        "metadata": {
+                            "source": source_tag,
+                            "file": file_name,
+                            "title": title,
+                            "chunk_index": i,
+                            **{k: v for k, v in chunk.metadata.items() if k in ("h1", "h2", "h3")},
+                        },
+                    }
+                )
+        else:
+            title = chunk.metadata.get("h2") or chunk.metadata.get("h1") or file_name
+            results.append(
+                {
+                    "text": content,
                     "metadata": {
                         "source": source_tag,
                         "file": file_name,
                         "title": title,
-                        "chunk_index": i,
                         **{k: v for k, v in chunk.metadata.items() if k in ("h1", "h2", "h3")},
                     },
-                })
-        else:
-            title = chunk.metadata.get("h2") or chunk.metadata.get("h1") or file_name
-            results.append({
-                "text": content,
-                "metadata": {
-                    "source": source_tag,
-                    "file": file_name,
-                    "title": title,
-                    **{k: v for k, v in chunk.metadata.items() if k in ("h1", "h2", "h3")},
-                },
-            })
+                }
+            )
     return results
 
 
 # ─── 索引函数 ───
+
 
 def _add_documents_to_store(docs: list[dict]) -> int:
     """批量添加文档到向量存储，返回添加数量"""
@@ -139,6 +151,7 @@ def _add_documents_to_store(docs: list[dict]) -> int:
     metadatas = [d["metadata"] for d in docs]
     # 用 source + 内容哈希作为 ID，避免重复
     import hashlib
+
     ids = [
         f"{d['metadata'].get('source', 'unknown')}_{hashlib.md5(d['text'][:200].encode()).hexdigest()[:12]}"
         for d in docs
@@ -171,12 +184,12 @@ def index_markdown_files(directory: str, source_tag: str) -> int:
 def index_fault_cases_sync(db_path: str) -> int:
     """从 fault_cases 表索引故障案例（同步版本，启动时用）"""
     import sqlite3
+
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, title, category, symptoms, root_cause, solution, tags "
-            "FROM fault_cases ORDER BY id"
+            "SELECT id, title, category, symptoms, root_cause, solution, tags FROM fault_cases ORDER BY id"
         ).fetchall()
         conn.close()
     except Exception as e:
@@ -193,28 +206,30 @@ def index_fault_cases_sync(db_path: str) -> int:
             f"**解决方案**: {row['solution'] or ''}\n"
             f"**标签**: {row['tags'] or ''}"
         )
-        docs.append({
-            "text": text,
-            "metadata": {
-                "source": "fault_case",
-                "id": str(row["id"]),
-                "title": row["title"],
-                "category": row["category"] or "未分类",
-            },
-        })
+        docs.append(
+            {
+                "text": text,
+                "metadata": {
+                    "source": "fault_case",
+                    "id": str(row["id"]),
+                    "title": row["title"],
+                    "category": row["category"] or "未分类",
+                },
+            }
+        )
     return _add_documents_to_store(docs)
 
 
 def index_patrol_history_sync(db_path: str, limit: int = 200) -> int:
     """索引最近的巡检报告"""
     import sqlite3
+
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, task_id, timestamp, status, report "
-            "FROM agent_patrol_history ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
+            "SELECT id, task_id, timestamp, status, report FROM agent_patrol_history ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
         ).fetchall()
         conn.close()
     except Exception as e:
@@ -227,21 +242,24 @@ def index_patrol_history_sync(db_path: str, limit: int = 200) -> int:
         if not report.strip():
             continue
         # 截取前 1500 字符避免过长
-        docs.append({
-            "text": report[:1500],
-            "metadata": {
-                "source": "patrol_history",
-                "task_id": row["task_id"],
-                "title": f"巡检报告: {row['task_id']} ({row['timestamp']})",
-                "status": row["status"],
-            },
-        })
+        docs.append(
+            {
+                "text": report[:1500],
+                "metadata": {
+                    "source": "patrol_history",
+                    "task_id": row["task_id"],
+                    "title": f"巡检报告: {row['task_id']} ({row['timestamp']})",
+                    "status": row["status"],
+                },
+            }
+        )
     return _add_documents_to_store(docs)
 
 
 def index_compliance_baselines() -> int:
     """索引合规基线 JSON"""
     from config import BASE_DIR
+
     baseline_path = BASE_DIR / "data" / "compliance_baselines.json"
     if not baseline_path.exists():
         return 0
@@ -257,22 +275,25 @@ def index_compliance_baselines() -> int:
     for item in items:
         if isinstance(item, dict):
             text = json.dumps(item, ensure_ascii=False, indent=2)
-            docs.append({
-                "text": text,
-                "metadata": {
-                    "source": "compliance",
-                    "id": str(item.get("id", "")),
-                    "title": item.get("name", item.get("title", "合规检查项")),
-                    "severity": item.get("severity", ""),
-                    "category": item.get("category", ""),
-                },
-            })
+            docs.append(
+                {
+                    "text": text,
+                    "metadata": {
+                        "source": "compliance",
+                        "id": str(item.get("id", "")),
+                        "title": item.get("name", item.get("title", "合规检查项")),
+                        "severity": item.get("severity", ""),
+                        "category": item.get("category", ""),
+                    },
+                }
+            )
     return _add_documents_to_store(docs)
 
 
 def index_agent_memory() -> int:
     """索引 Agent 长期记忆文件"""
     from config import BASE_DIR
+
     memory_path = BASE_DIR / "data" / "agent-memory.md"
     if not memory_path.exists():
         return 0
@@ -288,6 +309,7 @@ def index_agent_memory() -> int:
 
 
 # ─── 全量构建 ───
+
 
 def build_full_index(force: bool = False) -> dict:
     """全量构建索引
@@ -320,6 +342,7 @@ def build_full_index(force: bool = False) -> dict:
         logger.info(f"强制重建：删除 {existing_count} 条旧文档...")
         try:
             import chromadb
+
             persist_dir = _get_persist_dir()
             client = chromadb.PersistentClient(path=persist_dir)
             client.delete_collection("serverhub_knowledge")
@@ -328,6 +351,7 @@ def build_full_index(force: bool = False) -> dict:
             logger.warning(f"删除旧 collection 失败: {e}")
             # 尝试直接删除目录
             import shutil
+
             persist_dir = _get_persist_dir()
             if Path(persist_dir).exists():
                 shutil.rmtree(persist_dir)
@@ -354,6 +378,7 @@ def build_full_index(force: bool = False) -> dict:
     # 3. 故障案例
     try:
         from config import settings
+
         stats["fault_cases"] = index_fault_cases_sync(settings.db_path)
     except Exception as e:
         logger.warning(f"fault_cases 索引失败: {e}")
@@ -362,6 +387,7 @@ def build_full_index(force: bool = False) -> dict:
     # 4. 巡检历史
     try:
         from config import settings
+
         stats["patrol_history"] = index_patrol_history_sync(settings.db_path)
     except Exception as e:
         logger.warning(f"patrol_history 索引失败: {e}")
@@ -394,6 +420,7 @@ def build_full_index(force: bool = False) -> dict:
 
 # ─── 增量索引 ───
 
+
 def index_single_document(text: str, metadata: dict) -> None:
     """增量索引单个文档（新增 fault_case 或 patrol_history 时调用）"""
     try:
@@ -403,6 +430,7 @@ def index_single_document(text: str, metadata: dict) -> None:
 
 
 # ─── 检索 ───
+
 
 def vector_search(query: str, top_k: int = 5, filter_dict: dict | None = None) -> list[dict]:
     """纯向量语义搜索"""
@@ -431,6 +459,7 @@ def vector_search(query: str, top_k: int = 5, filter_dict: dict | None = None) -
 def fts5_search(query: str, top_k: int = 5) -> list[dict]:
     """FTS5 关键词搜索（复用 fault_cases_fts）"""
     import sqlite3
+
     from config import settings
 
     try:
@@ -446,7 +475,7 @@ def fts5_search(query: str, top_k: int = 5) -> list[dict]:
             "rank "
             "FROM fault_cases_fts fts JOIN fault_cases fc ON fts.rowid = fc.id "
             "WHERE fault_cases_fts MATCH ? ORDER BY rank LIMIT ?",
-            (query, top_k)
+            (query, top_k),
         ).fetchall()
 
         for row in rows:
@@ -456,17 +485,19 @@ def fts5_search(query: str, top_k: int = 5) -> list[dict]:
                 f"根因: {row['root_cause'] or ''}\n"
                 f"方案: {row['solution'] or ''}"
             )
-            results.append({
-                "content": content,
-                "metadata": {
-                    "source": "fault_case",
-                    "id": str(row["id"]),
-                    "title": row["title"],
-                    "category": row["category"] or "",
-                },
-                "score": round(abs(float(row["rank"])), 4),  # FTS5 rank 是负数
-                "search_type": "fts5",
-            })
+            results.append(
+                {
+                    "content": content,
+                    "metadata": {
+                        "source": "fault_case",
+                        "id": str(row["id"]),
+                        "title": row["title"],
+                        "category": row["category"] or "",
+                    },
+                    "score": round(abs(float(row["rank"])), 4),  # FTS5 rank 是负数
+                    "search_type": "fts5",
+                }
+            )
     except Exception as e:
         # FTS5 不可用时静默失败（表可能不存在）
         logger.debug(f"FTS5 搜索不可用: {e}")
@@ -520,6 +551,7 @@ def hybrid_search(query: str, top_k: int = 5, source_filter: str = "") -> list[d
 
 # ─── 统计信息 ───
 
+
 def get_index_stats() -> dict:
     """返回索引统计信息（供前端面板和 API）
 
@@ -556,6 +588,7 @@ def get_index_stats() -> dict:
     last_indexed = ""
     if _last_index_time > 0:
         from datetime import datetime
+
         last_indexed = datetime.fromtimestamp(_last_index_time).strftime("%Y-%m-%d %H:%M:%S")
 
     # Embedding 模型

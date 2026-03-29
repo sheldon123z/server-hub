@@ -9,6 +9,7 @@
 import json
 import logging
 from datetime import datetime, timedelta
+
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -43,11 +44,13 @@ class MetricsStore:
     async def query_latest(self, server_id: str = "local") -> dict | None:
         """Get the most recent metric snapshot for a server."""
         db = await get_db()
-        row = await (await db.execute(
-            "SELECT value_json FROM metrics WHERE server_id = ? AND metric_type = 'all' "
-            "ORDER BY timestamp DESC LIMIT 1",
-            (server_id,),
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT value_json FROM metrics WHERE server_id = ? AND metric_type = 'all' "
+                "ORDER BY timestamp DESC LIMIT 1",
+                (server_id,),
+            )
+        ).fetchone()
         if row:
             return json.loads(row[0])
         return None
@@ -55,13 +58,15 @@ class MetricsStore:
     async def query_fleet_latest(self) -> dict[str, dict]:
         """Get the latest metrics for ALL servers in one query."""
         db = await get_db()
-        rows = await (await db.execute(
-            "SELECT m.server_id, m.value_json FROM metrics m "
-            "INNER JOIN (SELECT server_id, MAX(timestamp) AS max_ts FROM metrics "
-            "WHERE metric_type = 'all' GROUP BY server_id) latest "
-            "ON m.server_id = latest.server_id AND m.timestamp = latest.max_ts "
-            "AND m.metric_type = 'all'"
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT m.server_id, m.value_json FROM metrics m "
+                "INNER JOIN (SELECT server_id, MAX(timestamp) AS max_ts FROM metrics "
+                "WHERE metric_type = 'all' GROUP BY server_id) latest "
+                "ON m.server_id = latest.server_id AND m.timestamp = latest.max_ts "
+                "AND m.metric_type = 'all'"
+            )
+        ).fetchall()
         result = {}
         for row in rows:
             try:
@@ -74,12 +79,14 @@ class MetricsStore:
         """Get historical metrics for a server."""
         cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
         db = await get_db()
-        rows = await (await db.execute(
-            "SELECT timestamp, value_json FROM metrics "
-            "WHERE server_id = ? AND metric_type = ? AND timestamp >= ? "
-            "ORDER BY timestamp ASC",
-            (server_id, metric_type, cutoff),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT timestamp, value_json FROM metrics "
+                "WHERE server_id = ? AND metric_type = ? AND timestamp >= ? "
+                "ORDER BY timestamp ASC",
+                (server_id, metric_type, cutoff),
+            )
+        ).fetchall()
         result = []
         for row in rows:
             try:
@@ -94,11 +101,13 @@ class MetricsStore:
         """Get historical metrics for ALL servers."""
         cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
         db = await get_db()
-        rows = await (await db.execute(
-            "SELECT server_id, timestamp, value_json FROM metrics "
-            "WHERE metric_type = 'all' AND timestamp >= ? ORDER BY timestamp ASC",
-            (cutoff,),
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT server_id, timestamp, value_json FROM metrics "
+                "WHERE metric_type = 'all' AND timestamp >= ? ORDER BY timestamp ASC",
+                (cutoff,),
+            )
+        ).fetchall()
         result: dict[str, list] = {}
         for row in rows:
             sid = row[0]
@@ -136,17 +145,19 @@ class MetricsStore:
             disk = root_disk.get("percent", 0)
             gpu = metrics.get("gpu", {}).get("utilization", 0) if isinstance(metrics.get("gpu"), dict) else 0
 
-            servers.append({
-                "id": sid,
-                "name": name,
-                "status": status,
-                "cpu_percent": round(cpu, 1),
-                "memory_percent": round(mem, 1),
-                "disk_percent": round(disk, 1),
-                "gpu_percent": round(gpu, 1),
-                "hostname": metrics.get("hostname", name),
-                "uptime": metrics.get("uptime", 0),
-            })
+            servers.append(
+                {
+                    "id": sid,
+                    "name": name,
+                    "status": status,
+                    "cpu_percent": round(cpu, 1),
+                    "memory_percent": round(mem, 1),
+                    "disk_percent": round(disk, 1),
+                    "gpu_percent": round(gpu, 1),
+                    "hostname": metrics.get("hostname", name),
+                    "uptime": metrics.get("uptime", 0),
+                }
+            )
 
             if status == "online":
                 total_cpu += cpu
@@ -178,9 +189,9 @@ class MetricsStore:
         cutoff = (datetime.now() - timedelta(days=retention_days)).isoformat()
         db = await get_db()
         # Per-server_id deletion leverages the compound index
-        rows = await (await db.execute(
-            "SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,)
-        )).fetchall()
+        rows = await (
+            await db.execute("SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,))
+        ).fetchall()
         total = 0
         for (sid,) in rows:
             cursor = await db.execute(

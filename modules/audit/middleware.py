@@ -40,8 +40,7 @@ async def log_audit(
     try:
         db = await get_db()
         await db.execute(
-            "INSERT INTO audit_log (username, action, target, details, ip_address, success) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO audit_log (username, action, target, details, ip_address, success) VALUES (?, ?, ?, ?, ?, ?)",
             (username, action, target, detail_text, ip, 1 if success else 0),
         )
         await db.commit()

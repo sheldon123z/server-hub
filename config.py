@@ -76,9 +76,9 @@ class Settings:
         self.metrics_cache_ttl_seconds: int = 30
 
         # WebSocket
-        self.ws_metrics_interval: int = 5          # WS快速推送间隔(秒)
-        self.ws_full_metrics_interval: int = 60    # WS全量快照间隔(秒)
-        self.top_processes_limit: int = 15         # 进程排行数量
+        self.ws_metrics_interval: int = 5  # WS快速推送间隔(秒)
+        self.ws_full_metrics_interval: int = 60  # WS全量快照间隔(秒)
+        self.top_processes_limit: int = 15  # 进程排行数量
 
         # 日志路径白名单
         self.log_dirs: list = [
@@ -88,9 +88,20 @@ class Settings:
 
         # 管理的 systemd 服务列表
         self.managed_services: list = [
-            "nginx", "docker", "clash", "ollama", "jupyterlab",
-            "login-time-monitor", "sunny", "haproxy", "fail2ban",
-            "webmin", "mysql", "smbd", "nmbd", "xrdp",
+            "nginx",
+            "docker",
+            "clash",
+            "ollama",
+            "jupyterlab",
+            "login-time-monitor",
+            "sunny",
+            "haproxy",
+            "fail2ban",
+            "webmin",
+            "mysql",
+            "smbd",
+            "nmbd",
+            "xrdp",
         ]
 
         # AI Agent 配置

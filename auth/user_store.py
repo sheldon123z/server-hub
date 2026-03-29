@@ -1,7 +1,7 @@
 """面板用户存储（SQLite）。"""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from passlib.hash import bcrypt
 
@@ -29,9 +29,7 @@ def get_token_version(user: dict | None) -> int:
 async def ensure_admin():
     """首次启动时创建默认管理员"""
     db = await get_db()
-    row = await db.execute_fetchall(
-        "SELECT id FROM panel_users WHERE username = ?", (settings.admin_username,)
-    )
+    row = await db.execute_fetchall("SELECT id FROM panel_users WHERE username = ?", (settings.admin_username,))
     if not row:
         admin_password = settings.admin_password or get_or_create_bootstrap_admin_password()
         await db.execute(
@@ -44,16 +42,14 @@ async def ensure_admin():
 
 async def authenticate(username: str, password: str) -> dict | None:
     db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT * FROM panel_users WHERE username = ? AND disabled = 0", (username,)
-    )
+    rows = await db.execute_fetchall("SELECT * FROM panel_users WHERE username = ? AND disabled = 0", (username,))
     if not rows:
         return None
     user = dict(rows[0])
     if not verify_password(password, user["hashed_password"]):
         return None
     # 更新最后登录时间
-    last_login = datetime.now(timezone.utc).isoformat()
+    last_login = datetime.now(UTC).isoformat()
     await db.execute(
         "UPDATE panel_users SET last_login = ? WHERE id = ?",
         (last_login, user["id"]),
@@ -65,9 +61,7 @@ async def authenticate(username: str, password: str) -> dict | None:
 
 async def get_user_by_name(username: str) -> dict | None:
     db = await get_db()
-    rows = await db.execute_fetchall(
-        "SELECT * FROM panel_users WHERE username = ?", (username,)
-    )
+    rows = await db.execute_fetchall("SELECT * FROM panel_users WHERE username = ?", (username,))
     return dict(rows[0]) if rows else None
 
 

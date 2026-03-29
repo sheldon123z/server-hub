@@ -33,8 +33,16 @@ async def list_conversations(user=Depends(get_current_user)):
     )
     rows = await cursor.fetchall()
     return [
-        {"id": r[0], "title": r[1], "username": r[2], "safety_mode": r[3],
-         "created_at": r[4], "updated_at": r[5], "message_count": r[6], "latest_run_status": r[7]}
+        {
+            "id": r[0],
+            "title": r[1],
+            "username": r[2],
+            "safety_mode": r[3],
+            "created_at": r[4],
+            "updated_at": r[5],
+            "message_count": r[6],
+            "latest_run_status": r[7],
+        }
         for r in rows
     ]
 
@@ -43,9 +51,7 @@ async def list_conversations(user=Depends(get_current_user)):
 async def get_conversation(conversation_id: str, user=Depends(get_current_user)):
     # 验证对话归属（所有用户只能看自己的对话）
     db = await get_db()
-    cursor = await db.execute(
-        "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
-    )
+    cursor = await db.execute("SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,))
     row = await cursor.fetchone()
     if not row or row[0] != user["username"]:
         raise HTTPException(status_code=403, detail="无权查看此对话")
@@ -103,7 +109,8 @@ async def get_conversation(conversation_id: str, user=Depends(get_current_user))
                     "created_at": latest_run[2],
                     "completed_at": latest_run[3],
                 }
-                if latest_run else None
+                if latest_run
+                else None
             ),
         }
     except Exception as e:
@@ -114,9 +121,7 @@ async def get_conversation(conversation_id: str, user=Depends(get_current_user))
 async def archive_conversation(conversation_id: str, user=Depends(get_current_user)):
     db = await get_db()
     # 验证对话归属（所有用户只能删除自己的对话）
-    cursor = await db.execute(
-        "SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,)
-    )
+    cursor = await db.execute("SELECT username FROM agent_conversations WHERE id = ?", (conversation_id,))
     row = await cursor.fetchone()
     if not row or row[0] != user["username"]:
         raise HTTPException(status_code=403, detail="无权操作此对话")

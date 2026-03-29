@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +53,7 @@ def run_command(
         stderr=completed.stderr.strip(),
     )
     if check and result.returncode != 0:
-        raise RuntimeError(
-            f"命令失败 (exit={result.returncode}): {result.output or '无输出'}"
-        )
+        raise RuntimeError(f"命令失败 (exit={result.returncode}): {result.output or '无输出'}")
     return result
 
 
@@ -83,7 +81,7 @@ async def run_command_async(
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         proc.kill()
         await proc.communicate()
         raise RuntimeError(f"命令超时 ({timeout}s): {' '.join(args)}") from exc
@@ -94,7 +92,5 @@ async def run_command_async(
         stderr=stderr.decode("utf-8", errors="replace").strip(),
     )
     if check and result.returncode != 0:
-        raise RuntimeError(
-            f"命令失败 (exit={result.returncode}): {result.output or '无输出'}"
-        )
+        raise RuntimeError(f"命令失败 (exit={result.returncode}): {result.output or '无输出'}")
     return result

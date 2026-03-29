@@ -8,14 +8,14 @@ import grp
 import logging
 import os
 import pwd
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
 
 import psutil
+from utils.command import run_command, run_command_text
 
 from config import settings
-from utils.command import run_command, run_command_text
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +57,7 @@ def _group_cache(entries: list[pwd.struct_passwd]) -> dict[str, str]:
             if member in memberships:
                 memberships[member].add(group.gr_name)
 
-    return {
-        username: " ".join(sorted(group_names))
-        for username, group_names in memberships.items()
-    }
+    return {username: " ".join(sorted(group_names)) for username, group_names in memberships.items()}
 
 
 def _user_exists(username: str) -> bool:
@@ -113,9 +110,7 @@ def get_user_stats() -> list[dict]:
             if username not in valid_users:
                 continue
             rss = info["memory_info"].rss if info.get("memory_info") else 0
-            all_procs.setdefault(username, []).append(
-                (info["pid"], rss, info.get("name") or "")
-            )
+            all_procs.setdefault(username, []).append((info["pid"], rss, info.get("name") or ""))
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
@@ -211,9 +206,7 @@ def save_quotas(quotas: list[dict]):
     ]
     for quota in quotas:
         comment = f"  # {quota['comment']}" if quota.get("comment") else ""
-        lines.append(
-            f"{quota['key']:<18}{quota['mem_gb']:<8}{quota['proc_limit']:<8}{comment}"
-        )
+        lines.append(f"{quota['key']:<18}{quota['mem_gb']:<8}{quota['proc_limit']:<8}{comment}")
     with open(settings.quota_file, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
 
@@ -469,6 +462,7 @@ def kill_single_process(pid: int, username: str) -> dict:
 
 # ─── 进程列表 & 配额状态 & 处置引擎 ───
 
+
 def get_user_processes(username: str, sort_by: str = "mem", search: str = "") -> list[dict]:
     """获取指定用户的完整进程列表"""
     import time
@@ -499,15 +493,17 @@ def get_user_processes(username: str, sort_by: str = "mem", search: str = "") ->
             if search and search.lower() not in name.lower() and search.lower() not in cmdline.lower():
                 continue
 
-            procs.append({
-                "pid": info["pid"],
-                "name": name,
-                "cmdline": cmdline,
-                "mem_mb": round(rss / 1024 / 1024, 1),
-                "cpu_percent": info.get("cpu_percent") or 0.0,
-                "elapsed": elapsed,
-                "elapsed_sec": elapsed_sec,
-            })
+            procs.append(
+                {
+                    "pid": info["pid"],
+                    "name": name,
+                    "cmdline": cmdline,
+                    "mem_mb": round(rss / 1024 / 1024, 1),
+                    "cpu_percent": info.get("cpu_percent") or 0.0,
+                    "elapsed": elapsed,
+                    "elapsed_sec": elapsed_sec,
+                }
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
@@ -546,13 +542,15 @@ def get_quota_status() -> dict:
         else:
             status = "normal"
 
-        results.append({
-            **u,
-            "mem_usage_pct": mem_pct,
-            "proc_usage_pct": proc_pct,
-            "status": status,
-            "quota": q,
-        })
+        results.append(
+            {
+                **u,
+                "mem_usage_pct": mem_pct,
+                "proc_usage_pct": proc_pct,
+                "status": status,
+                "quota": q,
+            }
+        )
 
     return {
         "users": results,
@@ -565,6 +563,7 @@ def get_quota_status() -> dict:
 def get_enforcement_config() -> dict:
     """读取处置策略配置"""
     import json
+
     config_path = Path(settings.db_path).parent / "enforcement-config.json"
     defaults = {
         "enabled": True,
@@ -587,6 +586,7 @@ def get_enforcement_config() -> dict:
 def save_enforcement_config(config: dict):
     """保存处置策略配置"""
     import json
+
     config_path = Path(settings.db_path).parent / "enforcement-config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -594,8 +594,8 @@ def save_enforcement_config(config: dict):
 
 async def check_and_enforce_quotas():
     """配额处置引擎 — 由调度器每 60s 调用"""
-    import json
     from datetime import datetime, timedelta
+
     from database import get_db
 
     config = get_enforcement_config()
@@ -669,6 +669,7 @@ async def check_and_enforce_quotas():
         if not in_cooldown:
             try:
                 from modules.notifications.services import send_to_all_channels
+
                 level_names = {"warning": "预警", "critical": "告警", "kill": "强制处置"}
                 msg = (
                     f"[配额{level_names.get(violation_type, '通知')}] 用户 {username} "
@@ -686,7 +687,15 @@ async def check_and_enforce_quotas():
         await db.execute(
             "INSERT INTO quota_violations (username, violation_type, mem_gb, quota_mem_gb, usage_pct, action_taken, first_detected_at, notified_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (username, violation_type, u["mem_gb"], mem_limit, round(mem_pct, 1),
-             action_taken, first_detected.isoformat(), now.isoformat() if not in_cooldown else None),
+            (
+                username,
+                violation_type,
+                u["mem_gb"],
+                mem_limit,
+                round(mem_pct, 1),
+                action_taken,
+                first_detected.isoformat(),
+                now.isoformat() if not in_cooldown else None,
+            ),
         )
         await db.commit()

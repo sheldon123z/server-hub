@@ -16,33 +16,33 @@ import json
 import logging
 from pathlib import Path
 
-from ._tools import web_search, think, _get_tools_by_names, TOOL_REGISTRY
-from ._config import (
-    _build_subagent_middleware,
-    _get_subagent_model,
-    _build_subagents_from_config,
-    _MODEL_PURPOSE_MAP,
-    _MIDDLEWARE_PROFILE_MAP,
-    MIDDLEWARE_PROFILES,
-    save_subagents_config,
-    get_subagents_config,
-    get_available_tools,
-)
 from ._async_specs import get_async_subagent_specs, load_async_subagent_specs
+from ._config import (
+    _MIDDLEWARE_PROFILE_MAP,
+    _MODEL_PURPOSE_MAP,
+    MIDDLEWARE_PROFILES,
+    _build_subagent_middleware,
+    _build_subagents_from_config,
+    _get_subagent_model,
+    get_available_tools,
+    get_subagents_config,
+    save_subagents_config,
+)
+from ._tools import TOOL_REGISTRY, _get_tools_by_names, think, web_search
+from .correlation_analyzer import DEFINITION as _CORRELATION_ANALYZER_DEF
+from .correlation_analyzer import PROMPT as CORRELATION_ANALYZER_PROMPT
+from .knowledge_retriever import DEFINITION as _KNOWLEDGE_RETRIEVER_DEF
+from .knowledge_retriever import PROMPT as KNOWLEDGE_RETRIEVER_PROMPT
+from .log_analyzer import DEFINITION as _LOG_ANALYZER_DEF
+from .log_analyzer import PROMPT as LOG_ANALYZER_PROMPT
+from .ops_scheduler import DEFINITION as _OPS_SCHEDULER_DEF
+from .ops_scheduler import PROMPT as OPS_SCHEDULER_PROMPT
 
 # SubAgent 定义
 from .researcher import DEFINITION as _RESEARCHER_DEF
 from .researcher import PROMPT as RESEARCHER_PROMPT
-from .log_analyzer import DEFINITION as _LOG_ANALYZER_DEF
-from .log_analyzer import PROMPT as LOG_ANALYZER_PROMPT
 from .security_auditor import DEFINITION as _SECURITY_AUDITOR_DEF
 from .security_auditor import PROMPT as SECURITY_AUDITOR_PROMPT
-from .correlation_analyzer import DEFINITION as _CORRELATION_ANALYZER_DEF
-from .correlation_analyzer import PROMPT as CORRELATION_ANALYZER_PROMPT
-from .ops_scheduler import DEFINITION as _OPS_SCHEDULER_DEF
-from .ops_scheduler import PROMPT as OPS_SCHEDULER_PROMPT
-from .knowledge_retriever import DEFINITION as _KNOWLEDGE_RETRIEVER_DEF
-from .knowledge_retriever import PROMPT as KNOWLEDGE_RETRIEVER_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,7 @@ def get_subagents() -> list[dict]:
 def load_subagents() -> list[dict]:
     """加载 SubAgent 配置（优先自定义文件）"""
     from config import settings
+
     custom_path = Path(settings.db_path).parent / "custom_subagents.json"
     if custom_path.exists():
         try:

@@ -11,9 +11,16 @@ logger = logging.getLogger(__name__)
 
 # SSH 命令黑名单
 SSH_COMMAND_BLACKLIST = [
-    r"\brm\s+-rf\s+/", r"\bmkfs\b", r"\bdd\s+if=", r"\bformat\b",
-    r"\berase\b", r">\s*/dev/sd", r"\breboot\b", r"\bshutdown\b",
-    r"\binit\s+0\b", r"\bpoweroff\b",
+    r"\brm\s+-rf\s+/",
+    r"\bmkfs\b",
+    r"\bdd\s+if=",
+    r"\bformat\b",
+    r"\berase\b",
+    r">\s*/dev/sd",
+    r"\breboot\b",
+    r"\bshutdown\b",
+    r"\binit\s+0\b",
+    r"\bpoweroff\b",
 ]
 
 
@@ -59,7 +66,9 @@ async def ssh_execute_command(
 
     # Build connection options
     connect_opts = {
-        "host": host, "port": port, "username": username,
+        "host": host,
+        "port": port,
+        "username": username,
         "known_hosts": None,  # Skip host key verification for managed devices
         "connect_timeout": timeout,
     }
@@ -85,7 +94,7 @@ async def ssh_execute_command(
                     if len(output) > 10000:
                         output = output[:10000] + "\n... (输出已截断)"
                     # Strip ANSI escape codes
-                    output = re.sub(r'\x1b\[[0-9;]*m', '', output)
+                    output = re.sub(r"\x1b\[[0-9;]*m", "", output)
 
                     entry = f"## {cmd}\n"
                     if result.exit_status != 0:
@@ -95,7 +104,7 @@ async def ssh_execute_command(
                     if stderr:
                         entry += f"STDERR:\n```\n{stderr[:2000]}\n```\n"
                     results.append(entry)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     results.append(f"## {cmd}\n命令执行超时 ({timeout}s)\n")
     except asyncssh.DisconnectError as e:
         return f"SSH 连接断开: {e}"
@@ -109,9 +118,15 @@ async def ssh_execute_command(
 
 @tool
 async def playbook_create(
-    id: str, name: str, description: str, category: str,
-    system_prompt: str, parameters: str, tools_required: str,
-    validation_rules: str = "{}", trigger_type: str = "manual",
+    id: str,
+    name: str,
+    description: str,
+    category: str,
+    system_prompt: str,
+    parameters: str,
+    tools_required: str,
+    validation_rules: str = "{}",
+    trigger_type: str = "manual",
 ) -> str:
     """Create a new ops playbook (reusable workflow template).
 
@@ -127,6 +142,7 @@ async def playbook_create(
         trigger_type: Trigger mode (manual/schedule/event/api)
     """
     from modules.playbooks.services import create_playbook
+
     try:
         json.loads(parameters)  # validate JSON
         json.loads(validation_rules)
@@ -134,13 +150,20 @@ async def playbook_create(
         return f"JSON 格式错误: {e}"
 
     try:
-        await create_playbook({
-            "id": id, "name": name, "description": description,
-            "category": category, "system_prompt": system_prompt,
-            "parameters": parameters, "tools_required": tools_required,
-            "validation_rules": validation_rules,
-            "trigger_config": json.dumps({"type": trigger_type}),
-        }, created_by="agent")
+        await create_playbook(
+            {
+                "id": id,
+                "name": name,
+                "description": description,
+                "category": category,
+                "system_prompt": system_prompt,
+                "parameters": parameters,
+                "tools_required": tools_required,
+                "validation_rules": validation_rules,
+                "trigger_config": json.dumps({"type": trigger_type}),
+            },
+            created_by="agent",
+        )
         return f"剧本已创建: {name} (ID: {id})\n类别: {category}\n工具: {tools_required}\n触发方式: {trigger_type}"
     except Exception as e:
         return f"创建失败: {e}"
@@ -155,6 +178,7 @@ async def playbook_execute(playbook_id: str, parameters: str = "{}") -> str:
         parameters: JSON string of parameter key-value pairs
     """
     from modules.playbooks.services import execute_playbook
+
     try:
         params = json.loads(parameters)
     except json.JSONDecodeError:
@@ -178,12 +202,13 @@ async def playbook_list(category: str = "") -> str:
         category: Filter by category (network/system/docker/security/general). Empty for all.
     """
     from modules.playbooks.services import list_playbooks
+
     playbooks = await list_playbooks(category or None)
     if not playbooks:
         return "没有可用的剧本。" + (f" (类别: {category})" if category else "")
     lines = ["## 可用剧本\n| ID | 名称 | 类别 | 工具 | 触发 |", "|---|---|---|---|---|"]
     for pb in playbooks:
-        trigger = json.loads(pb.get("trigger_config") or '{}').get("type", "manual")
+        trigger = json.loads(pb.get("trigger_config") or "{}").get("type", "manual")
         lines.append(f"| {pb['id']} | {pb['name']} | {pb['category']} | {pb['tools_required'][:30]} | {trigger} |")
     return "\n".join(lines)
 
@@ -196,12 +221,12 @@ async def playbook_search(keyword: str) -> str:
         keyword: Search keyword
     """
     from modules.playbooks.services import list_playbooks
+
     all_pbs = await list_playbooks()
     matches = [
-        pb for pb in all_pbs
-        if keyword.lower() in (
-            pb.get("name", "") + pb.get("description", "") + pb.get("tags", "")
-        ).lower()
+        pb
+        for pb in all_pbs
+        if keyword.lower() in (pb.get("name", "") + pb.get("description", "") + pb.get("tags", "")).lower()
     ]
     if not matches:
         return f"未找到匹配 '{keyword}' 的剧本"

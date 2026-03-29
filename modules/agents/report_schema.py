@@ -1,8 +1,8 @@
 """巡检报告结构化 Schema + 解析工具"""
 
 import json
-import re
 import logging
+import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -82,23 +82,25 @@ def _normalize_report(data: dict) -> dict:
     for item in data.get("check_items", []):
         if not isinstance(item, dict):
             continue
-        report["check_items"].append({
-            "name": item.get("name", "未命名检查项"),
-            "status": item.get("status", "pass"),
-            "severity": item.get("severity", "info"),
-            "current_value": str(item.get("current_value", "")),
-            "threshold": str(item.get("threshold", "")),
-            "detail": item.get("detail", ""),
-            "recommendation": item.get("recommendation", ""),
-        })
+        report["check_items"].append(
+            {
+                "name": item.get("name", "未命名检查项"),
+                "status": item.get("status", "pass"),
+                "severity": item.get("severity", "info"),
+                "current_value": str(item.get("current_value", "")),
+                "threshold": str(item.get("threshold", "")),
+                "detail": item.get("detail", ""),
+                "recommendation": item.get("recommendation", ""),
+            }
+        )
 
     # 根据 check_items 重新计算 status
     if report["check_items"]:
-        max_severity = max(
-            SEVERITY_ORDER.get(item["severity"], 0)
-            for item in report["check_items"]
-            if item["status"] != "pass"
-        ) if any(item["status"] != "pass" for item in report["check_items"]) else 0
+        max_severity = (
+            max(SEVERITY_ORDER.get(item["severity"], 0) for item in report["check_items"] if item["status"] != "pass")
+            if any(item["status"] != "pass" for item in report["check_items"])
+            else 0
+        )
 
         for sev, order in SEVERITY_ORDER.items():
             if order == max_severity:
@@ -130,15 +132,14 @@ def report_summary_text(report_json: dict) -> str:
     status_emoji = {"ok": "✅", "warning": "⚠️", "critical": "🚨"}.get(report_json.get("status", "ok"), "ℹ️")
     lines.append(f"{status_emoji} {report_json.get('summary', '巡检完成')}")
 
-    fail_items = [
-        item for item in report_json.get("check_items", [])
-        if item.get("status") != "pass"
-    ]
+    fail_items = [item for item in report_json.get("check_items", []) if item.get("status") != "pass"]
     if fail_items:
         lines.append("")
         for item in fail_items:
             sev = item.get("severity", "info").upper()
-            lines.append(f"[{sev}] {item['name']}: {item.get('current_value', '')} (阈值: {item.get('threshold', 'N/A')})")
+            lines.append(
+                f"[{sev}] {item['name']}: {item.get('current_value', '')} (阈值: {item.get('threshold', 'N/A')})"
+            )
             if item.get("recommendation"):
                 lines.append(f"  → {item['recommendation']}")
 

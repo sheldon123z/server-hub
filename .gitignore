@@ -35,6 +35,7 @@ data/serverhub-secret.key
 Thumbs.db
 
 # Logs
+logs/
 *.log
 
 # Deprecated files

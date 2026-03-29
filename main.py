@@ -4,29 +4,80 @@ FastAPI + React 18 + SQLite
 """
 
 import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
-import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+# ─── 日志持久化配置（在所有模块 import 之前） ───
+
+
+def _setup_logging():
+    """配置 root logger：控制台 + 文件轮转"""
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    # 格式：时间 | 级别 | 模块名 | 消息
+    fmt = logging.Formatter(
+        "[%(asctime)s] %(levelname)-7s %(name)s — %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # 控制台输出（保持默认行为）
+    if not root.handlers:
+        console = logging.StreamHandler()
+        console.setFormatter(fmt)
+        root.addHandler(console)
+
+    # 文件轮转：单文件 10MB，保留 10 个（总计最多 ~100MB）
+    file_handler = RotatingFileHandler(
+        str(log_dir / "server-hub.log"),
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=10,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(fmt)
+    root.addHandler(file_handler)
+
+    # 错误日志单独一份（方便快速排查）
+    error_handler = RotatingFileHandler(
+        str(log_dir / "server-hub.error.log"),
+        maxBytes=5 * 1024 * 1024,  # 5 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(fmt)
+    root.addHandler(error_handler)
+
+    # 降低第三方库日志噪音
+    for noisy in ("uvicorn.access", "httpx", "httpcore", "watchfiles", "chromadb"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+_setup_logging()
 
 logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).parent / ".env")
 
-from fastapi import FastAPI, Request, Depends, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import settings
-from database import get_db, close_db
 from auth.dependencies import get_current_user
 from auth.routes import router as auth_router
 from auth.user_store import ensure_admin
+from database import close_db, get_db
 from modules import discover_modules, get_sidebar_items
 from modules.audit.middleware import AuditMiddleware
-
 
 # ─── 子系统状态跟踪 ───
 
@@ -36,6 +87,7 @@ _bg_init_task: asyncio.Task | None = None
 
 
 # ─── 生命周期 ───
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -57,6 +109,7 @@ async def lifespan(app: FastAPI):
     # LG Compat router 也需要在 ready 前挂载（路由注册不能延迟）
     try:
         from modules.agents.lg_compat import lg_router
+
         app.include_router(lg_router)
     except Exception as e:
         logger.warning("[ServerHub] LG Compat 路由注册失败: %s", e)
@@ -84,7 +137,7 @@ async def lifespan(app: FastAPI):
                 await asyncio.wait_for(coro, timeout=30)
                 _subsystem_status[name] = "ready"
                 logger.info("[ServerHub] %s 已启动", name)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _subsystem_status[name] = "timeout"
                 logger.warning("[ServerHub] %s 启动超时(30s)", name)
             except Exception as e:
@@ -112,6 +165,7 @@ async def lifespan(app: FastAPI):
         try:
             mod_path, fn_name = stop_fn_path.rsplit(":", 1)
             import importlib
+
             mod = importlib.import_module(mod_path)
             await getattr(mod, fn_name)()
         except Exception:
@@ -121,30 +175,36 @@ async def lifespan(app: FastAPI):
 
 # ─── 后台初始化协程 ───
 
+
 async def _init_notifications():
     from modules.notifications.services import ensure_default_channels
+
     await ensure_default_channels()
 
 
 async def _init_monitoring():
     from modules.monitoring.scheduler import start_scheduler
+
     await start_scheduler()
 
 
 async def _init_rag():
     from modules.agents.rag import build_full_index
+
     stats = await asyncio.get_event_loop().run_in_executor(None, build_full_index)
     logger.info("[ServerHub] RAG 知识库已构建: %s", stats)
 
 
 async def _init_stale_cleanup():
     from modules.agents.async_tasks import cleanup_stale_tasks
+
     await cleanup_stale_tasks()
 
 
 async def _init_lg_compat():
-    from modules.agents.lg_compat import register_graph, start_cleanup
     from modules.agents.async_graphs import build_all_async_graphs
+    from modules.agents.lg_compat import register_graph, start_cleanup
+
     graphs = await build_all_async_graphs()
     for gid, graph in graphs.items():
         register_graph(gid, graph)
@@ -154,28 +214,34 @@ async def _init_lg_compat():
 
 async def _init_patrol():
     from modules.agents.patrol import start_patrol_scheduler
+
     await start_patrol_scheduler()
 
 
 async def _init_playbooks():
     from modules.playbooks.seed import seed_builtin_playbooks
+
     await seed_builtin_playbooks()
     from modules.playbooks.scheduler import start_playbook_scheduler
+
     await start_playbook_scheduler()
 
 
 async def _init_heartbeat():
     from modules.servers.heartbeat import start_heartbeat
+
     await start_heartbeat()
 
 
 async def _init_agent_teams():
     from modules.agents.teams.templates import seed_builtin_teams
+
     await seed_builtin_teams()
 
 
 async def _init_remote_scheduler():
     from modules.monitoring.scheduler import start_remote_scheduler
+
     await start_remote_scheduler()
 
 
@@ -191,6 +257,7 @@ app.include_router(auth_router)
 
 # WebSocket 路由（不走模块自发现，因为 ws_router 无 prefix 需直接挂载）
 from modules.monitoring.routes import ws_router
+
 app.include_router(ws_router)
 
 
@@ -200,6 +267,7 @@ app.add_middleware(AuditMiddleware)
 
 
 # ─── HTTP 安全头中间件 ───
+
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -212,12 +280,14 @@ async def security_headers(request: Request, call_next):
 
 # ─── React 前端 sidebar API ───
 
+
 @app.get("/api/sidebar")
 async def sidebar_api(request: Request, user=Depends(get_current_user)):
     return get_sidebar_items(user["role"])
 
 
 # ─── 健康检查（无需认证） ───
+
 
 @app.get("/api/health")
 async def health_check():
@@ -236,6 +306,7 @@ FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 # 开发模式 CORS（Vite dev server 在不同端口时使用）
 if os.getenv("SERVERHUB_DEV"):
     from fastapi.middleware.cors import CORSMiddleware
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173"],
@@ -263,8 +334,7 @@ if FRONTEND_DIR.exists():
         return HTMLResponse(_index_html)
 else:
     logger.warning(
-        "[ServerHub] frontend/dist/ 不存在。请运行 cd frontend && npm run build 构建前端。"
-        "当前只能通过 API 端点访问。"
+        "[ServerHub] frontend/dist/ 不存在。请运行 cd frontend && npm run build 构建前端。当前只能通过 API 端点访问。"
     )
 
 
@@ -272,9 +342,9 @@ else:
 # 旧模板文件已归档到 archive/templates_legacy/
 
 
-
 # ─── 入口 ───
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=9900, reload=True, workers=1)

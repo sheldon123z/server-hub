@@ -1,16 +1,15 @@
 """Pydantic 请求/响应模型"""
 
 from pydantic import BaseModel, Field
-from typing import Optional
 
 
 class ChatRequest(BaseModel):
     message: str
-    conversation_id: Optional[str] = None
+    conversation_id: str | None = None
     safety_mode: str = "supervised"
-    page_context: Optional[str] = None  # 页面上下文标识: "dashboard"/"docker"/"users" 等
-    skill_id: Optional[str] = None
-    run_id: Optional[str] = None
+    page_context: str | None = None  # 页面上下文标识: "dashboard"/"docker"/"users" 等
+    skill_id: str | None = None
+    run_id: str | None = None
 
 
 class ApprovalAction(BaseModel):
@@ -19,15 +18,15 @@ class ApprovalAction(BaseModel):
 
 
 class PatrolUpdate(BaseModel):
-    enabled: Optional[bool] = None
-    interval_minutes: Optional[int] = None
-    prompt: Optional[str] = None
-    check_tools: Optional[str] = None
+    enabled: bool | None = None
+    interval_minutes: int | None = None
+    prompt: str | None = None
+    check_tools: str | None = None
 
 
 class AgentSettingsUpdate(BaseModel):
-    default_model: Optional[str] = None
-    patrol_model: Optional[str] = None
+    default_model: str | None = None
+    patrol_model: str | None = None
 
 
 class SubAgentConfig(BaseModel):
@@ -35,10 +34,10 @@ class SubAgentConfig(BaseModel):
     description: str
     system_prompt: str
     tools: list[str] = []
-    model: Optional[str] = None
-    model_purpose: Optional[str] = None
-    middleware_profile: Optional[str] = None
-    interrupt_on: Optional[dict] = None
+    model: str | None = None
+    model_purpose: str | None = None
+    middleware_profile: str | None = None
+    interrupt_on: dict | None = None
 
 
 class PromptUpdate(BaseModel):

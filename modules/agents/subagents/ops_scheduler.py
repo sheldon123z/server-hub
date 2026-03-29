@@ -40,11 +40,16 @@ DEFINITION = {
         "and safety rules. Delegate for any cron task management."
     ),
     "system_prompt": PROMPT,
-    "tools_fn": lambda: _get_tools_by_names([
-        "list_cron_jobs", "validate_cron_expr",
-        "create_cron_job", "modify_cron_schedule",
-        "delete_cron_job_tool", "toggle_cron_job_tool",
-    ]),
+    "tools_fn": lambda: _get_tools_by_names(
+        [
+            "list_cron_jobs",
+            "validate_cron_expr",
+            "create_cron_job",
+            "modify_cron_schedule",
+            "delete_cron_job_tool",
+            "toggle_cron_job_tool",
+        ]
+    ),
     "model_purpose": "patrol",
     "middleware_profile": "ops",
     "interrupt_on": {

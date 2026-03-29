@@ -1,7 +1,9 @@
 """系统状态工具 — CPU/内存/磁盘/GPU/趋势分析"""
 
 import json
+
 from langchain_core.tools import tool
+
 from config import settings
 
 
@@ -14,6 +16,7 @@ async def get_system_overview(server_id: str = "local") -> str:
     """
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.get_metrics()
         if not result.get("ok"):
@@ -21,15 +24,20 @@ async def get_system_overview(server_id: str = "local") -> str:
         return json.dumps(result["data"], ensure_ascii=False, indent=2)
 
     from modules.dashboard.collectors import get_system_info
+
     info = get_system_info()
     gpu = info.get("gpu", {})
-    gpu_str = f"GPU: {gpu['util']}% 利用率, {gpu['mem_used']}/{gpu['mem_total']}MiB 显存, {gpu['temp']}°C" if gpu else "GPU: 无"
+    gpu_str = (
+        f"GPU: {gpu['util']}% 利用率, {gpu['mem_used']}/{gpu['mem_total']}MiB 显存, {gpu['temp']}°C"
+        if gpu
+        else "GPU: 无"
+    )
     return (
         f"## 系统状态\n"
         f"- CPU: {info['cpu_percent']}% ({info['cpu_count']}核)\n"
-        f"- 内存: {info['mem_percent']}% ({round(info['mem_used']/1073741824,1)}/{round(info['mem_total']/1073741824,1)} GB)\n"
-        f"- Swap: {info['swap_percent']}% ({round(info['swap_used']/1073741824,1)}/{round(info['swap_total']/1073741824,1)} GB)\n"
-        f"- 系统盘: {info['disk_percent']}% ({round(info['disk_used']/1073741824,1)}/{round(info['disk_total']/1073741824,1)} GB)\n"
+        f"- 内存: {info['mem_percent']}% ({round(info['mem_used'] / 1073741824, 1)}/{round(info['mem_total'] / 1073741824, 1)} GB)\n"
+        f"- Swap: {info['swap_percent']}% ({round(info['swap_used'] / 1073741824, 1)}/{round(info['swap_total'] / 1073741824, 1)} GB)\n"
+        f"- 系统盘: {info['disk_percent']}% ({round(info['disk_used'] / 1073741824, 1)}/{round(info['disk_total'] / 1073741824, 1)} GB)\n"
         f"- 负载: {info['load']}\n"
         f"- {gpu_str}\n"
         f"- 运行时间: {info['uptime']}"
@@ -45,6 +53,7 @@ async def get_disk_info(server_id: str = "local") -> str:
     """
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.get_metrics()
         if not result.get("ok"):
@@ -56,13 +65,16 @@ async def get_disk_info(server_id: str = "local") -> str:
         return json.dumps(disk_info, ensure_ascii=False, indent=2)
 
     from modules.dashboard.collectors import get_extra_disks
+
     disks = get_extra_disks()
     if not disks:
         return "没有额外的挂载点。"
     lines = ["## 磁盘挂载点"]
     for d in disks:
-        lines.append(f"- {d['mountpoint']} ({d['device']}): {d['percent']}% "
-                      f"({round(d['used']/1099511627776,2)}/{round(d['total']/1099511627776,2)} TB)")
+        lines.append(
+            f"- {d['mountpoint']} ({d['device']}): {d['percent']}% "
+            f"({round(d['used'] / 1099511627776, 2)}/{round(d['total'] / 1099511627776, 2)} TB)"
+        )
     return "\n".join(lines)
 
 
@@ -74,8 +86,9 @@ async def analyze_resource_trend(metric: str = "all", hours: int = 168) -> str:
         metric: 指标类型 — all(全部), cpu(CPU使用率), memory(内存), gpu(GPU), disk(磁盘)。默认 all。
         hours: 分析的时间范围（小时），默认 168（一周）。
     """
-    import aiosqlite
     from datetime import datetime, timedelta
+
+    import aiosqlite
 
     db_path = settings.db_path
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
@@ -176,8 +189,13 @@ async def analyze_resource_trend(metric: str = "all", hours: int = 168) -> str:
     }
 
     names = {
-        "cpu": "CPU使用率", "memory": "内存使用率", "swap": "Swap使用率",
-        "disk": "系统盘使用率", "gpu_util": "GPU利用率", "gpu_mem": "GPU显存", "gpu_temp": "GPU温度(°C)",
+        "cpu": "CPU使用率",
+        "memory": "内存使用率",
+        "swap": "Swap使用率",
+        "disk": "系统盘使用率",
+        "gpu_util": "GPU利用率",
+        "gpu_mem": "GPU显存",
+        "gpu_temp": "GPU温度(°C)",
     }
 
     metrics_to_analyze = target_metrics.get(metric, target_metrics["all"])

@@ -160,7 +160,8 @@ class AgentClient:
     async def service_action(self, name: str, action: str) -> dict:
         """结构化 systemd 服务控制"""
         return await self._request(
-            "POST", "/actions/service",
+            "POST",
+            "/actions/service",
             json_body={"name": name, "action": action},
             timeout=35.0,
         )
@@ -168,7 +169,8 @@ class AgentClient:
     async def service_journal(self, name: str, lines: int = 100) -> dict:
         """获取服务 journal 日志"""
         return await self._request(
-            "POST", "/actions/service/journal",
+            "POST",
+            "/actions/service/journal",
             json_body={"name": name, "lines": lines},
             timeout=20.0,
         )
@@ -176,7 +178,8 @@ class AgentClient:
     async def docker_action(self, name: str, action: str, tail: int = 200) -> dict:
         """结构化 Docker 容器控制"""
         return await self._request(
-            "POST", "/actions/docker",
+            "POST",
+            "/actions/docker",
             json_body={"name": name, "action": action, "tail": tail},
             timeout=35.0,
         )
@@ -196,6 +199,7 @@ class AgentClient:
     async def log_tail(self, path: str, lines: int = 200) -> dict:
         """读取远程日志文件末尾（安全路径校验在 agent 端）"""
         from urllib.parse import urlencode
+
         qs = urlencode({"path": path, "lines": lines})
         return await self._request("GET", f"/logs/tail?{qs}", timeout=20.0)
 
@@ -223,7 +227,8 @@ class AgentClient:
     async def kill_process(self, pid: int) -> dict:
         """终止远程进程"""
         return await self._request(
-            "POST", "/users/kill",
+            "POST",
+            "/users/kill",
             json_body={"pid": pid},
             timeout=10.0,
         )
@@ -237,7 +242,7 @@ async def get_agent_client(server_id: str) -> AgentClient:
     工厂函数: 根据 server_id 从数据库加载服务器信息并创建 AgentClient。
     自动解密 agent_token_hash (Fernet 加密) 为明文 token。
     """
-    from modules.servers.services import get_server, decrypt_agent_token
+    from modules.servers.services import decrypt_agent_token, get_server
 
     server = await get_server(server_id)
     if not server:
@@ -255,9 +260,7 @@ async def get_all_agent_clients(status_filter: str | None = "online") -> list[Ag
     批量获取所有（在线）服务器的 AgentClient。
     排除 is_local=True 的本机（本机指标直接采集，不走 agent）。
     """
-    from modules.servers.services import list_servers
-
-    from modules.servers.services import decrypt_agent_token
+    from modules.servers.services import decrypt_agent_token, list_servers
 
     servers = await list_servers(status_filter=status_filter)
     clients = []

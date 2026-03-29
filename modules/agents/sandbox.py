@@ -10,15 +10,16 @@ Agent 通过框架内置的 write_file + execute 组合来写代码并运行，
 本模块不添加额外工具，而是增强 Backend 的安全性。
 """
 
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 
 try:
     from deepagents.backends.local_shell import LocalShellBackend
     from deepagents.backends.protocol import ExecuteResponse
 except ImportError:
+
     class LocalShellBackend:  # type: ignore[override]
         def __init__(self, **kwargs):
             self._env = dict(os.environ)
@@ -29,9 +30,7 @@ except ImportError:
     class ExecuteResponse:  # type: ignore[override]
         pass
 
-    logging.getLogger(__name__).warning(
-        "deepagents not installed — agent sandbox unavailable"
-    )
+    logging.getLogger(__name__).warning("deepagents not installed — agent sandbox unavailable")
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +39,20 @@ SANDBOX_DIR = Path("/tmp/serverhub-sandbox")
 
 # 敏感环境变量模式 — 在 execute() 中剥离
 SENSITIVE_ENV_PATTERNS = [
-    r".*API_KEY.*", r".*SECRET.*", r".*TOKEN.*", r".*PASSWORD.*",
-    r"OPENROUTER_.*", r"VOLCENGINE_.*", r"ZHIPU_.*", r"MOONSHOT_.*",
-    r"MINIMAX_.*", r"DEEPSEEK_.*", r"OPENAI_.*", r"TAVILY_.*",
-    r"SERVERHUB_SECRET.*", r"SERVERHUB_ADMIN_PASSWORD",
+    r".*API_KEY.*",
+    r".*SECRET.*",
+    r".*TOKEN.*",
+    r".*PASSWORD.*",
+    r"OPENROUTER_.*",
+    r"VOLCENGINE_.*",
+    r"ZHIPU_.*",
+    r"MOONSHOT_.*",
+    r"MINIMAX_.*",
+    r"DEEPSEEK_.*",
+    r"OPENAI_.*",
+    r"TAVILY_.*",
+    r"SERVERHUB_SECRET.*",
+    r"SERVERHUB_ADMIN_PASSWORD",
 ]
 _sensitive_patterns = [re.compile(p, re.IGNORECASE) for p in SENSITIVE_ENV_PATTERNS]
 

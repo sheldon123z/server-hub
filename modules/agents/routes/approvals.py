@@ -26,8 +26,16 @@ async def list_approvals(user=Depends(require_role("admin"))):
     )
     rows = await cursor.fetchall()
     return [
-        {"id": r[0], "conversation_id": r[1], "created_at": r[2], "tool_name": r[3],
-         "tool_input": r[4], "risk_level": r[5], "description": r[6], "status": r[7]}
+        {
+            "id": r[0],
+            "conversation_id": r[1],
+            "created_at": r[2],
+            "tool_name": r[3],
+            "tool_input": r[4],
+            "risk_level": r[5],
+            "description": r[6],
+            "status": r[7],
+        }
         for r in rows
     ]
 
@@ -56,6 +64,7 @@ async def resolve_approval(approval_id: str, body: ApprovalAction, user=Depends(
 
     try:
         from modules.agents.deep_agent import build_agent
+
         agent = await build_agent(safety_mode="supervised")
         config = {"configurable": {"thread_id": conversation_id}}
         if run_id:

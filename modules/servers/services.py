@@ -6,17 +6,30 @@ import json
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from database import get_db
 
 logger = logging.getLogger(__name__)
 
 SERVER_COLUMNS = [
-    "id", "name", "hostname", "ip_address", "agent_port",
-    "agent_token_hash", "ssh_user", "ssh_port", "ssh_key_credential",
-    "os_info", "tags", "is_local", "status", "last_heartbeat",
-    "agent_version", "created_at", "updated_at",
+    "id",
+    "name",
+    "hostname",
+    "ip_address",
+    "agent_port",
+    "agent_token_hash",
+    "ssh_user",
+    "ssh_port",
+    "ssh_key_credential",
+    "os_info",
+    "tags",
+    "is_local",
+    "status",
+    "last_heartbeat",
+    "agent_version",
+    "created_at",
+    "updated_at",
 ]
 
 
@@ -42,9 +55,12 @@ def _row_to_dict(row) -> dict | None:
 
 def _get_fernet():
     """获取 Fernet 加密实例（复用 playbook credentials 的密钥）"""
-    from cryptography.fernet import Fernet
-    from config import settings
     import base64
+
+    from cryptography.fernet import Fernet
+
+    from config import settings
+
     key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())
     return Fernet(key)
 
@@ -103,9 +119,7 @@ async def list_servers(status_filter: str | None = None) -> list[dict]:
 async def get_server(server_id: str) -> dict | None:
     """获取单个服务器详情"""
     db = await get_db()
-    row = await (
-        await db.execute("SELECT * FROM servers WHERE id = ?", (server_id,))
-    ).fetchone()
+    row = await (await db.execute("SELECT * FROM servers WHERE id = ?", (server_id,))).fetchone()
     return _row_to_dict(row)
 
 
@@ -113,7 +127,7 @@ async def create_server_with_token(data: dict, created_by: str) -> tuple[str, st
     """创建新服务器记录，返回 (server_id, plaintext_agent_token)。"""
     db = await get_db()
     server_id = uuid.uuid4().hex[:12]
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     tags_json = json.dumps(data.get("tags", []), ensure_ascii=False)
 
     # 自动生成 agent token
@@ -160,7 +174,7 @@ async def rotate_agent_token(server_id: str) -> str:
         raise ValueError(f"服务器 {server_id} 不存在")
 
     plaintext_token, token_hash = generate_agent_token()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     # 双写 legacy + 新字段
     await db.execute(
         "UPDATE servers SET agent_token_hash = ?, agent_token_encrypted = ?, updated_at = ? WHERE id = ?",
@@ -189,7 +203,7 @@ async def update_server(server_id: str, updates: dict) -> None:
     if "tags" in fields and isinstance(fields["tags"], list):
         fields["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
 
-    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    fields["updated_at"] = datetime.now(UTC).isoformat()
 
     set_clause = ", ".join(f"{k} = ?" for k in fields)
     values = list(fields.values()) + [server_id]
@@ -232,7 +246,12 @@ async def test_connectivity(server_id: str) -> dict:
         """Ping 测试"""
         try:
             proc = await asyncio.create_subprocess_exec(
-                "ping", "-c", "1", "-W", "3", ip,
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                "3",
+                ip,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -244,7 +263,7 @@ async def test_connectivity(server_id: str) -> dict:
                     if part.startswith("time="):
                         result["ping_ms"] = float(part.split("=")[1])
                         break
-        except (asyncio.TimeoutError, Exception) as e:
+        except (TimeoutError, Exception) as e:
             logger.debug("Ping %s 失败: %s", ip, e)
 
     async def _test_ssh() -> None:
@@ -255,6 +274,7 @@ async def test_connectivity(server_id: str) -> dict:
             return
         try:
             import asyncssh
+
             async with asyncio.timeout(5):
                 async with asyncssh.connect(
                     ip,
@@ -273,6 +293,7 @@ async def test_connectivity(server_id: str) -> dict:
         agent_port = server.get("agent_port", 9901)
         try:
             import httpx
+
             async with httpx.AsyncClient() as http_client:
                 resp = await http_client.get(f"http://{ip}:{agent_port}/health", timeout=5)
                 result["agent_ok"] = resp.status_code == 200
@@ -290,7 +311,7 @@ async def test_connectivity(server_id: str) -> dict:
     )
 
     # 更新服务器状态
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     if result["ping_ok"]:
         new_status = "online" if result["agent_ok"] else "degraded"
     else:
@@ -311,11 +332,7 @@ async def test_connectivity(server_id: str) -> dict:
 async def get_fleet_overview() -> dict:
     """获取服务器舰队概览统计"""
     db = await get_db()
-    rows = await (
-        await db.execute(
-            "SELECT status, COUNT(*) as cnt FROM servers GROUP BY status"
-        )
-    ).fetchall()
+    rows = await (await db.execute("SELECT status, COUNT(*) as cnt FROM servers GROUP BY status")).fetchall()
 
     counts = {row["status"]: row["cnt"] for row in rows}
     total = sum(counts.values())
@@ -362,9 +379,7 @@ async def create_group(data: dict) -> str:
 async def delete_group(group_id: str) -> None:
     """删除服务器分组"""
     db = await get_db()
-    row = await (
-        await db.execute("SELECT id FROM server_groups WHERE id = ?", (group_id,))
-    ).fetchone()
+    row = await (await db.execute("SELECT id FROM server_groups WHERE id = ?", (group_id,))).fetchone()
     if row is None:
         raise ValueError(f"分组 {group_id} 不存在")
 
@@ -381,9 +396,7 @@ async def add_server_to_group(group_id: str, server_id: str) -> None:
     """将服务器添加到分组"""
     db = await get_db()
     # 验证分组和服务器存在
-    group = await (
-        await db.execute("SELECT id FROM server_groups WHERE id = ?", (group_id,))
-    ).fetchone()
+    group = await (await db.execute("SELECT id FROM server_groups WHERE id = ?", (group_id,))).fetchone()
     if group is None:
         raise ValueError(f"分组 {group_id} 不存在")
 
@@ -426,9 +439,7 @@ async def get_group_members(group_id: str) -> list[dict]:
     """获取分组内所有服务器"""
     db = await get_db()
     # 验证分组存在
-    group = await (
-        await db.execute("SELECT id FROM server_groups WHERE id = ?", (group_id,))
-    ).fetchone()
+    group = await (await db.execute("SELECT id FROM server_groups WHERE id = ?", (group_id,))).fetchone()
     if group is None:
         raise ValueError(f"分组 {group_id} 不存在")
 

@@ -5,10 +5,10 @@ from fastapi.responses import PlainTextResponse
 
 from auth.dependencies import require_role
 from modules.network.services import (
-    get_listening_ports,
-    get_proxy_status,
     get_connections_summary,
     get_firewall_rules,
+    get_listening_ports,
+    get_proxy_status,
 )
 
 router = APIRouter(prefix="/api/network", tags=["网络管理"])
@@ -22,6 +22,7 @@ async def list_listening_ports(
     """List all listening TCP ports."""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.network_ports()
         if not result.get("ok"):
@@ -60,6 +61,7 @@ async def connections_summary(
     """Get network connection statistics."""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.network_connections()
         if not result.get("ok"):

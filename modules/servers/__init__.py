@@ -1,4 +1,5 @@
 """多服务器管理模块 — 服务器注册、分组、连通性测试"""
+
 from modules.servers.routes import router
 
 MODULE_INFO = {
@@ -10,4 +11,4 @@ MODULE_INFO = {
     "order": 2,
 }
 
-__all__ = ["router", "MODULE_INFO"]
+__all__ = ["MODULE_INFO", "router"]

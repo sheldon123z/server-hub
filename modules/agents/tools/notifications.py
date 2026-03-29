@@ -11,6 +11,7 @@ async def send_notification(message: str) -> str:
         message: 消息内容
     """
     from modules.notifications.services import send_notification as broadcast_notification
+
     results = await broadcast_notification(message)
     success = sum(1 for r in results if r.get("success"))
     failed = len(results) - success

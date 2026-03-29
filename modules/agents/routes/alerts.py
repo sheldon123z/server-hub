@@ -1,6 +1,6 @@
 """告警规则 + 告警历史路由"""
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth.dependencies import require_role
 from database import get_db
@@ -18,9 +18,17 @@ async def list_alert_rules(user=Depends(require_role("admin"))):
     )
     rows = await cursor.fetchall()
     return [
-        {"id": r[0], "name": r[1], "metric": r[2], "operator": r[3],
-         "warning_threshold": r[4], "critical_threshold": r[5],
-         "cooldown_minutes": r[6], "notify": bool(r[7]), "enabled": bool(r[8])}
+        {
+            "id": r[0],
+            "name": r[1],
+            "metric": r[2],
+            "operator": r[3],
+            "warning_threshold": r[4],
+            "critical_threshold": r[5],
+            "cooldown_minutes": r[6],
+            "notify": bool(r[7]),
+            "enabled": bool(r[8]),
+        }
         for r in rows
     ]
 
@@ -64,9 +72,16 @@ async def create_alert_rule(request: Request, user=Depends(require_role("admin")
     await db.execute(
         "INSERT INTO alert_rules (id, name, metric, operator, warning_threshold, critical_threshold, cooldown_minutes, notify) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (body["id"], body["name"], body["metric"], body.get("operator", ">"),
-         body.get("warning_threshold"), body.get("critical_threshold"),
-         body.get("cooldown_minutes", 60), 1 if body.get("notify", True) else 0),
+        (
+            body["id"],
+            body["name"],
+            body["metric"],
+            body.get("operator", ">"),
+            body.get("warning_threshold"),
+            body.get("critical_threshold"),
+            body.get("cooldown_minutes", 60),
+            1 if body.get("notify", True) else 0,
+        ),
     )
     await db.commit()
     return {"ok": True, "id": body["id"]}
@@ -88,11 +103,20 @@ async def list_alert_history(limit: int = 50, user=Depends(require_role("admin")
     cursor = await db.execute(
         "SELECT ah.id, ah.rule_id, ar.name, ah.severity, ah.current_value, ah.message, ah.notified, ah.created_at "
         "FROM alert_history ah LEFT JOIN alert_rules ar ON ah.rule_id = ar.id "
-        "ORDER BY ah.created_at DESC LIMIT ?", (limit,),
+        "ORDER BY ah.created_at DESC LIMIT ?",
+        (limit,),
     )
     rows = await cursor.fetchall()
     return [
-        {"id": r[0], "rule_id": r[1], "rule_name": r[2] or r[1], "severity": r[3],
-         "current_value": r[4], "message": r[5], "notified": bool(r[6]), "created_at": r[7]}
+        {
+            "id": r[0],
+            "rule_id": r[1],
+            "rule_name": r[2] or r[1],
+            "severity": r[3],
+            "current_value": r[4],
+            "message": r[5],
+            "notified": bool(r[6]),
+            "created_at": r[7],
+        }
         for r in rows
     ]

@@ -1,12 +1,10 @@
 """Panel user management API routes."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from auth.dependencies import require_role
 from auth import user_store
+from auth.dependencies import require_role
 
 router = APIRouter(prefix="/api/panel-users", tags=["面板用户"])
 
@@ -19,10 +17,10 @@ class CreateUserRequest(BaseModel):
 
 
 class UpdateUserRequest(BaseModel):
-    display_name: Optional[str] = Field(None, max_length=64)
-    role: Optional[str] = Field(None, pattern=r"^(admin|user)$")
-    disabled: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=6, max_length=128)
+    display_name: str | None = Field(None, max_length=64)
+    role: str | None = Field(None, pattern=r"^(admin|user)$")
+    disabled: bool | None = None
+    password: str | None = Field(None, min_length=6, max_length=128)
 
 
 @router.get("/")
@@ -82,7 +80,9 @@ async def delete_user(
 ):
     """Delete a panel user. Cannot delete yourself."""
     # Prevent self-deletion
-    current_user_id = getattr(user, "id", None) or user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+    current_user_id = (
+        getattr(user, "id", None) or user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+    )
     if str(current_user_id) == str(user_id):
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 

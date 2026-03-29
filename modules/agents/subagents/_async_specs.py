@@ -14,6 +14,7 @@ def get_async_subagent_specs() -> list[dict]:
     路由到 AsyncSubAgentMiddleware。
     """
     from config import settings
+
     port = getattr(settings, "port", 9900)
     base_url = f"http://127.0.0.1:{port}/lg"
 
@@ -54,6 +55,7 @@ def get_async_subagent_specs() -> list[dict]:
 def load_async_subagent_specs() -> list[dict]:
     """加载异步 SubAgent 配置（优先自定义文件）"""
     from config import settings
+
     custom_path = Path(settings.db_path).parent / "custom_async_subagents.json"
     if custom_path.exists():
         try:

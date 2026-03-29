@@ -5,14 +5,13 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import logging
 import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
-
-import logging
 
 import httpx
 
@@ -33,9 +32,7 @@ DEFAULT_PROXY_REGISTRY: dict[str, Any] = {
             "type": "clash",
             "plugin": "clash",
             "service_name": "clash",
-            "listen_ports": [
-                {"label": "Mixed Port", "port": 7890, "description": "HTTP / SOCKS5"}
-            ],
+            "listen_ports": [{"label": "Mixed Port", "port": 7890, "description": "HTTP / SOCKS5"}],
             "admin_api": {
                 "base_url": "http://127.0.0.1:9090",
                 "secret": "clash2026",
@@ -350,7 +347,7 @@ async def _run(cmd: list[str], timeout: int = 15) -> tuple[int, str]:
             stderr=asyncio.subprocess.STDOUT,
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.communicate()
         raise RuntimeError(f"命令超时 ({timeout}s): {' '.join(cmd)}")
@@ -443,7 +440,9 @@ def _supported_actions(instance: dict[str, Any]) -> list[str]:
     if instance.get("config_profiles"):
         supported.append("switch_config")
 
-    if any(profile.get("has_subscription") for profile in instance.get("config_profiles", [])) or _get_command_spec_from_instance(instance, "update_subscription"):
+    if any(
+        profile.get("has_subscription") for profile in instance.get("config_profiles", [])
+    ) or _get_command_spec_from_instance(instance, "update_subscription"):
         supported.append("update_subscription")
 
     return supported
@@ -467,9 +466,7 @@ async def get_proxy_instance_status(instance_id: str) -> dict[str, Any]:
         "sub_state": systemd_state.get("sub_state", ""),
         "pid": systemd_state.get("pid"),
         "listen_ports": instance.get("listen_ports", []),
-        "admin_api": {
-            "base_url": (instance.get("admin_api") or {}).get("base_url", "")
-        },
+        "admin_api": {"base_url": (instance.get("admin_api") or {}).get("base_url", "")},
         "current_config": current_config,
         "current_config_name": current_config_name,
         "config_profiles": instance.get("config_profiles", []),

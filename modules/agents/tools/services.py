@@ -1,6 +1,7 @@
 """Systemd 服务管理工具"""
 
 from langchain_core.tools import tool
+
 from config import settings
 
 
@@ -13,14 +14,17 @@ async def list_systemd_services(server_id: str = "local") -> str:
     """
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.get_services()
         if not result.get("ok"):
             return f"远程获取失败: {result.get('error', '未知')}"
         import json
+
         return json.dumps(result["data"], ensure_ascii=False, indent=2)
 
     from modules.services.services import list_services
+
     services = await list_services()
     if not services:
         return "没有管理的服务。"
@@ -43,6 +47,7 @@ async def get_service_logs(name: str, lines: int = 50, server_id: str = "local")
     """
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.service_journal(name, lines=min(lines, 200))
         if not result.get("ok"):
@@ -55,6 +60,7 @@ async def get_service_logs(name: str, lines: int = 50, server_id: str = "local")
     if name not in settings.managed_services:
         return f"服务 {name} 不在管理列表中。可管理的服务: {', '.join(settings.managed_services)}"
     from modules.services.services import service_journal
+
     journal = await service_journal(name, lines=min(lines, 200))
     return f"## {name} 日志\n```\n{journal[-3000:]}\n```"
 
@@ -73,6 +79,7 @@ async def service_control(name: str, action: str, server_id: str = "local") -> s
 
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.service_action(name, action)
         if not result.get("ok"):
@@ -82,6 +89,7 @@ async def service_control(name: str, action: str, server_id: str = "local") -> s
     if name not in settings.managed_services:
         return f"服务 {name} 不在管理列表中。可管理: {', '.join(settings.managed_services)}"
     from modules.services.services import service_action
+
     result = await service_action(name, action)
     return f"服务 {name} 已执行 {action}。{result}"
 
@@ -90,6 +98,7 @@ async def service_control(name: str, action: str, server_id: str = "local") -> s
 async def service_enable_disable_tool(name: str, action: str) -> str:
     """启用或禁用 systemd 服务的自启动。"""
     from modules.services.services import service_enable_disable
+
     try:
         await service_enable_disable(name, action)
         action_cn = "启用" if action == "enable" else "禁用"
@@ -102,6 +111,7 @@ async def service_enable_disable_tool(name: str, action: str) -> str:
 async def get_service_dependencies_tool(name: str) -> str:
     """获取 systemd 服务的依赖关系树。"""
     from modules.services.services import service_dependencies
+
     try:
         result = await service_dependencies(name)
         deps = result["dependencies"]

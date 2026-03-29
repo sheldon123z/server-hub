@@ -10,7 +10,6 @@ from config import settings
 from database import get_db
 from modules.notifications.channels import (
     CHANNEL_TYPES,
-    NotificationChannel,
     mask_sensitive,
 )
 
@@ -21,14 +20,20 @@ async def send_notification(message: str, channel_ids: list[str] | None = None) 
     """统一发送接口。广播到所有启用渠道或指定渠道。"""
     db = await get_db()
     if channel_ids:
-        rows = await (await db.execute(
-            "SELECT id, channel_type, display_name, config_json FROM notification_channels WHERE id IN ({}) AND enabled=1".format(",".join("?" * len(channel_ids))),
-            channel_ids
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT id, channel_type, display_name, config_json FROM notification_channels WHERE id IN ({}) AND enabled=1".format(
+                    ",".join("?" * len(channel_ids))
+                ),
+                channel_ids,
+            )
+        ).fetchall()
     else:
-        rows = await (await db.execute(
-            "SELECT id, channel_type, display_name, config_json FROM notification_channels WHERE enabled=1 ORDER BY priority"
-        )).fetchall()
+        rows = await (
+            await db.execute(
+                "SELECT id, channel_type, display_name, config_json FROM notification_channels WHERE enabled=1 ORDER BY priority"
+            )
+        ).fetchall()
 
     if not rows:
         return [{"channel_id": None, "channel": "none", "success": False, "error": "没有启用的通知渠道"}]
@@ -39,7 +44,13 @@ async def send_notification(message: str, channel_ids: list[str] | None = None) 
         config = json.loads(config_str)
         cls = CHANNEL_TYPES.get(ch_type)
         if not cls:
-            return {"channel_id": ch_id, "channel": ch_type, "display_name": ch_name, "success": False, "error": f"未知渠道类型: {ch_type}"}
+            return {
+                "channel_id": ch_id,
+                "channel": ch_type,
+                "display_name": ch_name,
+                "success": False,
+                "error": f"未知渠道类型: {ch_type}",
+            }
 
         channel = cls(ch_id, ch_name, config)
         result = await channel.send(message)
@@ -87,10 +98,7 @@ def _mask_channel_config(channel_type: str, config: dict) -> dict:
     if cls:
         schema = cls.config_schema()
         sensitive_fields = {f["name"] for f in schema if f.get("sensitive")}
-        return {
-            k: mask_sensitive(v) if k in sensitive_fields and v else v
-            for k, v in config.items()
-        }
+        return {k: mask_sensitive(v) if k in sensitive_fields and v else v for k, v in config.items()}
     return config
 
 
@@ -99,34 +107,39 @@ def _row_to_channel_dict(row) -> dict:
     config = json.loads(row[4])
     masked_config = _mask_channel_config(row[1], config)
     return {
-        "id": row[0], "channel_type": row[1], "display_name": row[2],
-        "enabled": bool(row[3]), "config": masked_config, "priority": row[5],
-        "created_at": row[6], "updated_at": row[7],
-        "last_test_at": row[8], "last_test_ok": row[9] if row[9] is not None else None,
+        "id": row[0],
+        "channel_type": row[1],
+        "display_name": row[2],
+        "enabled": bool(row[3]),
+        "config": masked_config,
+        "priority": row[5],
+        "created_at": row[6],
+        "updated_at": row[7],
+        "last_test_at": row[8],
+        "last_test_ok": row[9] if row[9] is not None else None,
     }
 
 
 _CHANNEL_FIELDS = (
-    "id, channel_type, display_name, enabled, config_json, priority, "
-    "created_at, updated_at, last_test_at, last_test_ok"
+    "id, channel_type, display_name, enabled, config_json, priority, created_at, updated_at, last_test_at, last_test_ok"
 )
 
 
 async def get_channels() -> list[dict]:
     """获取所有渠道列表（敏感字段掩码）"""
     db = await get_db()
-    rows = await (await db.execute(
-        f"SELECT {_CHANNEL_FIELDS} FROM notification_channels ORDER BY priority, created_at"
-    )).fetchall()
+    rows = await (
+        await db.execute(f"SELECT {_CHANNEL_FIELDS} FROM notification_channels ORDER BY priority, created_at")
+    ).fetchall()
     return [_row_to_channel_dict(r) for r in rows]
 
 
 async def get_channel(channel_id: str) -> dict | None:
     """获取单个渠道（含掩码配置）"""
     db = await get_db()
-    row = await (await db.execute(
-        f"SELECT {_CHANNEL_FIELDS} FROM notification_channels WHERE id=?", (channel_id,)
-    )).fetchone()
+    row = await (
+        await db.execute(f"SELECT {_CHANNEL_FIELDS} FROM notification_channels WHERE id=?", (channel_id,))
+    ).fetchone()
     if not row:
         return None
     return _row_to_channel_dict(row)
@@ -152,7 +165,9 @@ async def create_channel(channel_type: str, display_name: str, config: dict, ena
 async def update_channel(channel_id: str, **kwargs) -> dict | None:
     """更新渠道配置。支持 display_name, config, enabled, priority"""
     db = await get_db()
-    existing = await (await db.execute("SELECT config_json FROM notification_channels WHERE id=?", (channel_id,))).fetchone()
+    existing = await (
+        await db.execute("SELECT config_json FROM notification_channels WHERE id=?", (channel_id,))
+    ).fetchone()
     if not existing:
         return None
 
@@ -207,10 +222,11 @@ async def delete_channel(channel_id: str) -> bool:
 async def test_channel(channel_id: str) -> dict:
     """测试渠道连通性"""
     db = await get_db()
-    row = await (await db.execute(
-        "SELECT channel_type, display_name, config_json FROM notification_channels WHERE id=?",
-        (channel_id,)
-    )).fetchone()
+    row = await (
+        await db.execute(
+            "SELECT channel_type, display_name, config_json FROM notification_channels WHERE id=?", (channel_id,)
+        )
+    ).fetchone()
     if not row:
         return {"success": False, "error": "渠道不存在"}
 
@@ -255,8 +271,12 @@ async def get_notification_history(limit: int = 50, channel_id: str | None = Non
     rows = await cursor.fetchall()
     return [
         {
-            "id": row[0], "timestamp": row[1], "channel": row[2],
-            "message": row[3], "success": bool(row[4]), "error": row[5],
+            "id": row[0],
+            "timestamp": row[1],
+            "channel": row[2],
+            "message": row[3],
+            "success": bool(row[4]),
+            "error": row[5],
             "channel_id": row[6] if len(row) > 6 else None,
         }
         for row in rows

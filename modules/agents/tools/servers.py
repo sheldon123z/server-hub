@@ -1,6 +1,7 @@
 """服务器舰队管理工具 — 列出/查询/测试已注册的服务器"""
 
 import json
+
 from langchain_core.tools import tool
 
 
@@ -12,6 +13,7 @@ async def server_list() -> str:
         JSON 格式的服务器列表，包含 id/名称/IP/状态/标签/最后心跳。
     """
     from modules.servers.services import list_servers
+
     servers = await list_servers()
     if not servers:
         return "当前没有已注册的服务器。"
@@ -22,10 +24,7 @@ async def server_list() -> str:
         local_tag = " (本机)" if s.get("is_local") else ""
         tags = json.loads(s.get("tags", "[]")) if isinstance(s.get("tags"), str) else s.get("tags", [])
         tag_str = f" [{', '.join(tags)}]" if tags else ""
-        lines.append(
-            f"- {status_icon} **{s['name']}**{local_tag} — {s['ip_address']} | "
-            f"状态: {s['status']}{tag_str}"
-        )
+        lines.append(f"- {status_icon} **{s['name']}**{local_tag} — {s['ip_address']} | 状态: {s['status']}{tag_str}")
     return "\n".join(lines)
 
 

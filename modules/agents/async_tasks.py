@@ -25,8 +25,12 @@ _running_tasks: dict[str, asyncio.Task] = {}
 
 # 已知的可委派子智能体类型
 VALID_TASK_TYPES = {
-    "researcher", "log-analyzer", "security-auditor",
-    "correlation-analyzer", "ops-scheduler", "knowledge-retriever",
+    "researcher",
+    "log-analyzer",
+    "security-auditor",
+    "correlation-analyzer",
+    "ops-scheduler",
+    "knowledge-retriever",
 }
 
 
@@ -48,8 +52,7 @@ async def start_background_task(task_type: str, instruction: str) -> str:
     # 持久化初始状态
     db = await get_db()
     await db.execute(
-        "INSERT INTO async_agent_tasks (id, task_type, instruction, status, created_at) "
-        "VALUES (?, ?, ?, 'running', ?)",
+        "INSERT INTO async_agent_tasks (id, task_type, instruction, status, created_at) VALUES (?, ?, ?, 'running', ?)",
         (task_id, task_type, instruction[:2000], datetime.now().isoformat()),
     )
     await db.commit()
@@ -105,7 +108,7 @@ async def _execute_background(task_id: str, task_type: str, instruction: str):
         await db.commit()
         logger.info("后台任务完成: %s (%.1fs)", task_id, duration)
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         db = await get_db()
         await db.execute(
             "UPDATE async_agent_tasks SET status='timeout', result=?, completed_at=? WHERE id=?",
@@ -140,8 +143,7 @@ async def get_task_status(task_id: str) -> str:
     """查询后台任务状态和结果"""
     db = await get_db()
     cursor = await db.execute(
-        "SELECT task_type, instruction, status, result, created_at, completed_at "
-        "FROM async_agent_tasks WHERE id = ?",
+        "SELECT task_type, instruction, status, result, created_at, completed_at FROM async_agent_tasks WHERE id = ?",
         (task_id,),
     )
     row = await cursor.fetchone()
@@ -207,7 +209,8 @@ async def cancel_task(task_id: str) -> str:
     # 检查数据库中是否存在
     db = await get_db()
     cursor = await db.execute(
-        "SELECT status FROM async_agent_tasks WHERE id = ?", (task_id,),
+        "SELECT status FROM async_agent_tasks WHERE id = ?",
+        (task_id,),
     )
     row = await cursor.fetchone()
     if not row:

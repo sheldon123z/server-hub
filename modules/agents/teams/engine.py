@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -27,10 +27,13 @@ def _get_chat_model_by_id(model_id: str | None = None):
     """获取指定 model_id 的 ChatOpenAI 实例，兼容 get_chat_model_by_id 尚未添加的情况"""
     try:
         from modules.agents.llm import get_chat_model_by_id
+
         return get_chat_model_by_id(model_id)
     except ImportError:
-        from modules.agents.llm import get_chat_model, parse_model_id, PROVIDERS, ChatOpenAI
         import os
+
+        from modules.agents.llm import PROVIDERS, ChatOpenAI, get_chat_model, parse_model_id
+
         if not model_id:
             return get_chat_model("chat")
         provider_key, model_name = parse_model_id(model_id)
@@ -54,10 +57,12 @@ def _resolve_tools_safe(tool_names: list[str], user_role: str = "admin") -> list
     """解析工具名列表为实际 Tool 对象，容错处理"""
     try:
         from modules.agents.teams.safety import resolve_tools
+
         return resolve_tools(tool_names, user_role)
     except ImportError:
         # safety.py 尚未就绪，直接从主工具集解析
         from modules.agents.tools import get_server_tools
+
         all_tools = {t.name: t for t in get_server_tools(user_role)}
         return [all_tools[n] for n in tool_names if n in all_tools]
 
@@ -66,6 +71,7 @@ def _wrap_tools_safe(tools: list, safety_mode: str, member_name: str) -> list:
     """为工具添加安全层包装，容错处理"""
     try:
         from modules.agents.teams.safety import wrap_tools_for_team
+
         return wrap_tools_for_team(tools, safety_mode, member_name)
     except ImportError:
         return tools
@@ -88,6 +94,7 @@ class TeamEngine:
             store: TeamStore 实例，用于数据读写
         """
         from modules.agents.teams.store import TeamStore
+
         self.store: TeamStore = store
         # team_id → (compiled_graph, build_timestamp)
         self._graph_cache: dict[str, tuple] = {}
@@ -306,9 +313,7 @@ class TeamEngine:
 
                 messages = list(state["messages"])
                 if context_parts and _pos > 0:
-                    context_msg = HumanMessage(
-                        content="以下是上游智能体的分析结果:\n\n" + "\n\n".join(context_parts)
-                    )
+                    context_msg = HumanMessage(content="以下是上游智能体的分析结果:\n\n" + "\n\n".join(context_parts))
                     # 插入到用户指令之后
                     messages.insert(1, context_msg)
 
@@ -341,9 +346,7 @@ class TeamEngine:
 
     # ─── 执行管理 ───
 
-    async def execute(
-        self, team_id: str, instruction: str, username: str
-    ) -> AsyncGenerator[dict, None]:
+    async def execute(self, team_id: str, instruction: str, username: str) -> AsyncGenerator[dict, None]:
         """执行团队任务，yield SSE 事件字典
 
         Args:
@@ -369,9 +372,7 @@ class TeamEngine:
             yield {"event": "team_error", "data": {"error": str(e)}}
             return
 
-        execution = await self.store.create_execution(
-            team_id, instruction, username, team["topology"]
-        )
+        execution = await self.store.create_execution(team_id, instruction, username, team["topology"])
         exec_id = execution["id"]
         start_time = time.time()
 
@@ -410,10 +411,10 @@ class TeamEngine:
             deadline = time.time() + timeout
             async for event in _consume_with_timeout():
                 if time.time() > deadline:
-                    raise asyncio.TimeoutError()
+                    raise TimeoutError()
                 yield event
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             final_status = "timeout"
             error_msg = f"团队执行超时 ({timeout}s)"
             yield {"event": "team_error", "data": {"error": error_msg}}
@@ -494,8 +495,7 @@ class TeamEngine:
                     }
                     try:
                         await self.store.log_message(
-                            exec_id, current_agent, None, "status",
-                            f"{current_agent} 开始工作"
+                            exec_id, current_agent, None, "status", f"{current_agent} 开始工作"
                         )
                     except Exception as e:
                         logger.debug("记录 agent 状态失败: %s", e)
@@ -508,8 +508,7 @@ class TeamEngine:
                     # content 可能是 string 或 list
                     if isinstance(content, list):
                         text_parts = [
-                            c.get("text", "") for c in content
-                            if isinstance(c, dict) and c.get("type") == "text"
+                            c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"
                         ]
                         content = "".join(text_parts)
                     if content:
@@ -534,8 +533,7 @@ class TeamEngine:
                 }
                 try:
                     await self.store.log_message(
-                        exec_id, current_agent, None, "tool_call",
-                        f"调用 {tool_name}: {input_str[:200]}"
+                        exec_id, current_agent, None, "tool_call", f"调用 {tool_name}: {input_str[:200]}"
                     )
                 except Exception as e:
                     logger.debug("记录 tool_call 消息失败: %s", e)
@@ -580,9 +578,7 @@ class TeamEngine:
         if task and not task.done():
             task.cancel()
             try:
-                await self.store.complete_execution(
-                    exec_id, "cancelled", None, {}, 0, 0, "用户取消"
-                )
+                await self.store.complete_execution(exec_id, "cancelled", None, {}, 0, 0, "用户取消")
             except Exception as e:
                 logger.error("更新取消状态失败: %s", e)
             return True
@@ -657,6 +653,7 @@ def get_team_engine() -> TeamEngine:
     global _engine_instance
     if _engine_instance is None:
         from modules.agents.teams.store import TeamStore
+
         _engine_instance = TeamEngine(store=TeamStore())
     return _engine_instance
 

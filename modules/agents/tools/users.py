@@ -12,6 +12,7 @@ async def get_user_resources(server_id: str = "local") -> str:
     """
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.user_stats()
         if not result.get("ok"):
@@ -25,6 +26,7 @@ async def get_user_resources(server_id: str = "local") -> str:
         return "\n".join(lines)
 
     from modules.users.services import get_user_stats
+
     users = get_user_stats()
     if not users:
         return "当前没有活跃的非管理员用户。"
@@ -38,6 +40,7 @@ async def get_user_resources(server_id: str = "local") -> str:
 def get_user_quotas() -> str:
     """获取所有用户资源配额配置。"""
     from modules.users.services import read_quotas
+
     quotas = read_quotas()
     if not quotas:
         return "没有配置配额。"
@@ -58,6 +61,7 @@ def update_user_quotas(key: str, mem_gb: int, proc_limit: int, comment: str = ""
         comment: 备注说明
     """
     from modules.users.services import read_quotas, save_quotas
+
     quotas = read_quotas()
     found = False
     for q in quotas:
@@ -91,6 +95,7 @@ async def kill_user_processes(username: str, server_id: str = "local") -> str:
         )
 
     from modules.users.services import kill_user_processes as _kill
+
     result = _kill(username)
     if result.get("ok"):
         return f"已终止用户 {username} 的所有进程。"
@@ -101,6 +106,7 @@ async def kill_user_processes(username: str, server_id: str = "local") -> str:
 def get_user_login_history_tool(username: str = "", count: int = 10) -> str:
     """查询 Linux 用户登录历史。"""
     from modules.users.services import get_user_login_history
+
     entries = get_user_login_history(username, min(count, 50))
     if not entries:
         target = username or "所有用户"
@@ -115,6 +121,7 @@ def get_user_login_history_tool(username: str = "", count: int = 10) -> str:
 def get_active_sessions_tool() -> str:
     """获取当前服务器上的活跃登录会话。"""
     from modules.users.services import get_active_sessions
+
     sessions = get_active_sessions()
     if not sessions:
         return "当前没有活跃的登录会话"
@@ -129,6 +136,7 @@ def get_active_sessions_tool() -> str:
 def manage_linux_user(action: str, username: str, groups: str = "", shell: str = "/bin/bash") -> str:
     """管理 Linux 用户：创建、删除或修改。"""
     from modules.users.services import create_linux_user, delete_linux_user, modify_linux_user
+
     if action == "create":
         result = create_linux_user(username, groups, shell)
     elif action == "delete":
@@ -146,6 +154,7 @@ def manage_linux_user(action: str, username: str, groups: str = "", shell: str =
 def kill_single_process_tool(pid: int, username: str) -> str:
     """终止指定用户的单个进程。"""
     from modules.users.services import kill_single_process
+
     result = kill_single_process(pid, username)
     if result["ok"]:
         return f"已终止进程 {pid} (用户: {username})"
@@ -156,6 +165,7 @@ def kill_single_process_tool(pid: int, username: str) -> str:
 def get_user_full_processes(username: str) -> str:
     """获取指定用户的完整进程列表，包含 PID、命令、CPU%、内存、运行时长。"""
     from modules.users.services import get_user_processes
+
     procs = get_user_processes(username)
     if not procs:
         return f"用户 {username} 无运行中的进程"
@@ -173,8 +183,12 @@ def get_user_full_processes(username: str) -> str:
 def check_quota_violations() -> str:
     """检查所有用户的配额使用情况，返回超配额和接近配额的用户列表。"""
     from modules.users.services import get_quota_status
+
     qs = get_quota_status()
-    lines = [f"配额状态概览: 超配额 {qs['over_quota_count']} 人, 预警 {qs['warning_count']} 人, 总内存 {qs['total_mem_gb']} GB", ""]
+    lines = [
+        f"配额状态概览: 超配额 {qs['over_quota_count']} 人, 预警 {qs['warning_count']} 人, 总内存 {qs['total_mem_gb']} GB",
+        "",
+    ]
 
     abnormal = [u for u in qs["users"] if u["status"] != "normal"]
     if not abnormal:

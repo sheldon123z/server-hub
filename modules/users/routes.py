@@ -11,24 +11,25 @@ from pydantic import BaseModel, Field
 from auth.dependencies import get_current_user, require_role
 from modules.audit.middleware import log_audit
 from modules.users.services import (
-    get_user_stats,
-    kill_user_processes,
-    read_quotas,
-    save_quotas,
-    get_all_linux_users,
-    get_user_login_history,
-    get_active_sessions,
     create_linux_user,
     delete_linux_user,
-    modify_linux_user,
-    set_user_password,
+    get_active_sessions,
+    get_all_linux_users,
+    get_user_login_history,
+    get_user_stats,
     kill_single_process,
+    kill_user_processes,
+    modify_linux_user,
+    read_quotas,
+    save_quotas,
+    set_user_password,
 )
 
 router = APIRouter(prefix="/api/users", tags=["用户管理"])
 
 
 # ─── Request Models ───
+
 
 class QuotaEntry(BaseModel):
     key: str
@@ -55,6 +56,7 @@ class SetPasswordRequest(BaseModel):
 
 # ─── 资源监控 ───
 
+
 @router.get("/")
 async def list_users(
     server_id: str = Query(default="local", description="目标服务器"),
@@ -63,6 +65,7 @@ async def list_users(
     """获取所有用户资源使用统计"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.user_stats()
         if not result.get("ok"):
@@ -74,6 +77,7 @@ async def list_users(
 
 # ─── 用户列表与详情 ───
 
+
 @router.get("/all")
 async def list_all_users(user=Depends(require_role("admin"))):
     """获取所有 Linux 用户详细信息（含管理员）"""
@@ -83,6 +87,7 @@ async def list_all_users(user=Depends(require_role("admin"))):
 
 # ─── 登录审计 ───
 
+
 @router.get("/sessions")
 async def active_sessions(
     server_id: str = Query(default="local", description="目标服务器"),
@@ -91,6 +96,7 @@ async def active_sessions(
     """获取当前活跃登录会话"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.user_sessions()
         if not result.get("ok"):
@@ -100,12 +106,14 @@ async def active_sessions(
         for line in result["data"].get("output", "").strip().splitlines():
             parts = line.split()
             if len(parts) >= 3:
-                sessions.append({
-                    "user": parts[0],
-                    "terminal": parts[1],
-                    "login_time": " ".join(parts[2:4]) if len(parts) >= 4 else parts[2],
-                    "from": parts[4].strip("()") if len(parts) >= 5 else "",
-                })
+                sessions.append(
+                    {
+                        "user": parts[0],
+                        "terminal": parts[1],
+                        "login_time": " ".join(parts[2:4]) if len(parts) >= 4 else parts[2],
+                        "from": parts[4].strip("()") if len(parts) >= 5 else "",
+                    }
+                )
         return {"sessions": sessions, "count": len(sessions)}
     sessions = await asyncio.to_thread(get_active_sessions)
     return {"sessions": sessions, "count": len(sessions)}
@@ -123,10 +131,12 @@ async def user_login_history(username: str, count: int = 20, user=Depends(requir
 
 # ─── 配额状态 & 处置策略（固定路径必须在 /{username} 之前） ───
 
+
 @router.get("/quota-status")
 async def quota_status(user=Depends(get_current_user)):
     """获取所有用户配额使用状态"""
     from modules.users.services import get_quota_status
+
     return get_quota_status()
 
 
@@ -134,6 +144,7 @@ async def quota_status(user=Depends(get_current_user)):
 async def get_enforcement(user=Depends(require_role("admin"))):
     """获取处置策略配置"""
     from modules.users.services import get_enforcement_config
+
     return get_enforcement_config()
 
 
@@ -141,6 +152,7 @@ async def get_enforcement(user=Depends(require_role("admin"))):
 async def update_enforcement(request: Request, user=Depends(require_role("admin"))):
     """更新处置策略配置"""
     from modules.users.services import save_enforcement_config
+
     data = await request.json()
     save_enforcement_config(data)
     return {"ok": True}
@@ -148,11 +160,13 @@ async def update_enforcement(request: Request, user=Depends(require_role("admin"
 
 @router.get("/violations")
 async def get_violations(
-    limit: int = 50, offset: int = 0,
+    limit: int = 50,
+    offset: int = 0,
     user=Depends(require_role("admin")),
 ):
     """获取配额违规历史"""
     from database import get_db
+
     db = await get_db()
     cursor = await db.execute(
         "SELECT id, username, violation_type, mem_gb, quota_mem_gb, usage_pct, action_taken, created_at "
@@ -162,15 +176,21 @@ async def get_violations(
     rows = await cursor.fetchall()
     return [
         {
-            "id": r[0], "username": r[1], "type": r[2],
-            "mem_gb": r[3], "quota_mem_gb": r[4], "usage_pct": r[5],
-            "action": r[6], "time": r[7],
+            "id": r[0],
+            "username": r[1],
+            "type": r[2],
+            "mem_gb": r[3],
+            "quota_mem_gb": r[4],
+            "usage_pct": r[5],
+            "action": r[6],
+            "time": r[7],
         }
         for r in rows
     ]
 
 
 # ─── 用户增删改 ───
+
 
 @router.post("/create")
 async def do_create_user(body: CreateUserRequest, request: Request, user=Depends(require_role("admin"))):
@@ -262,6 +282,7 @@ async def do_set_password(
 
 # ─── 进程管理 ───
 
+
 @router.post("/{username}/kill")
 async def kill_user(username: str, request: Request, user=Depends(require_role("admin"))):
     """终止指定用户的所有进程（仅管理员）"""
@@ -289,6 +310,7 @@ async def kill_process(
     """终止指定用户的单个进程"""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.kill_process(pid)
         if not result.get("ok"):
@@ -314,6 +336,7 @@ async def kill_process(
 
 
 # ─── 配额管理 ───
+
 
 @router.get("/quotas")
 async def list_quotas(user=Depends(require_role("admin"))):
@@ -353,12 +376,16 @@ async def delete_quota(key: str, user=Depends(require_role("admin"))):
 
 # ─── 进程列表 (需要在 /{username} DELETE 之后) ───
 
+
 @router.get("/{username}/processes")
 async def user_processes(
-    username: str, sort: str = "mem", search: str = "",
+    username: str,
+    sort: str = "mem",
+    search: str = "",
     user=Depends(require_role("admin")),
 ):
     """获取用户完整进程列表"""
     from modules.users.services import get_user_processes
+
     procs = get_user_processes(username, sort_by=sort, search=search)
     return {"processes": procs, "count": len(procs)}

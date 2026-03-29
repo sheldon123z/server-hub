@@ -1,0 +1,175 @@
+# ──────────────────────────────────────────────────────────────
+# ServerHub — Python 工具链统一配置
+# ──────────────────────────────────────────────────────────────
+
+[project]
+name = "serverhub"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+# ─── Ruff: lint + format (替代 flake8 + black + isort) ───────
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+# 需要检查的目录
+src = ["modules", "auth", "tests"]
+
+# 排除不需要检查的目录
+extend-exclude = [
+    "archive",
+    "frontend",
+    "serverhub-agent",
+    ".claude",
+    "data",
+    "logs",
+    "scripts",
+]
+
+[tool.ruff.lint]
+# ── 规则选择 ──
+# 渐进式启用：先覆盖高价值规则，后续逐步加严
+select = [
+    # ── 基础 (必选) ──
+    "F",       # Pyflakes — 未使用变量、未定义名称、重复 import
+    "E",       # pycodestyle errors — 基本语法风格
+    "W",       # pycodestyle warnings — 空白、换行
+    "I",       # isort — import 排序
+
+    # ── 安全 (高优先) ──
+    "S",       # flake8-bandit — 安全漏洞检测 (hardcoded passwords, SQL injection 等)
+    "B",       # flake8-bugbear — 常见 bug 模式 (mutable default args 等)
+
+    # ── 代码质量 ──
+    "UP",      # pyupgrade — 自动升级到 Python 3.11+ 语法
+    "SIM",     # flake8-simplify — 可简化的代码模式
+    "RUF",     # Ruff 专属规则 — 额外的 Python 最佳实践
+    "PIE",     # flake8-pie — 不必要的 pass、range(len) 等
+    "C4",      # flake8-comprehensions — 推导式优化
+    "T20",     # flake8-print — 检测遗留 print() (应用 logger)
+    "LOG",     # flake8-logging — 日志最佳实践 (warn→warning 等)
+    "G",       # flake8-logging-format — logger 格式化检查 (f-string→%s)
+
+    # ── 异步 ──
+    "ASYNC",   # flake8-async — 异步代码常见问题
+
+    # ── 类型注解 (渐进式) ──
+    "TCH",     # flake8-type-checking — TYPE_CHECKING 优化 import
+    "FA",      # flake8-future-annotations — from __future__ import annotations
+]
+
+ignore = [
+    # ── 与项目现状兼容的豁免 ──
+    "E501",    # 行长度由 formatter 控制，lint 不重复检查
+    "E402",    # 模块级 import 不在文件顶部 (FastAPI 依赖注入模式常见)
+
+    # ── 安全规则微调 ──
+    "S101",    # assert 在测试中合理使用
+    "S104",    # 绑定 0.0.0.0 — 服务器项目需要
+    "S108",    # /tmp 路径 — 沙箱目录设计如此
+    "S603",    # subprocess 无 shell=True 检查 — 项目有自己的沙箱层
+    "S607",    # partial executable path — 运维脚本场景合理
+
+    # ── 代码风格兼容 ──
+    "B008",    # Depends() 在函数参数默认值中 — FastAPI 标准模式
+    "B904",    # raise from — 存量代码较多，逐步修复
+    "RUF012",  # ClassVar 注解 — Settings 类大量实例属性
+    "SIM108",  # 三元表达式 — 有时 if/else 更清晰
+    "UP007",   # X | Y 联合类型 — 部分地方保留 Optional 更易读
+
+    # ── 日志规则微调 ──
+    "G004",    # f-string 日志 — Issue #26 已大量修复，剩余逐步清理
+    "T201",    # print — 部分 CLI 工具需要 print 输出
+
+    # ── 中文项目专用豁免 ──
+    "RUF001",  # 中文字符串中的 Unicode — 中文项目正常
+    "RUF002",  # 中文 docstring 中的 Unicode — 中文项目正常
+    "RUF003",  # 中文注释中的 Unicode — 中文项目正常
+]
+
+# ── 按文件/目录豁免特定规则 ──
+[tool.ruff.lint.per-file-ignores]
+# 测试文件: 允许 assert、hardcoded 值、print
+"tests/**/*.py" = ["S101", "S106", "S105", "T201", "B011"]
+# 配置文件: 允许 hardcoded 路径和默认值
+"config.py" = ["S105", "S106"]
+# 数据库初始化: 大量 SQL 字符串拼接（已有校验）
+"database.py" = ["S608"]
+# Agent 工具: 大量 shell 命令构建（有沙箱保护）
+"modules/agents/tools/**/*.py" = ["S602", "S603", "S605", "S607"]
+# 沙箱和安全模块: 需要操作环境变量和子进程
+"modules/agents/sandbox.py" = ["S603", "S605"]
+"modules/agents/safety.py" = ["S603"]
+"modules/agents/teams/safety.py" = ["S603"]
+# 迁移/种子数据: 允许 hardcoded 值
+"modules/*/seed.py" = ["S105", "S106"]
+"modules/playbooks/seed.py" = ["S105", "S106"]
+# prompts: 长字符串模板
+"modules/agents/prompts.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+# import 排序规则 — 匹配项目约定
+known-first-party = ["modules", "auth", "config", "database"]
+# 标准库 → 第三方 → 本地模块，与 CONTRIBUTING.md 一致
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.flake8-bugbear]
+# 允许 FastAPI 的 Depends/Query/Body 等作为函数参数默认值
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+]
+
+[tool.ruff.format]
+# 格式化配置 — 替代 Black
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+# ─── Pytest 配置 (从 pytest.ini 迁移) ────────────────────────
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+# 测试输出格式
+addopts = "-q --tb=short"
+# 标记定义
+markers = [
+    "slow: 耗时较长的测试",
+    "integration: 需要外部服务的集成测试",
+]
+
+# ─── Coverage 配置 ──────────────────────────────────────────
+
+[tool.coverage.run]
+source = ["modules", "auth"]
+omit = [
+    "*/tests/*",
+    "*/archive/*",
+    "*/__pycache__/*",
+    "modules/agents/tools/*",  # 工具函数依赖系统环境，单测难覆盖
+]
+
+[tool.coverage.report]
+# 初始门槛 30%，逐步提升
+fail_under = 30
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "pass",
+]
