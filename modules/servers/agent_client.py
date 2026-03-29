@@ -119,7 +119,7 @@ class AgentClient:
             return _error_result(msg)
         except Exception as e:
             msg = f"Agent 请求异常 ({self.server_name}): {type(e).__name__}: {e}"
-            logger.error(msg, exc_info=True)
+            logger.exception(msg)
             return _error_result(msg)
 
     # ─── 公开方法 ───

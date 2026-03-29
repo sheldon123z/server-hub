@@ -4,6 +4,7 @@
 认证: 所有端点需要登录，写操作需要 admin 角色
 """
 
+import contextlib
 import json
 import logging
 
@@ -210,10 +211,8 @@ async def get_execution_detail(
 
     # 解析 JSON 字段
     if execution.get("agent_outputs"):
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
             execution["agent_outputs"] = json.loads(execution["agent_outputs"])
-        except (json.JSONDecodeError, TypeError):
-            pass
 
     return {"execution": execution, "messages": messages}
 
@@ -254,10 +253,8 @@ async def get_team_detail(
     for m in members:
         for field in ("tools_json", "handoff_targets", "config_json"):
             if field in m and isinstance(m[field], str):
-                try:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
                     m[field] = json.loads(m[field])
-                except (json.JSONDecodeError, TypeError):
-                    pass
 
     return {"team": team, "members": members}
 
@@ -507,9 +504,7 @@ async def list_team_executions(
     # 解析 JSON 字段
     for ex in executions:
         if ex.get("agent_outputs"):
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 ex["agent_outputs"] = json.loads(ex["agent_outputs"])
-            except (json.JSONDecodeError, TypeError):
-                pass
 
     return executions

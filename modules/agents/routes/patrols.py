@@ -1,6 +1,7 @@
 """巡检任务 + 模板路由"""
 
 import asyncio
+import contextlib
 import json
 import logging
 from datetime import datetime
@@ -96,10 +97,8 @@ async def get_patrol_history(patrol_id: str, limit: int = 20, user=Depends(requi
     for r in rows:
         item = {"timestamp": r[0], "status": r[1], "report": (r[2] or "")[:1000], "duration": r[3]}
         if r[4]:
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 item["report_json"] = json.loads(r[4])
-            except (json.JSONDecodeError, TypeError):
-                pass
         results.append(item)
     return results
 
@@ -123,10 +122,8 @@ async def get_patrol_report(patrol_id: str, history_id: int, user=Depends(requir
         "duration": row[4],
     }
     if row[3]:
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
             result["report_json"] = json.loads(row[3])
-        except (json.JSONDecodeError, TypeError):
-            pass
     return result
 
 
@@ -238,10 +235,8 @@ async def create_patrol_from_template(request: Request, user=Depends(require_rol
     prompt = tpl[3]
     variables = body.get("variables", {})
     if variables:
-        try:
+        with contextlib.suppress(KeyError):
             prompt = prompt.format(**variables)
-        except KeyError:
-            pass  # 缺少变量时保留原占位符
 
     patrol_id = body.get("id") or f"custom_{template_id}_{int(datetime.now().timestamp())}"
     display_name = body.get("display_name") or tpl[0]

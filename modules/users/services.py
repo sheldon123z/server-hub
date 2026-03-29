@@ -295,7 +295,7 @@ def get_user_login_history(username: str = "", count: int = 20) -> list[dict]:
 
     entries = []
     for line in raw.splitlines():
-        if not line.strip() or line.startswith("wtmp begins") or line.startswith("reboot"):
+        if not line.strip() or line.startswith(("wtmp begins", "reboot")):
             continue
         parts = line.split()
         if len(parts) < 4:

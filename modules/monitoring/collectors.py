@@ -3,6 +3,7 @@
 采集 CPU、内存、GPU、磁盘、网络、Docker、进程等系统指标
 """
 
+import contextlib
 import copy
 import json
 import logging
@@ -206,10 +207,8 @@ def collect_gpu() -> dict:
             if len(pparts) >= 3:
                 pid = int(pparts[0])
                 user = ""
-                try:
+                with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     user = psutil.Process(pid).username()
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    pass
                 result["processes"].append(
                     {
                         "pid": pid,
@@ -463,10 +462,8 @@ def collect_docker_stats() -> dict:
         net_rx_mb, net_tx_mb = _parse_net_io(item.get("NetIO", "0B / 0B"))
 
         pids = 0
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             pids = int(item.get("PIDs", "0"))
-        except (ValueError, TypeError):
-            pass
 
         restart_count = info.get("restart_count", 0)
         compose_project = info.get("compose_project", "")

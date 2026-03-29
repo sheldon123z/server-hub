@@ -365,9 +365,11 @@ class TestTeamEngine:
         engine = TeamEngine(store=store)
         # mock LLM 避免真实调用
         mock_model = MagicMock()
-        with patch("modules.agents.teams.engine._get_chat_model_by_id", return_value=mock_model):
-            with pytest.raises(ValueError, match="worker"):
-                await engine.build_team_graph(team["id"])
+        with (
+            patch("modules.agents.teams.engine._get_chat_model_by_id", return_value=mock_model),
+            pytest.raises(ValueError, match="worker"),
+        ):
+            await engine.build_team_graph(team["id"])
 
     async def test_build_pipeline_graph(self, teams_db):
         """Pipeline 拓扑按 position 排序构建"""
@@ -390,11 +392,13 @@ class TestTeamEngine:
         # mock create_react_agent 和 model
         mock_model = MagicMock()
         mock_agent = MagicMock()
-        with patch("modules.agents.teams.engine._get_chat_model_by_id", return_value=mock_model):
-            with patch("modules.agents.teams.engine._resolve_tools_safe", return_value=[]):
-                with patch("modules.agents.teams.engine._wrap_tools_safe", return_value=[]):
-                    with patch("langgraph.prebuilt.create_react_agent", return_value=mock_agent):
-                        graph = await engine.build_team_graph(team["id"])
+        with (
+            patch("modules.agents.teams.engine._get_chat_model_by_id", return_value=mock_model),
+            patch("modules.agents.teams.engine._resolve_tools_safe", return_value=[]),
+            patch("modules.agents.teams.engine._wrap_tools_safe", return_value=[]),
+            patch("langgraph.prebuilt.create_react_agent", return_value=mock_agent),
+        ):
+            graph = await engine.build_team_graph(team["id"])
 
         assert graph is not None
 

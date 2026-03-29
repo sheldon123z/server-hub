@@ -645,11 +645,13 @@ class TestRemoteCollect:
         mock_ws = MagicMock()
         mock_ws.broadcast = AsyncMock()
 
-        with patch("modules.servers.agent_client.AgentClient", return_value=mock_client_instance):
-            with patch("modules.monitoring.scheduler.ws_manager", mock_ws, create=True):
-                from modules.monitoring.scheduler import _collect_remote_metrics
+        with (
+            patch("modules.servers.agent_client.AgentClient", return_value=mock_client_instance),
+            patch("modules.monitoring.scheduler.ws_manager", mock_ws, create=True),
+        ):
+            from modules.monitoring.scheduler import _collect_remote_metrics
 
-                await _collect_remote_metrics()
+            await _collect_remote_metrics()
 
         # Check that metrics were stored
         row = await (

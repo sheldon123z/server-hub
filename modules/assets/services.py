@@ -79,7 +79,7 @@ async def discover_all() -> dict:
             # 推断所属堆栈
             deps = []
             for stack_name in compose_containers:
-                if name.startswith(stack_name) or name.startswith("docker-") or stack_name in name:
+                if name.startswith((stack_name, "docker-")) or stack_name in name:
                     deps.append(f"compose:{stack_name}")
                     compose_containers[stack_name].append(aid)
                     break

@@ -3,6 +3,8 @@ Docker 管理 API 路由
 提供容器、镜像、Compose 堆栈的查询与管理接口
 """
 
+import contextlib
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -168,10 +170,8 @@ async def get_images(
         for line in result["data"].get("output", "").strip().splitlines():
             line = line.strip()
             if line:
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     images.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
         return images
     try:
         return await list_images()

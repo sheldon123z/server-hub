@@ -191,7 +191,7 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
         return report_id
 
     except Exception as e:
-        logger.error("故障诊断失败: %s", e, exc_info=True)
+        logger.exception("故障诊断失败: %s", e)
         # 记录失败
         try:
             db = await get_db()

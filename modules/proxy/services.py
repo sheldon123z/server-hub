@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import json
 import logging
@@ -325,8 +326,7 @@ def _resolve_current_config(instance: dict[str, Any]) -> tuple[str, str]:
                 real_path = os.path.realpath(active_link)
                 for profile in profiles:
                     file_path = str(profile.get("file", "")).strip()
-                    if file_path and os.path.exists(file_path):
-                        if os.path.realpath(file_path) == real_path:
+                    if file_path and os.path.exists(file_path) and os.path.realpath(file_path) == real_path:
                             return profile.get("key", "unknown"), profile.get("name", "未知")
         except Exception as e:
             logger.debug("解析活动配置文件失败: %s", e)
@@ -588,10 +588,8 @@ async def _write_config_file(target_file: str, content: str) -> None:
     try:
         await _run(["sudo", "install", "-D", "-m", "0644", tmp_path, target_file], timeout=20)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp_path)
-        except FileNotFoundError:
-            pass
 
 
 async def _download_subscription_to_profile(instance: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:

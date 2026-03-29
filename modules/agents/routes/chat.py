@@ -313,7 +313,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
             await update_run_status(run_id, status="cancelled", error="运行已取消", completed=True)
             yield {"event": "run.error", "data": json.dumps(payload, ensure_ascii=False)}
         except Exception as exc:
-            logger.error("Chat error: %s", exc, exc_info=True)
+            logger.exception("Chat error: %s", exc)
             payload = {"run_id": run_id, "conversation_id": conversation_id, "error": str(exc)}
             await append_run_event(run_id, conversation_id, "run.error", payload)
             await update_run_status(run_id, status="error", error=str(exc), completed=True)
