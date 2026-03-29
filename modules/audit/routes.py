@@ -47,18 +47,18 @@ async def list_audit_logs(
 
     db = await get_db()
     # 查询总数
-    count_sql = f"SELECT COUNT(*) FROM audit_log {where_clause}"
+    count_sql = f"SELECT COUNT(*) FROM audit_log {where_clause}"  # noqa: S608 — where_clause 由代码构建
     cursor = await db.execute(count_sql, params)
     row = await cursor.fetchone()
     total = row[0] if row else 0
 
     # 查询分页数据
     data_sql = (
-        f"SELECT timestamp, username, action, target, details, ip_address, success "
+        f"SELECT timestamp, username, action, target, details, ip_address, success "  # noqa: S608 — where_clause 由代码构建
         f"FROM audit_log {where_clause} "
         f"ORDER BY timestamp DESC LIMIT ? OFFSET ?"
     )
-    cursor = await db.execute(data_sql, params + [limit, offset])
+    cursor = await db.execute(data_sql, [*params, limit, offset])
     rows = await cursor.fetchall()
 
     items = [
@@ -92,14 +92,17 @@ async def _get_audit_logs(page=1, limit=50, username=""):
         params = [username]
 
     offset = (page - 1) * limit
-    cursor = await db.execute(f"SELECT COUNT(*) FROM audit_log {where_clause}", params)
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM audit_log {where_clause}",  # noqa: S608 — where_clause 由代码构建
+        params,
+    )
     row = await cursor.fetchone()
     total = row[0] if row else 0
 
     cursor = await db.execute(
-        f"SELECT timestamp, username, action, target, details, ip_address, success "
+        f"SELECT timestamp, username, action, target, details, ip_address, success "  # noqa: S608
         f"FROM audit_log {where_clause} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-        params + [limit, offset],
+        [*params, limit, offset],
     )
     rows = await cursor.fetchall()
     items = [

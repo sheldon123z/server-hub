@@ -8,6 +8,9 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 _scheduler_task = None
 
+# 防止 asyncio 任务被 GC 回收的强引用集合
+_background_tasks: set[asyncio.Task] = set()
+
 
 async def _schedule_loop():
     while True:
@@ -25,7 +28,9 @@ async def _schedule_loop():
                 if _should_run(pid, trigger.get("schedule")):
                     from modules.playbooks.services import execute_playbook
 
-                    asyncio.create_task(execute_playbook(pid, {}, "scheduler", "schedule"))
+                    task = asyncio.create_task(execute_playbook(pid, {}, "scheduler", "schedule"))
+                    _background_tasks.add(task)
+                    task.add_done_callback(_background_tasks.discard)
                     logger.info("定时剧本已触发: %s", pid)
         except Exception as e:
             logger.error("剧本调度器错误: %s", e)

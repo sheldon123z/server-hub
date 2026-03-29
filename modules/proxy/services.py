@@ -339,7 +339,7 @@ def _resolve_current_config(instance: dict[str, Any]) -> tuple[str, str]:
     return "unknown", "未知"
 
 
-async def _run(cmd: list[str], timeout: int = 15) -> tuple[int, str]:
+async def _run(cmd: list[str], timeout: int = 15) -> tuple[int, str]:  # noqa: ASYNC109 — timeout 传给 asyncio.wait_for
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -576,7 +576,7 @@ async def _write_config_file(target_file: str, content: str) -> None:
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         if os.access(target.parent, os.W_OK):
-            target.write_text(content, encoding="utf-8")
+            await asyncio.to_thread(target.write_text, content, encoding="utf-8")
             return
     except Exception as e:
         logger.debug("直接写入配置文件失败，尝试 sudo: %s", e)
@@ -634,7 +634,7 @@ async def _switch_by_symlink(instance: dict[str, Any], profile: dict[str, Any]) 
 
     if not target_file:
         return {"ok": False, "msg": "配置文件路径未定义"}
-    if not os.path.exists(target_file):
+    if not await asyncio.to_thread(os.path.exists, target_file):
         return {"ok": False, "msg": f"配置文件不存在: {target_file}"}
     if not active_link:
         return {"ok": False, "msg": "实例未定义活动配置链接"}

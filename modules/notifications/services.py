@@ -22,7 +22,7 @@ async def send_notification(message: str, channel_ids: list[str] | None = None) 
     if channel_ids:
         rows = await (
             await db.execute(
-                "SELECT id, channel_type, display_name, config_json FROM notification_channels WHERE id IN ({}) AND enabled=1".format(
+                "SELECT id, channel_type, display_name, config_json FROM notification_channels WHERE id IN ({}) AND enabled=1".format(  # noqa: S608 — 占位符由 channel_ids 数量生成
                     ",".join("?" * len(channel_ids))
                 ),
                 channel_ids,
@@ -129,7 +129,7 @@ async def get_channels() -> list[dict]:
     """获取所有渠道列表（敏感字段掩码）"""
     db = await get_db()
     rows = await (
-        await db.execute(f"SELECT {_CHANNEL_FIELDS} FROM notification_channels ORDER BY priority, created_at")
+        await db.execute(f"SELECT {_CHANNEL_FIELDS} FROM notification_channels ORDER BY priority, created_at")  # noqa: S608 — _CHANNEL_FIELDS 是常量
     ).fetchall()
     return [_row_to_channel_dict(r) for r in rows]
 
@@ -138,7 +138,7 @@ async def get_channel(channel_id: str) -> dict | None:
     """获取单个渠道（含掩码配置）"""
     db = await get_db()
     row = await (
-        await db.execute(f"SELECT {_CHANNEL_FIELDS} FROM notification_channels WHERE id=?", (channel_id,))
+        await db.execute(f"SELECT {_CHANNEL_FIELDS} FROM notification_channels WHERE id=?", (channel_id,))  # noqa: S608 — _CHANNEL_FIELDS 是常量
     ).fetchone()
     if not row:
         return None
@@ -202,7 +202,7 @@ async def update_channel(channel_id: str, **kwargs) -> dict | None:
     if updates:
         updates.append("updated_at=CURRENT_TIMESTAMP")
         params.append(channel_id)
-        await db.execute(f"UPDATE notification_channels SET {', '.join(updates)} WHERE id=?", params)
+        await db.execute(f"UPDATE notification_channels SET {', '.join(updates)} WHERE id=?", params)  # noqa: S608 — 列名来自代码白名单
         await db.commit()
 
     return await get_channel(channel_id)

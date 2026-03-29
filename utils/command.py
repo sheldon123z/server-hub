@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
-from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,7 @@ def run_command_text(
 async def run_command_async(
     args: Sequence[str],
     *,
-    timeout: int = 15,
+    timeout: int = 15,  # noqa: ASYNC109 — timeout 传给 asyncio.wait_for
     check: bool = False,
 ) -> CommandResult:
     """异步执行命令。"""

@@ -75,7 +75,7 @@ async def get_fleet_compare(server_ids: list[str], metric: str, hours: int) -> d
 
     store = get_metrics_store()
     histories = await asyncio.gather(*(store.query_history(sid, hours) for sid in server_ids))
-    result = {sid: [extract_metric(h, metric) for h in hist] for sid, hist in zip(server_ids, histories)}
+    result = {sid: [extract_metric(h, metric) for h in hist] for sid, hist in zip(server_ids, histories, strict=False)}
     return {"server_ids": server_ids, "metric": metric, "hours": hours, "data": result}
 
 
@@ -206,7 +206,7 @@ async def get_alerts_recent_data(limit: int, severity: str | None, server_id: st
         params.append(severity)
 
     cursor = await db.execute(
-        f"SELECT * FROM alert_history {base_where} ORDER BY created_at DESC LIMIT ?",
+        f"SELECT * FROM alert_history {base_where} ORDER BY created_at DESC LIMIT ?",  # noqa: S608 — where 由代码构建
         (*params, limit),
     )
     rows = await cursor.fetchall()

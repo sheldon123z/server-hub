@@ -134,7 +134,7 @@ class FakeStreamingAgent:
         self._final_state = False
 
     async def aget_state(self, config):
-        return SimpleNamespace(values={"messages": [], "todos": []}, next=[] if self._final_state else [], tasks=[])
+        return SimpleNamespace(values={"messages": [], "todos": []}, next=[], tasks=[])
 
     async def astream(self, input_state, config, stream_mode="values"):
         yield {"todos": [{"content": "collect metrics", "status": "in_progress"}], "messages": []}

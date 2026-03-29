@@ -57,7 +57,7 @@ async def get_fault_report(report_id: str, user=Depends(require_role("admin"))):
     if not row:
         raise HTTPException(404, "报告不存在")
     cols = [d[0] for d in cursor.description]
-    result = dict(zip(cols, row))
+    result = dict(zip(cols, row, strict=False))
     # 解析 JSON 字段
     for field in (
         "affected_components",

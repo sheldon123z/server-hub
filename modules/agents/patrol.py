@@ -16,6 +16,9 @@ from modules.agents.report_schema import (
 
 logger = logging.getLogger(__name__)
 
+# 防止 asyncio 任务被 GC 回收的强引用集合
+_background_tasks: set[asyncio.Task] = set()
+
 # ─── 内置巡检任务 ───
 
 DEFAULT_PATROLS = [
@@ -350,13 +353,15 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
                 from modules.agents.diagnosis import trigger_diagnosis
 
                 context = report_summary_text(report_json) if report_json else report[:500]
-                asyncio.create_task(
+                task = asyncio.create_task(
                     trigger_diagnosis(
                         source=f"patrol:{task_id}",
                         severity="critical",
                         alert_context=f"巡检任务 [{display_name}] 发现严重问题:\n{context}",
                     )
                 )
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
             except Exception as e:
                 logger.error("触发故障诊断失败: %s", e)
 
@@ -402,7 +407,7 @@ async def _patrol_loop():
 
             now = datetime.now()
             for row in tasks:
-                task_id, display_name, desc, interval, tools, prompt, last_run = row
+                task_id, display_name, desc, interval, _tools, prompt, last_run = row
                 should_run = False
 
                 if last_run is None:
@@ -423,7 +428,9 @@ async def _patrol_loop():
                         "description": desc,
                         "prompt": prompt,
                     }
-                    asyncio.create_task(execute_patrol(task_dict))
+                    task = asyncio.create_task(execute_patrol(task_dict))
+                    _background_tasks.add(task)
+                    task.add_done_callback(_background_tasks.discard)
 
         except Exception as e:
             logger.error("巡检调度器错误: %s", e)

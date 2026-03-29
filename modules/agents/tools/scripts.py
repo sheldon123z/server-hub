@@ -4,13 +4,15 @@ from langchain_core.tools import tool
 
 
 @tool
-async def execute_ops_script(script_key: str, args: list[str] = []) -> str:
+async def execute_ops_script(script_key: str, args: list[str] | None = None) -> str:
     """执行注册的运维管理脚本。
 
     Args:
         script_key: 脚本标识（如 dify_manage, health_check, block_baidupan 等）
         args: 脚本参数列表
     """
+    if args is None:
+        args = []
     from scripts_bridge.registry import SCRIPT_REGISTRY
 
     if script_key not in SCRIPT_REGISTRY:

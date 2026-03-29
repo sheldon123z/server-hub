@@ -5,10 +5,10 @@ TOOL_RISK_MAP 仅用于前端 UI 展示风险等级标签。
 """
 
 import re
-from enum import Enum
+from enum import StrEnum
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     SAFE = "safe"
     MODERATE = "moderate"
     DANGER = "danger"

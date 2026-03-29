@@ -114,7 +114,7 @@ async def login(req: LoginRequest, response: Response, request: Request):
 @router.post("/refresh")
 async def refresh(request: Request, response: Response):
     token = request.cookies.get("refresh_token")
-    user, _ = await get_user_from_token(token, token_type="refresh")
+    user, _ = await get_user_from_token(token, token_type="refresh")  # noqa: S106 — token_type 非密码
     if not user:
         raise HTTPException(status_code=401, detail="会话已失效，请重新登录")
 

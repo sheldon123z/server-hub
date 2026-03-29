@@ -14,6 +14,9 @@ from modules.agents.schemas import PatrolUpdate
 
 logger = logging.getLogger(__name__)
 
+# 防止 asyncio 任务被 GC 回收的强引用集合
+_background_tasks: set[asyncio.Task] = set()
+
 router = APIRouter()
 
 
@@ -64,7 +67,7 @@ async def update_patrol(patrol_id: str, body: PatrolUpdate, user=Depends(require
     if not sets:
         raise HTTPException(400, "没有要更新的字段")
     vals.append(patrol_id)
-    await db.execute(f"UPDATE agent_patrol_tasks SET {', '.join(sets)} WHERE id = ?", vals)
+    await db.execute(f"UPDATE agent_patrol_tasks SET {', '.join(sets)} WHERE id = ?", vals)  # noqa: S608 — 列名来自代码白名单
     await db.commit()
     return {"ok": True}
 
@@ -80,7 +83,9 @@ async def trigger_patrol(patrol_id: str, user=Depends(require_role("admin"))):
     task_dict = {"id": row[0], "display_name": row[1], "description": row[2], "prompt": row[5]}
     from modules.agents.patrol import execute_patrol
 
-    asyncio.create_task(execute_patrol(task_dict, triggered_by=user["username"]))
+    task = asyncio.create_task(execute_patrol(task_dict, triggered_by=user["username"]))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"ok": True, "message": f"巡检 {row[1]} 已触发"}
 
 

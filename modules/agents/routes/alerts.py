@@ -52,7 +52,7 @@ async def update_alert_rule(rule_id: str, request: Request, user=Depends(require
     if not sets:
         raise HTTPException(400, "没有要更新的字段")
     vals.append(rule_id)
-    await db.execute(f"UPDATE alert_rules SET {', '.join(sets)} WHERE id = ?", vals)
+    await db.execute(f"UPDATE alert_rules SET {', '.join(sets)} WHERE id = ?", vals)  # noqa: S608 — 列名来自代码白名单
     await db.commit()
     return {"ok": True}
 

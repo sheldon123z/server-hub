@@ -206,7 +206,7 @@ async def create_run(thread_id: str, request: Request):
 
     # interrupt 策略: 取消该 thread 上正在运行的 run
     if multitask_strategy == "interrupt":
-        for rid, existing_run in list(_runs.items()):
+        for _rid, existing_run in list(_runs.items()):
             if existing_run.thread_id == thread_id and existing_run.status == "running":
                 if existing_run.task and not existing_run.task.done():
                     existing_run.task.cancel()

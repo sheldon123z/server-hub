@@ -20,7 +20,7 @@ def _get_http_client() -> httpx.AsyncClient:
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
             follow_redirects=False,
             # CWE-319: 允许自签名证书 (Phase 1)，后续 Phase 可改为 CA 验证
-            verify=False,
+            verify=False,  # noqa: S501 — 内网自签名证书，Phase 2 升级为 CA 验证
         )
     return _http_client
 
@@ -65,7 +65,7 @@ class AgentClient:
         method: str,
         path: str,
         *,
-        timeout: float | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109 — timeout 传给 httpx 请求
         json_body: dict | None = None,
         need_auth: bool = True,
     ) -> dict[str, Any]:
@@ -139,7 +139,7 @@ class AgentClient:
         """获取轻量级指标快照（用于仪表盘 sparkline）"""
         return await self._request("GET", "/metrics/fast", timeout=8.0)
 
-    async def execute_command(self, command: str, timeout: int = 30) -> dict:
+    async def execute_command(self, command: str, timeout: int = 30) -> dict:  # noqa: ASYNC109 — timeout 传给远程 agent 端
         """
         在远程服务器上执行命令。
         timeout 参数传给 agent 端的命令执行超时。

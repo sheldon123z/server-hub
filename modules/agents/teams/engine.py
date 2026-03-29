@@ -93,7 +93,7 @@ class TeamEngine:
         Args:
             store: TeamStore 实例，用于数据读写
         """
-        from modules.agents.teams.store import TeamStore
+        from modules.agents.teams.store import TeamStore  # noqa: TC001 — 运行时注解需要此导入
 
         self.store: TeamStore = store
         # team_id → (compiled_graph, build_timestamp)

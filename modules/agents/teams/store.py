@@ -94,7 +94,7 @@ class TeamStore:
         values.append(team_id)
 
         await db.execute(
-            f"UPDATE agent_teams SET {', '.join(fields)} WHERE id = ?",
+            f"UPDATE agent_teams SET {', '.join(fields)} WHERE id = ?",  # noqa: S608 — 列名来自代码白名单
             values,
         )
         await db.commit()
@@ -199,7 +199,7 @@ class TeamStore:
 
         values.append(member_id)
         await db.execute(
-            f"UPDATE agent_team_members SET {', '.join(fields)} WHERE id = ?",
+            f"UPDATE agent_team_members SET {', '.join(fields)} WHERE id = ?",  # noqa: S608 — 列名来自代码白名单
             values,
         )
 

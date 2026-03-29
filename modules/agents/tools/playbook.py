@@ -37,9 +37,9 @@ async def ssh_execute_command(
     username: str,
     password: str = "",
     private_key_path: str = "",
-    commands: list[str] = [],
+    commands: list[str] | None = None,
     port: int = 22,
-    timeout: int = 30,
+    timeout: int = 30,  # noqa: ASYNC109 — timeout 传给 asyncssh 连接参数，非 asyncio 超时
 ) -> str:
     """SSH connect to a remote device and execute commands. Use for network device management
     (switches, routers) and remote server operations.
