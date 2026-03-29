@@ -19,6 +19,8 @@ def _get_http_client() -> httpx.AsyncClient:
             timeout=httpx.Timeout(connect=5.0, read=15.0, write=5.0, pool=5.0),
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
             follow_redirects=False,
+            # CWE-319: 允许自签名证书 (Phase 1)，后续 Phase 可改为 CA 验证
+            verify=False,
         )
     return _http_client
 
@@ -42,7 +44,10 @@ class AgentClient:
     def __init__(self, server: dict):
         self.server_id: str = server["id"]
         self.server_name: str = server.get("name", "unknown")
-        self.base_url: str = f"http://{server['ip_address']}:{server.get('agent_port', 9901)}"
+        # CWE-319: 根据 use_tls 字段选择协议
+        scheme = "https" if server.get("use_tls") else "http"
+        self.base_url: str = f"{scheme}://{server['ip_address']}:{server.get('agent_port', 9901)}"
+        self.use_tls: bool = bool(server.get("use_tls"))
         self.token: str = server.get("_decrypted_token", "")
         if not self.token and not server.get("is_local"):
             logger.warning("AgentClient for %s created without token — auth will fail", self.server_name)

@@ -280,7 +280,7 @@ async def test_connectivity(server_id: str) -> dict:
                     ip,
                     port=ssh_port,
                     username=ssh_user,
-                    known_hosts=None,
+                    known_hosts=None,  # TODO: Issue #28 — 实现 TOFU 模型主机密钥验证
                 ) as _conn:
                     result["ssh_ok"] = True
         except ImportError:

@@ -7,19 +7,36 @@ import pty
 import select
 import struct
 import termios
+import time
 
 logger = logging.getLogger(__name__)
+
+# CWE-269/CWE-770: 并发终端会话上限 & 空闲超时
+MAX_CONCURRENT_TERMINALS = 3
+IDLE_TIMEOUT_SECONDS = 30 * 60  # 30 分钟
 
 
 class WebTerminal:
     """异步 PTY 终端，通过 WebSocket 驱动"""
 
+    _active_count: int = 0
+
     def __init__(self):
         self.master_fd: int | None = None
         self.pid: int | None = None
+        self._last_activity: float = 0.0
+
+    @classmethod
+    def active_count(cls) -> int:
+        return cls._active_count
 
     def spawn(self, cols: int = 120, rows: int = 30):
         """启动一个 bash 子进程，连接到 PTY"""
+        if WebTerminal._active_count >= MAX_CONCURRENT_TERMINALS:
+            raise RuntimeError(
+                f"已达到最大并发终端数 ({MAX_CONCURRENT_TERMINALS})，请先关闭已有终端"
+            )
+
         pid, fd = pty.fork()
         if pid == 0:
             # 子进程 — 执行 bash
@@ -28,12 +45,17 @@ class WebTerminal:
             # 父进程
             self.pid = pid
             self.master_fd = fd
+            self._last_activity = time.monotonic()
+            WebTerminal._active_count += 1
             # 设置终端大小
             self.resize(cols, rows)
             # 设置非阻塞
             flag = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-            logger.info("Terminal spawned: pid=%d, fd=%d", pid, fd)
+            logger.info(
+                "Terminal spawned: pid=%d, fd=%d (active: %d/%d)",
+                pid, fd, WebTerminal._active_count, MAX_CONCURRENT_TERMINALS,
+            )
 
     def resize(self, cols: int, rows: int):
         """调整终端大小"""
@@ -41,9 +63,16 @@ class WebTerminal:
             winsize = struct.pack("HHHH", rows, cols, 0, 0)
             fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
 
+    def is_idle_timeout(self) -> bool:
+        """检查终端是否超过空闲超时时间"""
+        if self._last_activity == 0.0:
+            return False
+        return (time.monotonic() - self._last_activity) > IDLE_TIMEOUT_SECONDS
+
     def write(self, data: str):
         """写入用户输入到终端"""
         if self.master_fd is not None:
+            self._last_activity = time.monotonic()
             os.write(self.master_fd, data.encode("utf-8", errors="replace"))
 
     def read(self, max_bytes: int = 65536) -> str | None:
@@ -71,6 +100,8 @@ class WebTerminal:
 
     def close(self):
         """关闭终端"""
+        was_alive = self.pid is not None
+
         if self.master_fd is not None:
             try:
                 os.close(self.master_fd)
@@ -85,4 +116,10 @@ class WebTerminal:
             except (ProcessLookupError, ChildProcessError) as e:
                 logger.debug("终端进程清理: %s", e)
             self.pid = None
-            logger.info("Terminal closed")
+
+        if was_alive:
+            WebTerminal._active_count = max(0, WebTerminal._active_count - 1)
+            logger.info(
+                "Terminal closed (active: %d/%d)",
+                WebTerminal._active_count, MAX_CONCURRENT_TERMINALS,
+            )

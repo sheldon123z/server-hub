@@ -584,6 +584,8 @@ async def init_tables(db: aiosqlite.Connection):
     # Issue #8: agent_token_hash 实际存 Fernet 加密值而非 hash，新增正确命名的字段
     # 不能 ALTER TABLE RENAME COLUMN (旧版 SQLite 不支持)，所以新增并双写
     await _ensure_column(db, "servers", "agent_token_encrypted", "TEXT")
+    # Issue #28: Hub→Agent TLS 支持
+    await _ensure_column(db, "servers", "use_tls", "BOOLEAN DEFAULT 0")
 
     # 确保本机服务器记录存在
     import socket as _socket
