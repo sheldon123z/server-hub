@@ -31,15 +31,16 @@ DEFINITION = {
         "best-practice lookups and historical case matching."
     ),
     "system_prompt": PROMPT,
-    "tools_fn": lambda: (
-        _get_tools_by_names(
+    "tools_fn": lambda: [
+        *_get_tools_by_names(
             [
                 "retrieve_knowledge",
                 "search_fault_cases",
             ]
-        )
-        + [web_search, think]
-    ),
+        ),
+        web_search,
+        think,
+    ],
     "model_purpose": "patrol",
     "middleware_profile": "light",
 }

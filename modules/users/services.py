@@ -380,7 +380,7 @@ def delete_linux_user(username: str, remove_home: bool = False) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
-def modify_linux_user(username: str, groups: str = None, shell: str = None) -> dict:
+def modify_linux_user(username: str, groups: str | None = None, shell: str | None = None) -> dict:
     """修改用户属性（组、shell）。"""
     if not _USERNAME_RE.match(username):
         return {"ok": False, "error": "用户名不合法"}

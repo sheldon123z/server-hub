@@ -153,7 +153,7 @@ def _add_documents_to_store(docs: list[dict]) -> int:
     import hashlib
 
     ids = [
-        f"{d['metadata'].get('source', 'unknown')}_{hashlib.md5(d['text'][:200].encode()).hexdigest()[:12]}"
+        f"{d['metadata'].get('source', 'unknown')}_{hashlib.md5(d['text'][:200].encode(), usedforsecurity=False).hexdigest()[:12]}"
         for d in docs
     ]
     store.add_texts(texts=texts, metadatas=metadatas, ids=ids)

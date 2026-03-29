@@ -90,7 +90,8 @@ def _scan_root(root: Path) -> list[dict[str, Any]]:
                     "source_ref": str(root),
                 }
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("跳过无效 skill 目录 %s: %s", child, e)
             continue
     return candidates
 
@@ -100,7 +101,7 @@ async def discover_skills(*, roots: list[str] | None = None) -> list[dict[str, A
     installed = {item["id"] for item in await list_skills()}
     discovered: list[dict[str, Any]] = []
     for root_str in search_roots:
-        root = Path(root_str).expanduser()
+        root = Path(root_str).expanduser()  # noqa: ASYNC240 — 启动时扫描，非热路径
         for item in _scan_root(root):
             item["installed"] = item["manifest"]["id"] in installed
             discovered.append(item)
@@ -239,7 +240,7 @@ def _copy_skill_tree(source: Path, target: Path) -> None:
 
 
 async def install_skill_from_repo(repo_path: str, *, created_by: str) -> dict[str, Any]:
-    source = Path(repo_path).expanduser().resolve()
+    source = Path(repo_path).expanduser().resolve()  # noqa: ASYNC240 — 管理员操作，非热路径
     manifest = _safe_read_manifest(source)
     target = INSTALLED_SKILLS_ROOT / manifest["id"]
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -261,14 +262,14 @@ def _safe_extract_archive(source_name: str, content: bytes, destination: Path) -
                 member_path = Path(member)
                 if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError("上传压缩包包含非法路径")
-            archive.extractall(destination)
+            archive.extractall(destination)  # noqa: S202 — 已逐项校验路径安全
     elif any(source_name.endswith(suffix) for suffix in (".tar", ".tar.gz", ".tgz", ".gz")):
         with tarfile.open(fileobj=io.BytesIO(content), mode="r:*") as archive:
             for member in archive.getmembers():
                 member_path = Path(member.name)
                 if member_path.is_absolute() or ".." in member_path.parts:
                     raise ValueError("上传压缩包包含非法路径")
-            archive.extractall(destination)
+            archive.extractall(destination, filter="data")  # noqa: S202
     else:
         raise ValueError("仅支持 zip/tar.gz/tgz 上传")
 
@@ -314,7 +315,7 @@ async def remove_skill(skill_id: str, *, created_by: str) -> bool:
     if not current:
         return False
     install_path = Path(current["install_path"])
-    if install_path.exists():
+    if install_path.exists():  # noqa: ASYNC240 — 管理员操作，非热路径
         shutil.rmtree(install_path)
     db = await get_db()
     await db.execute("DELETE FROM agent_skills WHERE id = ?", (skill_id,))

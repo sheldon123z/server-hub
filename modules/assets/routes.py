@@ -76,7 +76,7 @@ async def update_asset(asset_id: str, request: Request, user=Depends(require_rol
     if not sets:
         raise HTTPException(400, "没有要更新的字段")
     vals.append(asset_id)
-    await db.execute(f"UPDATE assets SET {', '.join(sets)} WHERE id = ?", vals)
+    await db.execute(f"UPDATE assets SET {', '.join(sets)} WHERE id = ?", vals)  # noqa: S608 — 列名来自代码白名单
     await db.commit()
     return {"ok": True}
 

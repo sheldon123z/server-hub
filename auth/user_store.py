@@ -119,7 +119,7 @@ async def update_user(user_id: int, **kwargs) -> bool:
     if should_invalidate:
         sets.append("token_version = COALESCE(token_version, 0) + 1")
     vals.append(user_id)
-    await db.execute(f"UPDATE panel_users SET {', '.join(sets)} WHERE id = ?", vals)
+    await db.execute(f"UPDATE panel_users SET {', '.join(sets)} WHERE id = ?", vals)  # noqa: S608 — 列名来自代码白名单
     await db.commit()
     return True
 

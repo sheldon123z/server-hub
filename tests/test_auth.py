@@ -411,4 +411,4 @@ class TestUserStore:
 
 # ─── 辅助 ───
 
-from fastapi import Depends as fastapi_depends  # noqa: E402
+from fastapi import Depends as fastapi_depends

@@ -206,9 +206,9 @@ async def update_server(server_id: str, updates: dict) -> None:
     fields["updated_at"] = datetime.now(UTC).isoformat()
 
     set_clause = ", ".join(f"{k} = ?" for k in fields)
-    values = list(fields.values()) + [server_id]
+    values = [*list(fields.values()), server_id]
     await db.execute(
-        f"UPDATE servers SET {set_clause} WHERE id = ?",
+        f"UPDATE servers SET {set_clause} WHERE id = ?",  # noqa: S608 — 列名来自 fields.keys() 代码白名单
         values,
     )
     await db.commit()

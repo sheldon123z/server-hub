@@ -16,5 +16,5 @@ try:
             return _orig_client_init(self, *args, **kwargs)
 
         httpx.Client.__init__ = _patched_client_init  # type: ignore[assignment]
-except Exception:
+except Exception:  # noqa: S110 — httpx 补丁为可选兼容，失败无需处理
     pass

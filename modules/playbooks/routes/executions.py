@@ -12,6 +12,9 @@ from modules.playbooks.schemas import PlaybookRunRequest
 
 executions_router = APIRouter()
 
+# 防止 asyncio 任务被 GC 回收的强引用集合
+_background_tasks: set[asyncio.Task] = set()
+
 
 @executions_router.post("/{playbook_id}/run-async")
 async def run_playbook_async(playbook_id: str, body: PlaybookRunRequest, user=Depends(require_role("admin"))):
@@ -20,7 +23,9 @@ async def run_playbook_async(playbook_id: str, body: PlaybookRunRequest, user=De
     if not pb:
         raise HTTPException(404, "剧本不存在")
     # 启动后台任务
-    asyncio.create_task(services.execute_playbook(playbook_id, body.parameters, user["username"], "manual"))
+    task = asyncio.create_task(services.execute_playbook(playbook_id, body.parameters, user["username"], "manual"))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"ok": True, "message": f"剧本 '{pb['name']}' 已在后台启动执行"}
 
 

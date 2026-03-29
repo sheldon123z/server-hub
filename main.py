@@ -173,7 +173,7 @@ async def lifespan(app: FastAPI):
             mod = importlib.import_module(mod_path)
             await getattr(mod, fn_name)()
         except Exception:
-            pass
+            logger.debug("停止子系统 %s 失败", stop_fn_path, exc_info=True)
     await close_db()
 
 
@@ -232,7 +232,7 @@ async def _cleanup_old_checkpoints():
             if active_ids:
                 placeholders = ",".join("?" for _ in active_ids)
                 cursor = await db.execute(
-                    f"DELETE FROM checkpoints WHERE thread_id NOT IN ({placeholders})",
+                    f"DELETE FROM checkpoints WHERE thread_id NOT IN ({placeholders})",  # noqa: S608 — 占位符由 active_ids 数量生成
                     tuple(active_ids),
                 )
             else:

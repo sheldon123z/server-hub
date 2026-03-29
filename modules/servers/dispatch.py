@@ -33,7 +33,7 @@ async def dispatch(server_id: str, local_fn: Callable[..., Awaitable[Any]], agen
     raise ValueError("远程执行需要指定 agent_endpoint")
 
 
-async def dispatch_command(server_id: str, command: str, timeout: int = 30) -> dict:
+async def dispatch_command(server_id: str, command: str, timeout: int = 30) -> dict:  # noqa: ASYNC109 — timeout 传给 asyncio.wait_for
     """在指定服务器上执行命令
 
     ⚠️ 已废弃: 此函数使用 create_subprocess_shell，存在 shell 注入风险。

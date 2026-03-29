@@ -36,7 +36,7 @@ def _row_to_dict(row) -> dict | None:
     """将数据库行转换为字典"""
     if row is None:
         return None
-    return dict(zip(PLAYBOOK_COLUMNS, row))
+    return dict(zip(PLAYBOOK_COLUMNS, row, strict=False))
 
 
 async def get_playbook(playbook_id: str) -> dict | None:
@@ -103,7 +103,7 @@ async def update_playbook(playbook_id: str, updates: dict) -> None:
     set_parts.append("updated_at = ?")
     values.append(datetime.now().isoformat())
     values.append(playbook_id)
-    await db.execute(f"UPDATE playbooks SET {', '.join(set_parts)} WHERE id = ?", values)
+    await db.execute(f"UPDATE playbooks SET {', '.join(set_parts)} WHERE id = ?", values)  # noqa: S608 — 列名来自 PLAYBOOK_COLUMNS 白名单
     await db.commit()
 
 

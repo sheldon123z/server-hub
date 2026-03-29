@@ -29,7 +29,7 @@ def _validate_image_id(image_id: str) -> str:
     return image_id
 
 
-async def run_cmd(cmd: list[str], timeout: int = 30) -> str:
+async def run_cmd(cmd: list[str], timeout: int = 30) -> str:  # noqa: ASYNC109 — timeout 传给 asyncio.wait_for
     """
     异步执行子进程命令，返回 stdout 字符串
 

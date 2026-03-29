@@ -163,7 +163,7 @@ async def discover_all() -> dict:
 
 
 async def _upsert_asset(
-    db, aid: str, atype: str, name: str, status: str, properties: str, last_seen: str, dependencies: list = None
+    db, aid: str, atype: str, name: str, status: str, properties: str, last_seen: str, dependencies: list | None = None
 ):
     """插入或更新资产（不覆盖手动录入的资产）"""
     existing = await db.execute("SELECT is_manual FROM assets WHERE id = ?", (aid,))

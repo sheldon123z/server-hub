@@ -10,7 +10,7 @@ from utils.command import run_command_async
 from config import settings
 
 
-async def _run(cmd: list[str], timeout: int = 15, check: bool = True) -> tuple[int, str]:
+async def _run(cmd: list[str], timeout: int = 15, check: bool = True) -> tuple[int, str]:  # noqa: ASYNC109 — timeout 传给 run_command_async
     """
     执行命令，返回 (returncode, stdout)
 
@@ -47,7 +47,7 @@ async def list_services() -> list[dict]:
         active_task = _run(["systemctl", "is-active", name], check=False)
         enabled_task = _run(["systemctl", "is-enabled", name], check=False)
 
-        (active_rc, active_out), (enabled_rc, enabled_out) = await asyncio.gather(active_task, enabled_task)
+        (active_rc, active_out), (_enabled_rc, enabled_out) = await asyncio.gather(active_task, enabled_task)
 
         services.append(
             {

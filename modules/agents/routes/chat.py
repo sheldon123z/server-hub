@@ -23,7 +23,7 @@ from modules.agents.run_service import (
     unregister_active_run,
     update_run_status,
 )
-from modules.agents.schemas import ChatRequest
+from modules.agents.schemas import ChatRequest  # noqa: TC001 — FastAPI 需要运行时解析 Pydantic 模型
 from modules.agents.skill_service import load_skill_context
 
 logger = logging.getLogger(__name__)
