@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 _gpu_cache = {"ts": 0.0, "value": None}
 _gpu_cache_lock = threading.Lock()
+_cpu_cache = {"ts": 0.0, "value": None}
+_cpu_cache_lock = threading.Lock()
+_CPU_CACHE_TTL = 5  # seconds
 _top_process_cache = {"ts": 0.0, "limit": 0, "value": None}
 _top_process_lock = threading.Lock()
 _top_process_cpu_primed = False
@@ -82,11 +85,22 @@ def collect_system_info() -> dict:
 
 
 def collect_cpu() -> dict:
-    """采集 CPU 指标: 每核使用率、整体使用率、负载均值、核心数"""
-    per_cpu = psutil.cpu_percent(interval=1, percpu=True)
+    """采集 CPU 指标: 每核使用率、整体使用率、负载均值、核心数
+
+    使用 interval=0 非阻塞采集 + 5 秒 TTL 缓存，避免并发请求
+    各自阻塞 1 秒。首次调用返回 0（psutil 需要两次采样差值），
+    但 scheduler 每 60s 定时采集，实际运行时缓存命中率高。
+    """
+    now = time.time()
+    with _cpu_cache_lock:
+        cached = _cpu_cache["value"]
+        if cached is not None and now - _cpu_cache["ts"] < _CPU_CACHE_TTL:
+            return copy.deepcopy(cached)
+
+    per_cpu = psutil.cpu_percent(interval=0, percpu=True)
     overall = psutil.cpu_percent(interval=0)
     load_1, load_5, load_15 = psutil.getloadavg()
-    return {
+    result = {
         "per_cpu_percent": per_cpu,
         "overall_percent": overall,
         "load_avg": {
@@ -96,6 +110,11 @@ def collect_cpu() -> dict:
         },
         "count": psutil.cpu_count(logical=True),
     }
+
+    with _cpu_cache_lock:
+        _cpu_cache["ts"] = now
+        _cpu_cache["value"] = copy.deepcopy(result)
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -56,6 +56,8 @@ async def get_db() -> aiosqlite.Connection:
             _db.row_factory = aiosqlite.Row
             await _db.execute("PRAGMA journal_mode=WAL")
             await _db.execute("PRAGMA foreign_keys=ON")
+            await _db.execute("PRAGMA busy_timeout=5000")
+            await _db.execute("PRAGMA synchronous=NORMAL")
             await init_tables(_db)
     return _db
 
@@ -558,6 +560,13 @@ async def init_tables(db: aiosqlite.Connection):
             metadata TEXT DEFAULT '{}'
         );
         CREATE INDEX IF NOT EXISTS idx_team_msg_exec ON agent_team_messages(execution_id, timestamp);
+
+        -- 最新指标快照表 (UPSERT，避免自联结查最新行)
+        CREATE TABLE IF NOT EXISTS metrics_latest (
+            server_id TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     try:

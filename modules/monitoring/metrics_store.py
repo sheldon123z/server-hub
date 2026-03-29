@@ -56,8 +56,27 @@ class MetricsStore:
         return None
 
     async def query_fleet_latest(self) -> dict[str, dict]:
-        """Get the latest metrics for ALL servers in one query."""
+        """Get the latest metrics for ALL servers in one query.
+
+        Uses the metrics_latest table (UPSERT'd by scheduler) for O(N) lookup
+        instead of a self-join on the large metrics table.
+        Falls back to the old self-join query if metrics_latest is empty.
+        """
         db = await get_db()
+        # Fast path: metrics_latest table (populated by scheduler UPSERT)
+        rows = await (
+            await db.execute("SELECT server_id, data FROM metrics_latest")
+        ).fetchall()
+        if rows:
+            result = {}
+            for row in rows:
+                try:
+                    result[row[0]] = json.loads(row[1])
+                except (json.JSONDecodeError, IndexError):
+                    continue
+            return result
+
+        # Fallback: self-join (for first startup before any UPSERT)
         rows = await (
             await db.execute(
                 "SELECT m.server_id, m.value_json FROM metrics m "
@@ -98,25 +117,47 @@ class MetricsStore:
         return result
 
     async def query_fleet_history(self, hours: int = 1, metric: str = "cpu") -> dict[str, list]:
-        """Get historical metrics for ALL servers."""
+        """Get historical metrics for ALL servers.
+
+        Queries per-server_id to leverage idx_metrics_server_time index
+        instead of a full table scan with only timestamp filter.
+        """
         cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
         db = await get_db()
-        rows = await (
-            await db.execute(
-                "SELECT server_id, timestamp, value_json FROM metrics "
-                "WHERE metric_type = 'all' AND timestamp >= ? ORDER BY timestamp ASC",
-                (cutoff,),
-            )
+
+        # Get distinct server_ids first, then query each with index
+        sid_rows = await (
+            await db.execute("SELECT DISTINCT server_id FROM metrics_latest")
         ).fetchall()
+        if not sid_rows:
+            # Fallback: discover from metrics table
+            sid_rows = await (
+                await db.execute(
+                    "SELECT DISTINCT server_id FROM metrics WHERE metric_type = 'all' AND timestamp >= ?",
+                    (cutoff,),
+                )
+            ).fetchall()
+
         result: dict[str, list] = {}
-        for row in rows:
-            sid = row[0]
-            try:
-                data = json.loads(row[2])
-                data["_timestamp"] = row[1]
-                result.setdefault(sid, []).append(data)
-            except (json.JSONDecodeError, IndexError):
-                continue
+        for (sid,) in sid_rows:
+            rows = await (
+                await db.execute(
+                    "SELECT timestamp, value_json FROM metrics "
+                    "WHERE server_id = ? AND metric_type = 'all' AND timestamp >= ? "
+                    "ORDER BY timestamp ASC",
+                    (sid, cutoff),
+                )
+            ).fetchall()
+            entries = []
+            for row in rows:
+                try:
+                    data = json.loads(row[1])
+                    data["_timestamp"] = row[0]
+                    entries.append(data)
+                except (json.JSONDecodeError, IndexError):
+                    continue
+            if entries:
+                result[sid] = entries
         return result
 
     async def get_fleet_summary(self) -> dict:
