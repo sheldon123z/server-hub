@@ -1,9 +1,8 @@
 """安全专项测试 — Shell 黑名单、SQL 注入防御、interrupt_on 配置、团队安全层"""
 
 import os
-import re
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import aiosqlite
 import pytest

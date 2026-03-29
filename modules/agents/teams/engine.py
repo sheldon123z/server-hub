@@ -474,7 +474,7 @@ class TeamEngine:
         ):
             kind = event.get("event", "")
             name = event.get("name", "")
-            tags = event.get("tags", [])
+            _tags = event.get("tags", [])
 
             # 检测活跃 agent 切换 — 通过 on_chain_start 事件
             if kind == "on_chain_start" and name and name != current_agent:

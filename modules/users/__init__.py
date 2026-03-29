@@ -1,4 +1,4 @@
-from modules.users.routes import router
+from modules.users.routes import router as router
 
 MODULE_INFO = {
     "name": "users",

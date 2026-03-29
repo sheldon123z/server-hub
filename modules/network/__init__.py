@@ -1,4 +1,4 @@
-from modules.network.routes import router
+from modules.network.routes import router as router
 
 MODULE_INFO = {
     "name": "network",

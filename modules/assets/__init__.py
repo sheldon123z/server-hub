@@ -1,4 +1,4 @@
-from modules.assets.routes import router
+from modules.assets.routes import router as router
 
 MODULE_INFO = {
     "name": "assets",

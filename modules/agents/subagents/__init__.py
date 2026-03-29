@@ -18,9 +18,6 @@ from pathlib import Path
 
 from ._async_specs import get_async_subagent_specs, load_async_subagent_specs
 from ._config import (
-    _MIDDLEWARE_PROFILE_MAP,
-    _MODEL_PURPOSE_MAP,
-    MIDDLEWARE_PROFILES,
     _build_subagent_middleware,
     _build_subagents_from_config,
     _get_subagent_model,

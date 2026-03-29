@@ -1,4 +1,4 @@
-from modules.audit.routes import router
+from modules.audit.routes import router as router
 
 MODULE_INFO = {
     "name": "audit",

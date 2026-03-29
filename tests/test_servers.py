@@ -424,7 +424,7 @@ class TestAgentClient:
 
         with patch.object(
             _get_http_client().__class__, "request", new_callable=AsyncMock, return_value=mock_response
-        ) as mock_req:
+        ) as _mock_req:
             # Patch the global client's request method
             pass
 
@@ -674,7 +674,7 @@ class TestRemoteCollect:
         # Count metrics before
         before = await (await db.execute("SELECT COUNT(*) as cnt FROM metrics WHERE server_id = ?", (sid,))).fetchone()
 
-        with patch("modules.servers.agent_client.AgentClient") as MockClient:
+        with patch("modules.servers.agent_client.AgentClient") as _MockClient:
             from modules.monitoring.scheduler import _collect_remote_metrics
 
             await _collect_remote_metrics()

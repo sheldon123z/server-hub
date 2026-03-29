@@ -1,4 +1,4 @@
-from modules.settings.routes import router
+from modules.settings.routes import router as router
 
 MODULE_INFO = {
     "name": "settings",

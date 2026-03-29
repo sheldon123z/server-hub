@@ -262,7 +262,7 @@ async def execute_patrol(task: dict, triggered_by: str = "scheduler"):
     task_id = task["id"] if isinstance(task, dict) else task[0]
     display_name = task.get("display_name", task_id) if isinstance(task, dict) else task[1]
     description = task.get("description", "") if isinstance(task, dict) else task[2]
-    prompt_text = task.get("prompt", "") if isinstance(task, dict) else task[5]
+    _prompt_text = task.get("prompt", "") if isinstance(task, dict) else task[5]
 
     # 防止同一任务并发执行
     if task_id in _running_patrols:

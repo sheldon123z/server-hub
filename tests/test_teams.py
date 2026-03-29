@@ -1,9 +1,8 @@
 """智能体团队模块测试 — CRUD、模板 seed、引擎构建、状态合并"""
 
-import json
 import os
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import aiosqlite
 import pytest

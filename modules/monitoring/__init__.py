@@ -1,4 +1,4 @@
-from modules.monitoring.routes import router
+from modules.monitoring.routes import router as router
 
 MODULE_INFO = {
     "name": "monitoring",

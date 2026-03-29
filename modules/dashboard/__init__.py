@@ -1,4 +1,4 @@
-from modules.dashboard.routes import router
+from modules.dashboard.routes import router as router
 
 MODULE_INFO = {
     "name": "dashboard",

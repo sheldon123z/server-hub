@@ -1,4 +1,4 @@
-from modules.cron.routes import router
+from modules.cron.routes import router as router
 
 MODULE_INFO = {
     "name": "cron",

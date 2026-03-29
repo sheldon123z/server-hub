@@ -281,7 +281,7 @@ async def delete_cron_job(cron_user: str, schedule: str, command: str) -> bool:
     disabled_target = f"{_DISABLED_PREFIX}{target}"
     found = False
     new_lines = []
-    skip_prev_comment = False
+    _skip_prev_comment = False
 
     for i, line in enumerate(lines):
         stripped = line.strip()

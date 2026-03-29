@@ -1,4 +1,4 @@
-from modules.panel_users.routes import router
+from modules.panel_users.routes import router as router
 
 MODULE_INFO = {
     "name": "panel_users",
