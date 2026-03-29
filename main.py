@@ -208,23 +208,43 @@ async def _init_stale_cleanup():
 
 
 async def _cleanup_old_checkpoints():
-    """清理 30 天前的 LangGraph checkpoint 记录"""
+    """清理 30 天前的 LangGraph checkpoint 记录
+
+    LangGraph checkpoints 表没有 thread_ts 列，因此通过
+    agent_conversations 表的 created_at 交叉引用来判断过期会话。
+    """
     import aiosqlite
 
     from config import settings
 
     try:
+        app_db = await get_db()
+        # 获取 30 天内仍有活动的会话 ID
+        active_rows = await (
+            await app_db.execute(
+                "SELECT DISTINCT id FROM agent_conversations "
+                "WHERE created_at >= datetime('now', '-30 days')"
+            )
+        ).fetchall()
+        active_ids = {row[0] for row in active_rows}
+
         async with aiosqlite.connect(settings.agent_checkpoint_db) as db:
             await db.execute("PRAGMA busy_timeout=5000")
-            cursor = await db.execute(
-                "DELETE FROM checkpoints WHERE thread_ts < datetime('now', '-30 days')"
-            )
+            if active_ids:
+                placeholders = ",".join("?" for _ in active_ids)
+                cursor = await db.execute(
+                    f"DELETE FROM checkpoints WHERE thread_id NOT IN ({placeholders})",
+                    tuple(active_ids),
+                )
+            else:
+                # 没有活跃会话 — 全部清理
+                cursor = await db.execute("DELETE FROM checkpoints")
             deleted = cursor.rowcount
             await db.commit()
             if deleted:
                 logger.info("[ServerHub] 已清理 %d 条过期 checkpoint 记录", deleted)
     except Exception as e:
-        # checkpoint 表可能不存在（首次启动），或字段名不同 — 非致命
+        # checkpoint 表可能不存在（首次启动）— 非致命
         logger.debug("[ServerHub] checkpoint 清理跳过: %s", e)
 
 

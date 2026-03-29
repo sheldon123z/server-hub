@@ -217,18 +217,18 @@ async def _collect_remote_metrics():
     # 批量写入 — 单次 executemany + 单次 commit
     if collected:
         now_iso = datetime.now().isoformat()
-        insert_rows = [
-            (server_dict["id"], "all", json.dumps(snapshot, ensure_ascii=False)) for server_dict, snapshot in collected
+        # 缓存 JSON 序列化结果，避免同一 snapshot 序列化两次
+        serialized = [
+            (server_dict["id"], json.dumps(snapshot, ensure_ascii=False))
+            for server_dict, snapshot in collected
         ]
+        insert_rows = [(sid, "all", data_json) for sid, data_json in serialized]
         await db.executemany(
             "INSERT INTO metrics (server_id, metric_type, value_json) VALUES (?, ?, ?)",
             insert_rows,
         )
         # UPSERT metrics_latest — 远程服务器也维护最新快照
-        latest_rows = [
-            (server_dict["id"], json.dumps(snapshot, ensure_ascii=False), now_iso)
-            for server_dict, snapshot in collected
-        ]
+        latest_rows = [(sid, data_json, now_iso) for sid, data_json in serialized]
         await db.executemany(
             "INSERT OR REPLACE INTO metrics_latest (server_id, data, collected_at) VALUES (?, ?, ?)",
             latest_rows,
