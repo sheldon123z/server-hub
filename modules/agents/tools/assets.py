@@ -1,6 +1,10 @@
 """资产台账与故障案例工具"""
 
+import logging
+
 from langchain_core.tools import tool
+
+logger = logging.getLogger(__name__)
 
 
 @tool
@@ -97,8 +101,8 @@ async def save_fault_case(title: str, category: str, symptoms: str, root_cause: 
                         "VALUES (?, ?, ?, ?, ?, ?)",
                         (case_id, title, symptoms, root_cause, solution, tags),
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("FTS5 索引写入失败: %s", e)
 
             await db.commit()
             return f"案例已保存 (ID: {case_id})。标题: {title}"

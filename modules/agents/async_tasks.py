@@ -59,7 +59,7 @@ async def start_background_task(task_type: str, instruction: str) -> str:
     async_task = asyncio.create_task(coro, name=f"bg-{task_type}-{task_id}")
     _running_tasks[task_id] = async_task
 
-    logger.info(f"后台任务已启动: {task_id} ({task_type})")
+    logger.info("后台任务已启动: %s (%s)", task_id, task_type)
     return task_id
 
 
@@ -103,7 +103,7 @@ async def _execute_background(task_id: str, task_type: str, instruction: str):
             (report[:10000], datetime.now().isoformat(), task_id),
         )
         await db.commit()
-        logger.info(f"后台任务完成: {task_id} ({duration:.1f}s)")
+        logger.info("后台任务完成: %s (%.1fs)", task_id, duration)
 
     except asyncio.TimeoutError:
         db = await get_db()
@@ -112,7 +112,7 @@ async def _execute_background(task_id: str, task_type: str, instruction: str):
             ("任务执行超时（5分钟限制）", datetime.now().isoformat(), task_id),
         )
         await db.commit()
-        logger.warning(f"后台任务超时: {task_id}")
+        logger.warning("后台任务超时: %s", task_id)
 
     except asyncio.CancelledError:
         db = await get_db()
@@ -121,7 +121,7 @@ async def _execute_background(task_id: str, task_type: str, instruction: str):
             (datetime.now().isoformat(), task_id),
         )
         await db.commit()
-        logger.info(f"后台任务已取消: {task_id}")
+        logger.info("后台任务已取消: %s", task_id)
 
     except Exception as e:
         db = await get_db()
@@ -130,7 +130,7 @@ async def _execute_background(task_id: str, task_type: str, instruction: str):
             (str(e)[:2000], datetime.now().isoformat(), task_id),
         )
         await db.commit()
-        logger.error(f"后台任务失败: {task_id} — {e}")
+        logger.error("后台任务失败: %s — %s", task_id, e)
 
     finally:
         _running_tasks.pop(task_id, None)

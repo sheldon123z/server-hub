@@ -63,7 +63,7 @@ class SafeLocalShellBackend(LocalShellBackend):
         SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
         # 从继承的环境中剥离敏感变量
         self._env = self._strip_sensitive_env(self._env)
-        logger.info(f"SafeLocalShellBackend 已初始化，沙箱目录: {SANDBOX_DIR}")
+        logger.info("SafeLocalShellBackend 已初始化，沙箱目录: %s", SANDBOX_DIR)
 
     @staticmethod
     def _strip_sensitive_env(env: dict) -> dict:
@@ -76,7 +76,7 @@ class SafeLocalShellBackend(LocalShellBackend):
                 continue
             safe[key] = value
         if stripped_count:
-            logger.info(f"已从 execute 环境中剥离 {stripped_count} 个敏感变量")
+            logger.info("已从 execute 环境中剥离 %d 个敏感变量", stripped_count)
         return safe
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:

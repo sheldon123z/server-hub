@@ -134,8 +134,8 @@ def get_subagents_config() -> list[dict]:
     if custom_path.exists():
         try:
             return json.loads(custom_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("自定义 SubAgent 配置加载失败: %s", e)
     # 延迟导入避免循环
     from . import get_subagents
     defaults = get_subagents()

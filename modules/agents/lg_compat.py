@@ -59,7 +59,7 @@ _graphs: dict[str, object] = {}  # graph_id → compiled LangGraph graph
 def register_graph(graph_id: str, graph) -> None:
     """注册一个编译好的 graph 供异步执行"""
     _graphs[graph_id] = graph
-    logger.info(f"LG Compat: 已注册 graph '{graph_id}'")
+    logger.info("LG Compat: 已注册 graph '%s'", graph_id)
 
 
 def _now_iso() -> str:
@@ -134,7 +134,7 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
 
         run.status = "success"
         run.updated_at = _now_iso()
-        logger.info(f"LG Compat: run {run.run_id} 完成 (graph={run.assistant_id})")
+        logger.info("LG Compat: run %s 完成 (graph=%s)", run.run_id, run.assistant_id)
 
     except asyncio.TimeoutError:
         run.status = "error"
@@ -142,14 +142,14 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
         run.updated_at = _now_iso()
         async with thread.lock:
             thread.status = "idle"
-        logger.warning(f"LG Compat: run {run.run_id} 超时")
+        logger.warning("LG Compat: run %s 超时", run.run_id)
 
     except asyncio.CancelledError:
         run.status = "cancelled"
         run.updated_at = _now_iso()
         async with thread.lock:
             thread.status = "idle"
-        logger.info(f"LG Compat: run {run.run_id} 已取消")
+        logger.info("LG Compat: run %s 已取消", run.run_id)
 
     except Exception as e:
         run.status = "error"
@@ -157,7 +157,7 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
         run.updated_at = _now_iso()
         async with thread.lock:
             thread.status = "idle"
-        logger.error(f"LG Compat: run {run.run_id} 失败: {e}")
+        logger.error("LG Compat: run %s 失败: %s", run.run_id, e)
 
 
 # ─── HTTP 端点 ───
@@ -328,9 +328,9 @@ async def _cleanup_loop():
                 del _threads[tid]
 
             if stale_threads:
-                logger.info(f"LG Compat: 已清理 {len(stale_threads)} 个过期 thread")
+                logger.info("LG Compat: 已清理 %d 个过期 thread", len(stale_threads))
         except Exception as e:
-            logger.error(f"LG Compat 清理失败: {e}")
+            logger.error("LG Compat 清理失败: %s", e)
 
 
 async def start_cleanup():

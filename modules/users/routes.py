@@ -68,7 +68,7 @@ async def list_users(
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         return result["data"].get("users", [])
-    stats = await asyncio.get_event_loop().run_in_executor(None, get_user_stats)
+    stats = await asyncio.to_thread(get_user_stats)
     return stats
 
 
@@ -77,7 +77,7 @@ async def list_users(
 @router.get("/all")
 async def list_all_users(user=Depends(require_role("admin"))):
     """获取所有 Linux 用户详细信息（含管理员）"""
-    users = await asyncio.get_event_loop().run_in_executor(None, get_all_linux_users)
+    users = await asyncio.to_thread(get_all_linux_users)
     return {"users": users}
 
 
@@ -107,7 +107,7 @@ async def active_sessions(
                     "from": parts[4].strip("()") if len(parts) >= 5 else "",
                 })
         return {"sessions": sessions, "count": len(sessions)}
-    sessions = await asyncio.get_event_loop().run_in_executor(None, get_active_sessions)
+    sessions = await asyncio.to_thread(get_active_sessions)
     return {"sessions": sessions, "count": len(sessions)}
 
 
@@ -115,9 +115,7 @@ async def active_sessions(
 async def user_login_history(username: str, count: int = 20, user=Depends(require_role("admin"))):
     """获取指定用户的登录历史"""
     try:
-        entries = await asyncio.get_event_loop().run_in_executor(
-            None, get_user_login_history, username, count
-        )
+        entries = await asyncio.to_thread(get_user_login_history, username, count)
         return {"entries": entries, "count": len(entries)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -177,17 +175,13 @@ async def get_violations(
 @router.post("/create")
 async def do_create_user(body: CreateUserRequest, request: Request, user=Depends(require_role("admin"))):
     """创建新的 Linux 用户"""
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, create_linux_user, body.username, body.groups, body.shell
-    )
+    result = await asyncio.to_thread(create_linux_user, body.username, body.groups, body.shell)
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["error"])
 
     # 设置密码（如果提供）
     if body.password:
-        pwd_result = await asyncio.get_event_loop().run_in_executor(
-            None, set_user_password, body.username, body.password
-        )
+        pwd_result = await asyncio.to_thread(set_user_password, body.username, body.password)
         if not pwd_result["ok"]:
             return {"ok": True, "warning": f"用户已创建，但设置密码失败: {pwd_result['error']}"}
 
@@ -209,9 +203,7 @@ async def do_delete_user(
     user=Depends(require_role("admin")),
 ):
     """删除 Linux 用户"""
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, delete_linux_user, username, remove_home
-    )
+    result = await asyncio.to_thread(delete_linux_user, username, remove_home)
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["error"])
 
@@ -233,9 +225,7 @@ async def do_modify_user(
     user=Depends(require_role("admin")),
 ):
     """修改用户属性（组、shell）"""
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, modify_linux_user, username, body.groups, body.shell
-    )
+    result = await asyncio.to_thread(modify_linux_user, username, body.groups, body.shell)
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["error"])
 
@@ -257,9 +247,7 @@ async def do_set_password(
     user=Depends(require_role("admin")),
 ):
     """设置用户密码"""
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, set_user_password, username, body.password
-    )
+    result = await asyncio.to_thread(set_user_password, username, body.password)
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["error"])
 
@@ -312,9 +300,7 @@ async def kill_process(
             ip=request.client.host if request.client else "unknown",
         )
         return {"ok": True, "message": f"已终止远程进程 {pid}"}
-    result = await asyncio.get_event_loop().run_in_executor(
-        None, kill_single_process, pid, username
-    )
+    result = await asyncio.to_thread(kill_single_process, pid, username)
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["error"])
 

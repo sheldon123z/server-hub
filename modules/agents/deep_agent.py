@@ -96,9 +96,9 @@ def _build_extra_middleware(purpose: str = "chat") -> list:
             try:
                 fallback = get_chat_model("patrol")
                 extra.append(ModelFallbackMiddleware(fallback))
-                logger.info(f"ModelFallback: 备用模型 {fallback_model}")
+                logger.info("ModelFallback: 备用模型 %s", fallback_model)
             except Exception as e:
-                logger.warning(f"ModelFallback 配置失败: {e}")
+                logger.warning("ModelFallback 配置失败: %s", e)
 
     return extra
 
@@ -111,7 +111,7 @@ async def _get_store() -> AsyncSqliteStore:
         Path(store_path).parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(store_path)
         _store = AsyncSqliteStore(conn)
-        logger.info(f"AsyncSqliteStore 已创建: {store_path}")
+        logger.info("AsyncSqliteStore 已创建: %s", store_path)
     return _store
 
 
@@ -145,7 +145,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
             async_specs = load_async_subagent_specs()
             subagents = subagents + async_specs
         except Exception as e:
-            logger.warning(f"异步 SubAgent 配置加载失败 (非致命): {e}")
+            logger.warning("异步 SubAgent 配置加载失败 (非致命): %s", e)
         store = await _get_store()
 
     # Checkpoint — 短期记忆（per-conversation state 持久化）

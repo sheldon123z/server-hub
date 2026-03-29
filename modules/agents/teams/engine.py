@@ -497,8 +497,8 @@ class TeamEngine:
                             exec_id, current_agent, None, "status",
                             f"{current_agent} 开始工作"
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("记录 agent 状态失败: %s", e)
 
             # LLM 流式输出
             elif kind == "on_chat_model_stream":
@@ -537,8 +537,8 @@ class TeamEngine:
                         exec_id, current_agent, None, "tool_call",
                         f"调用 {tool_name}: {input_str[:200]}"
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("记录 tool_call 消息失败: %s", e)
 
             # 工具结果
             elif kind == "on_tool_end":

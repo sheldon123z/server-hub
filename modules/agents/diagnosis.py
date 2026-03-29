@@ -64,7 +64,7 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
         alert_context: 告警上下文描述
     """
     report_id = str(uuid.uuid4())
-    logger.info(f"触发故障诊断: source={source}, severity={severity}")
+    logger.info("触发故障诊断: source=%s, severity=%s", source, severity)
 
     try:
         from modules.agents.deep_agent import build_agent
@@ -146,11 +146,11 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
                         (case_id, f"[自动] {parsed['root_cause'][:60]}", symptoms_text[:500],
                          parsed["root_cause"][:1000], solutions_text[:1000], f"{severity},{category}"),
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("FTS5 索引写入失败: %s", e)
                 await db.commit()
             except Exception as e:
-                logger.error(f"自动录入案例库失败: {e}")
+                logger.error("自动录入案例库失败: %s", e)
 
         # 发送 Telegram 摘要
         try:
@@ -166,13 +166,13 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
                 summary = f"🔍 故障诊断完成 (来源: {source})\n{report_text[:400]}"
             await send_telegram(summary[:1000])
         except Exception as e:
-            logger.error(f"诊断报告通知发送失败: {e}")
+            logger.error("诊断报告通知发送失败: %s", e)
 
-        logger.info(f"故障诊断完成: {report_id}")
+        logger.info("故障诊断完成: %s", report_id)
         return report_id
 
     except Exception as e:
-        logger.error(f"故障诊断失败: {e}", exc_info=True)
+        logger.error("故障诊断失败: %s", e, exc_info=True)
         # 记录失败
         try:
             db = await get_db()
@@ -182,5 +182,5 @@ async def trigger_diagnosis(source: str, severity: str, alert_context: str):
             )
             await db.commit()
         except Exception as e2:
-            logger.error(f"故障报告存储也失败: {e2}")
+            logger.error("故障报告存储也失败: %s", e2)
         return None

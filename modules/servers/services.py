@@ -277,9 +277,9 @@ async def test_connectivity(server_id: str) -> dict:
                 resp = await http_client.get(f"http://{ip}:{agent_port}/health", timeout=5)
                 result["agent_ok"] = resp.status_code == 200
         except ImportError:
-            pass
-        except Exception:
-            pass
+            logger.debug("httpx 未安装，跳过 Agent 健康检查")
+        except Exception as e:
+            logger.debug("Agent 健康检查失败 (ip=%s): %s", ip, e)
 
     # 并行执行所有连通性测试
     await asyncio.gather(

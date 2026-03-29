@@ -218,8 +218,8 @@ def _evaluate_baseline(baseline: dict, output: str) -> tuple[bool, str]:
                 if "expect_min" in baseline and value < baseline["expect_min"]:
                     passed = False
                     detail = f"当前值 {value} 低于最小值 {baseline['expect_min']}"
-            except (ValueError, IndexError):
-                pass
+            except (ValueError, IndexError) as e:
+                logger.debug("基线数值解析失败: %s", e)
         else:
             passed = False
             detail = "未匹配到期望模式"

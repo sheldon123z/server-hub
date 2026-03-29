@@ -142,7 +142,7 @@ def get_chat_model(purpose: str = "chat") -> ChatOpenAI:
 
     provider = PROVIDERS.get(provider_key)
     if not provider:
-        logger.warning(f"Unknown provider '{provider_key}', falling back to openrouter")
+        logger.warning("Unknown provider '%s', falling back to openrouter", provider_key)
         provider = PROVIDERS["openrouter"]
 
     # 获取 API Key
@@ -150,7 +150,7 @@ def get_chat_model(purpose: str = "chat") -> ChatOpenAI:
     api_key = os.getenv(api_key_env, "") if api_key_env else "not-needed"
 
     if not api_key and provider_key != "ollama":
-        logger.warning(f"Provider {provider_key} has no API key ({api_key_env}), may fail")
+        logger.warning("Provider %s has no API key (%s), may fail", provider_key, api_key_env)
 
     return ChatOpenAI(
         model=model_name,
@@ -174,7 +174,7 @@ def get_chat_model_by_id(model_id: str | None = None) -> ChatOpenAI:
     provider_key, model_name = parse_model_id(model_id)
     provider = PROVIDERS.get(provider_key)
     if not provider:
-        logger.warning(f"Unknown provider '{provider_key}' in model_id '{model_id}', falling back to default")
+        logger.warning("Unknown provider '%s' in model_id '%s', falling back to default", provider_key, model_id)
         return get_chat_model("chat")
 
     api_key_env = provider.get("api_key_env", "")

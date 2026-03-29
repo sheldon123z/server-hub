@@ -134,7 +134,7 @@ async def fire_alert(rule: dict, severity: str, value: float):
         (rule["id"], severity, value, message),
     )
     await db.commit()
-    logger.warning(f"告警触发: {message}")
+    logger.warning("告警触发: %s", message)
 
     # 再异步发送通知（不阻塞告警流程）
     if rule.get("notify", True):
@@ -149,7 +149,7 @@ async def fire_alert(rule: dict, severity: str, value: float):
             )
             await db.commit()
         except Exception as e:
-            logger.error(f"告警通知发送失败: {e}")
+            logger.error("告警通知发送失败: %s", e)
 
 
 async def evaluate_rules(metrics: dict) -> list[dict]:
@@ -410,5 +410,5 @@ async def seed_baseline_rules():
                      rule["rule_type"], rule["baseline_window_hours"], rule["stddev_multiplier"]),
                 )
             except Exception as e:
-                logger.debug(f"基线规则 {rule['id']} 创建失败（可能列不存在）: {e}")
+                logger.debug("基线规则 %s 创建失败（可能列不存在）: %s", rule["id"], e)
     await db.commit()

@@ -33,8 +33,8 @@ def _read_os_pretty_name() -> str:
             for line in f:
                 if line.startswith("PRETTY_NAME="):
                     return line.split("=", 1)[1].strip().strip('"')
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("读取 /etc/os-release 失败: %s", e)
     return platform.system()
 
 
@@ -45,8 +45,8 @@ def _read_cpu_model() -> str:
             for line in f:
                 if line.lower().startswith("model name"):
                     return line.split(":", 1)[1].strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("读取 /proc/cpuinfo 失败: %s", e)
     return platform.processor() or "Unknown CPU"
 
 
@@ -273,8 +273,8 @@ def collect_network() -> dict:
         for c in conns:
             st = c.status
             tcp_states[st] = tcp_states.get(st, 0) + 1
-    except (psutil.AccessDenied, PermissionError):
-        pass
+    except (psutil.AccessDenied, PermissionError) as e:
+        logger.debug("TCP 连接状态采集受限: %s", e)
 
     tcp_total = sum(tcp_states.values())
 

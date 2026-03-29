@@ -21,7 +21,7 @@ _ws_task: asyncio.Task | None = None
 async def _collect_and_store():
     """采集一次完整指标并写入数据库，同时通过 WS 广播"""
     try:
-        snapshot = await asyncio.get_event_loop().run_in_executor(None, collect_all)
+        snapshot = await asyncio.to_thread(collect_all)
         db = await get_db()
         await db.execute(
             "INSERT INTO metrics (metric_type, value_json) VALUES (?, ?)",
@@ -34,17 +34,17 @@ async def _collect_and_store():
             from modules.agents.alert_engine import check_baseline_deviation
             await check_baseline_deviation(snapshot)
         except Exception as e:
-            logger.debug(f"基线检测跳过: {e}")
+            logger.debug("基线检测跳过: %s", e)
 
         # 全量数据也通过 WS 广播
         try:
             from modules.monitoring.routes import ws_manager
             await ws_manager.broadcast({"type": "metrics_full", "server_id": "local", "data": snapshot})
         except Exception as e:
-            logger.debug(f"WS全量广播跳过: {e}")
+            logger.debug("WS全量广播跳过: %s", e)
 
     except Exception as e:
-        logger.error(f"指标采集失败: {e}")
+        logger.error("指标采集失败: %s", e)
 
 
 async def _cleanup_old_metrics():
@@ -69,7 +69,7 @@ async def _cleanup_old_metrics():
             )
         await db.commit()
     except Exception as e:
-        logger.error(f"清理过期指标失败: {e}")
+        logger.error("清理过期指标失败: %s", e)
 
 
 async def _check_quota_enforcement():
@@ -78,7 +78,7 @@ async def _check_quota_enforcement():
         from modules.users.services import check_and_enforce_quotas
         await check_and_enforce_quotas()
     except Exception as e:
-        logger.debug(f"配额处置检查跳过: {e}")
+        logger.debug("配额处置检查跳过: %s", e)
 
 
 async def _scheduler_loop():
@@ -98,16 +98,14 @@ async def _ws_broadcast_loop():
     """5秒快速采集并广播到 WebSocket 客户端"""
     from modules.monitoring.routes import ws_manager
 
-    logger.info(f"WebSocket 广播循环已启动 (间隔: {settings.ws_metrics_interval}s)")
+    logger.info("WebSocket 广播循环已启动 (间隔: %ss)", settings.ws_metrics_interval)
     while True:
         if ws_manager.connection_count:
             try:
-                snapshot = await asyncio.get_event_loop().run_in_executor(
-                    None, collect_realtime_fast
-                )
+                snapshot = await asyncio.to_thread(collect_realtime_fast)
                 await ws_manager.broadcast({"type": "metrics", "server_id": "local", "data": snapshot})
             except Exception as e:
-                logger.error(f"WS广播失败: {e}")
+                logger.error("WS广播失败: %s", e)
         await asyncio.sleep(settings.ws_metrics_interval)
 
 
@@ -131,7 +129,7 @@ async def stop_scheduler():
     for task, name in [(_scheduler_task, "DB采集"), (_ws_task, "WS广播")]:
         if task is not None and not task.done():
             task.cancel()
-            logger.info(f"{name}循环已停止")
+            logger.info("%s循环已停止", name)
 
     _scheduler_task = None
     _ws_task = None

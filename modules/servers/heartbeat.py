@@ -69,8 +69,8 @@ async def _check_all_servers():
                 else:
                     layer1_ok = result.get("status") == "ok"
                     agent_version = result.get("version", "")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("心跳 Layer 1 健康检查失败 (server=%s): %s", server_id, e)
 
             if not layer1_ok:
                 # Layer 1 失败，直接标记 offline
