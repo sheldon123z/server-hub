@@ -219,8 +219,7 @@ async def _collect_remote_metrics():
         now_iso = datetime.now().isoformat()
         # 缓存 JSON 序列化结果，避免同一 snapshot 序列化两次
         serialized = [
-            (server_dict["id"], json.dumps(snapshot, ensure_ascii=False))
-            for server_dict, snapshot in collected
+            (server_dict["id"], json.dumps(snapshot, ensure_ascii=False)) for server_dict, snapshot in collected
         ]
         insert_rows = [(sid, "all", data_json) for sid, data_json in serialized]
         await db.executemany(

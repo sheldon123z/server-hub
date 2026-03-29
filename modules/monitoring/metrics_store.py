@@ -64,9 +64,7 @@ class MetricsStore:
         """
         db = await get_db()
         # Fast path: metrics_latest table (populated by scheduler UPSERT)
-        rows = await (
-            await db.execute("SELECT server_id, data FROM metrics_latest")
-        ).fetchall()
+        rows = await (await db.execute("SELECT server_id, data FROM metrics_latest")).fetchall()
         if rows:
             result = {}
             for row in rows:
@@ -126,9 +124,7 @@ class MetricsStore:
         db = await get_db()
 
         # Get distinct server_ids first, then query each with index
-        sid_rows = await (
-            await db.execute("SELECT DISTINCT server_id FROM metrics_latest")
-        ).fetchall()
+        sid_rows = await (await db.execute("SELECT DISTINCT server_id FROM metrics_latest")).fetchall()
         if not sid_rows:
             # Fallback: discover from metrics table
             sid_rows = await (

@@ -125,9 +125,7 @@ class TestTeamCRUD:
         from modules.agents.teams.store import TeamStore
 
         store = TeamStore()
-        team = await store.create_team(
-            {"name": "待删除团队", "topology": "pipeline", "created_by": "test"}
-        )
+        team = await store.create_team({"name": "待删除团队", "topology": "pipeline", "created_by": "test"})
         assert await store.get_team(team["id"]) is not None
 
         deleted = await store.delete_team(team["id"])
@@ -228,12 +226,8 @@ class TestMemberCRUD:
         from modules.agents.teams.store import TeamStore
 
         store = TeamStore()
-        team = await store.create_team(
-            {"name": "成员删除测试团队", "topology": "pipeline", "created_by": "test"}
-        )
-        member = await store.add_member(
-            team["id"], {"name": "临时成员", "system_prompt": "测试"}
-        )
+        team = await store.create_team({"name": "成员删除测试团队", "topology": "pipeline", "created_by": "test"})
+        member = await store.add_member(team["id"], {"name": "临时成员", "system_prompt": "测试"})
         removed = await store.remove_member(member["id"])
         assert removed is True
 
@@ -351,9 +345,7 @@ class TestTeamEngine:
         from modules.agents.teams.store import TeamStore
 
         store = TeamStore()
-        team = await store.create_team(
-            {"name": "空成员团队", "topology": "supervisor", "created_by": "test"}
-        )
+        team = await store.create_team({"name": "空成员团队", "topology": "supervisor", "created_by": "test"})
 
         engine = TeamEngine(store=store)
         with pytest.raises(ValueError, match="无成员"):
@@ -365,9 +357,7 @@ class TestTeamEngine:
         from modules.agents.teams.store import TeamStore
 
         store = TeamStore()
-        team = await store.create_team(
-            {"name": "单Leader团队", "topology": "supervisor", "created_by": "test"}
-        )
+        team = await store.create_team({"name": "单Leader团队", "topology": "supervisor", "created_by": "test"})
         await store.add_member(
             team["id"],
             {"name": "唯一Leader", "agent_type": "leader", "system_prompt": "test"},
@@ -386,9 +376,7 @@ class TestTeamEngine:
         from modules.agents.teams.store import TeamStore
 
         store = TeamStore()
-        team = await store.create_team(
-            {"name": "Pipeline测试", "topology": "pipeline", "created_by": "test"}
-        )
+        team = await store.create_team({"name": "Pipeline测试", "topology": "pipeline", "created_by": "test"})
         await store.add_member(
             team["id"],
             {"name": "Stage2", "system_prompt": "second", "position": 2},

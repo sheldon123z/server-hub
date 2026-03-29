@@ -84,9 +84,7 @@ async def _process_ai_message(
     return events
 
 
-async def _process_tool_message(
-    msg: ToolMessage, run_id: str, conversation_id: str, username: str
-) -> list[dict]:
+async def _process_tool_message(msg: ToolMessage, run_id: str, conversation_id: str, username: str) -> list[dict]:
     """处理工具调用结果消息，返回要 yield 的 SSE event 列表。"""
     msg_id = getattr(msg, "id", None)
     payload = {
@@ -110,9 +108,7 @@ async def _process_tool_message(
     return events
 
 
-async def _handle_interrupt(
-    snapshot, run_id: str, conversation_id: str, db
-) -> list[dict]:
+async def _handle_interrupt(snapshot, run_id: str, conversation_id: str, db) -> list[dict]:
     """处理审批中断（interrupt），返回要 yield 的 SSE event 列表。"""
     events: list[dict] = []
     tasks = snapshot.tasks
@@ -290,9 +286,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                             yield event
 
                     elif isinstance(msg, ToolMessage):
-                        for event in await _process_tool_message(
-                            msg, run_id, conversation_id, user["username"]
-                        ):
+                        for event in await _process_tool_message(msg, run_id, conversation_id, user["username"]):
                             yield event
 
                 emitted_count = len(messages)

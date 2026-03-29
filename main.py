@@ -222,8 +222,7 @@ async def _cleanup_old_checkpoints():
         # 获取 30 天内仍有活动的会话 ID
         active_rows = await (
             await app_db.execute(
-                "SELECT DISTINCT id FROM agent_conversations "
-                "WHERE created_at >= datetime('now', '-30 days')"
+                "SELECT DISTINCT id FROM agent_conversations WHERE created_at >= datetime('now', '-30 days')"
             )
         ).fetchall()
         active_ids = {row[0] for row in active_rows}

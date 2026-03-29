@@ -33,9 +33,7 @@ class WebTerminal:
     def spawn(self, cols: int = 120, rows: int = 30):
         """启动一个 bash 子进程，连接到 PTY"""
         if WebTerminal._active_count >= MAX_CONCURRENT_TERMINALS:
-            raise RuntimeError(
-                f"已达到最大并发终端数 ({MAX_CONCURRENT_TERMINALS})，请先关闭已有终端"
-            )
+            raise RuntimeError(f"已达到最大并发终端数 ({MAX_CONCURRENT_TERMINALS})，请先关闭已有终端")
 
         pid, fd = pty.fork()
         if pid == 0:
@@ -54,7 +52,10 @@ class WebTerminal:
             fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
             logger.info(
                 "Terminal spawned: pid=%d, fd=%d (active: %d/%d)",
-                pid, fd, WebTerminal._active_count, MAX_CONCURRENT_TERMINALS,
+                pid,
+                fd,
+                WebTerminal._active_count,
+                MAX_CONCURRENT_TERMINALS,
             )
 
     def resize(self, cols: int, rows: int):
@@ -121,5 +122,6 @@ class WebTerminal:
             WebTerminal._active_count = max(0, WebTerminal._active_count - 1)
             logger.info(
                 "Terminal closed (active: %d/%d)",
-                WebTerminal._active_count, MAX_CONCURRENT_TERMINALS,
+                WebTerminal._active_count,
+                MAX_CONCURRENT_TERMINALS,
             )

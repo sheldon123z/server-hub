@@ -35,14 +35,12 @@ async def auth_db():
 
     # 插入测试管理员
     await db.execute(
-        "INSERT INTO panel_users (username, hashed_password, display_name, role, token_version) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO panel_users (username, hashed_password, display_name, role, token_version) VALUES (?, ?, ?, ?, ?)",
         ("testadmin", hash_password("admin123"), "测试管理员", "admin", 0),
     )
     # 插入普通用户
     await db.execute(
-        "INSERT INTO panel_users (username, hashed_password, display_name, role, token_version) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO panel_users (username, hashed_password, display_name, role, token_version) VALUES (?, ?, ?, ?, ?)",
         ("testuser", hash_password("user123"), "测试用户", "user", 0),
     )
     # 插入已禁用用户
