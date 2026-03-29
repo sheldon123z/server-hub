@@ -34,6 +34,10 @@ def _setup_logging():
         console.setFormatter(fmt)
         root.addHandler(console)
 
+    # 防止重复添加 RotatingFileHandler（uvicorn --reload 等场景）
+    if any(isinstance(h, RotatingFileHandler) for h in root.handlers):
+        return
+
     # 文件轮转：单文件 10MB，保留 10 个（总计最多 ~100MB）
     file_handler = RotatingFileHandler(
         str(log_dir / "server-hub.log"),
@@ -137,7 +141,7 @@ async def lifespan(app: FastAPI):
                 await asyncio.wait_for(coro, timeout=30)
                 _subsystem_status[name] = "ready"
                 logger.info("[ServerHub] %s 已启动", name)
-            except TimeoutError:
+            except TimeoutError:  # asyncio.TimeoutError is TimeoutError in Python 3.11+
                 _subsystem_status[name] = "timeout"
                 logger.warning("[ServerHub] %s 启动超时(30s)", name)
             except Exception as e:

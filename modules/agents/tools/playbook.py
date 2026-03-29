@@ -104,7 +104,7 @@ async def ssh_execute_command(
                     if stderr:
                         entry += f"STDERR:\n```\n{stderr[:2000]}\n```\n"
                     results.append(entry)
-                except TimeoutError:
+                except TimeoutError:  # asyncio.TimeoutError is TimeoutError in Python 3.11+
                     results.append(f"## {cmd}\n命令执行超时 ({timeout}s)\n")
     except asyncssh.DisconnectError as e:
         return f"SSH 连接断开: {e}"
