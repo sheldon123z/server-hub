@@ -31,6 +31,176 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# event_generator 辅助函数
+# ---------------------------------------------------------------------------
+
+
+async def _process_ai_message(
+    msg: AIMessage, run_id: str, conversation_id: str, emitted_ids: set[str], username: str
+) -> list[dict]:
+    """处理 AI 消息，返回要 yield 的 SSE event 列表。"""
+    events: list[dict] = []
+
+    if getattr(msg, "tool_calls", None):
+        for tc in msg.tool_calls:
+            tc_id = tc.get("id", "")
+            if tc_id and tc_id in emitted_ids:
+                continue
+            if tc_id:
+                emitted_ids.add(tc_id)
+            payload = {
+                "run_id": run_id,
+                "tool": tc["name"],
+                "input": tc["args"],
+                "id": tc_id,
+            }
+            await append_run_event(run_id, conversation_id, "tool.call", payload)
+            events.append({"event": "tool.call", "data": json.dumps(payload, ensure_ascii=False)})
+            try:
+                from modules.agents.safety import TOOL_RISK_MAP
+
+                await record_legacy_agent_event(
+                    conversation_id,
+                    event_type="tool_call",
+                    username=username,
+                    tool_name=tc["name"],
+                    tool_input=json.dumps(tc["args"], ensure_ascii=False)[:1000],
+                    risk_level=TOOL_RISK_MAP.get(tc["name"], "safe"),
+                )
+            except Exception as e:
+                logger.debug("记录 tool_call 事件失败: %s", e)
+    elif msg.content:
+        msg_id = getattr(msg, "id", None)
+        payload = {
+            "run_id": run_id,
+            "content": msg.content,
+            "role": "assistant",
+            "id": msg_id or "",
+        }
+        await append_run_event(run_id, conversation_id, "message.final", payload)
+        events.append({"event": "message.final", "data": json.dumps(payload, ensure_ascii=False)})
+
+    return events
+
+
+async def _process_tool_message(
+    msg: ToolMessage, run_id: str, conversation_id: str, username: str
+) -> list[dict]:
+    """处理工具调用结果消息，返回要 yield 的 SSE event 列表。"""
+    msg_id = getattr(msg, "id", None)
+    payload = {
+        "run_id": run_id,
+        "tool": getattr(msg, "name", ""),
+        "content": msg.content[:1500] if msg.content else "",
+        "id": msg_id or "",
+    }
+    await append_run_event(run_id, conversation_id, "tool.result", payload)
+    events = [{"event": "tool.result", "data": json.dumps(payload, ensure_ascii=False)}]
+    try:
+        await record_legacy_agent_event(
+            conversation_id,
+            event_type="tool_result",
+            username=username,
+            tool_name=getattr(msg, "name", ""),
+            tool_output=(msg.content[:500] if msg.content else ""),
+        )
+    except Exception as e:
+        logger.debug("记录 tool_result 事件失败: %s", e)
+    return events
+
+
+async def _handle_interrupt(
+    snapshot, run_id: str, conversation_id: str, db
+) -> list[dict]:
+    """处理审批中断（interrupt），返回要 yield 的 SSE event 列表。"""
+    events: list[dict] = []
+    tasks = snapshot.tasks
+    if not (tasks and tasks[0].interrupts):
+        # 有 next 但没有 interrupts — 视为完成
+        payload = {"conversation_id": conversation_id, "run_id": run_id, "status": "completed"}
+        await append_run_event(run_id, conversation_id, "run.completed", payload)
+        await update_run_status(run_id, status="completed", completed=True)
+        events.append({"event": "run.completed", "data": json.dumps(payload, ensure_ascii=False)})
+        return events
+
+    interrupt_value = tasks[0].interrupts[0].value
+    action_requests = interrupt_value.get("action_requests", [])
+    review_configs = interrupt_value.get("review_configs", [])
+
+    if action_requests:
+        approval_ids = []
+        for action in action_requests:
+            aid = str(uuid.uuid4())
+            approval_ids.append(aid)
+            await db.execute(
+                """
+                INSERT INTO agent_approvals (
+                    id, conversation_id, run_id, tool_name, tool_input, risk_level, description
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    aid,
+                    conversation_id,
+                    run_id,
+                    action.get("name", ""),
+                    json.dumps(action.get("args", {}), ensure_ascii=False),
+                    "danger",
+                    f"执行 {action.get('name', '')}",
+                ),
+            )
+        await db.commit()
+        payload = {
+            "approval_id": approval_ids[0],
+            "conversation_id": conversation_id,
+            "run_id": run_id,
+            "actions": action_requests,
+            "review_configs": review_configs,
+            "description": f"待审批: {action_requests[0].get('name', '')}",
+        }
+        await append_run_event(run_id, conversation_id, "approval.request", payload)
+        await update_run_status(run_id, status="waiting_approval")
+        events.append({"event": "approval.request", "data": json.dumps(payload, ensure_ascii=False)})
+    else:
+        approval_id = str(uuid.uuid4())
+        tool_name = interrupt_value.get("tool_name", "unknown")
+        await db.execute(
+            """
+            INSERT INTO agent_approvals (
+                id, conversation_id, run_id, tool_name, tool_input, risk_level, description
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                approval_id,
+                conversation_id,
+                run_id,
+                tool_name,
+                json.dumps(interrupt_value, ensure_ascii=False),
+                "danger",
+                interrupt_value.get("description", ""),
+            ),
+        )
+        await db.commit()
+        payload = {
+            "approval_id": approval_id,
+            "conversation_id": conversation_id,
+            "run_id": run_id,
+            **interrupt_value,
+        }
+        await append_run_event(run_id, conversation_id, "approval.request", payload)
+        await update_run_status(run_id, status="waiting_approval")
+        events.append({"event": "approval.request", "data": json.dumps(payload, ensure_ascii=False)})
+
+    return events
+
+
+# ---------------------------------------------------------------------------
+# 路由
+# ---------------------------------------------------------------------------
+
+
 @router.post("/chat")
 async def chat(request: Request, body: ChatRequest, user=Depends(get_current_user)):
     """兼容旧入口，内部按照 run 生命周期执行。"""
@@ -114,143 +284,24 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                         emitted_ids.add(msg_id)
 
                     if isinstance(msg, AIMessage):
-                        if getattr(msg, "tool_calls", None):
-                            for tc in msg.tool_calls:
-                                tc_id = tc.get("id", "")
-                                if tc_id and tc_id in emitted_ids:
-                                    continue
-                                if tc_id:
-                                    emitted_ids.add(tc_id)
-                                payload = {
-                                    "run_id": run_id,
-                                    "tool": tc["name"],
-                                    "input": tc["args"],
-                                    "id": tc_id,
-                                }
-                                await append_run_event(run_id, conversation_id, "tool.call", payload)
-                                yield {"event": "tool.call", "data": json.dumps(payload, ensure_ascii=False)}
-                                try:
-                                    from modules.agents.safety import TOOL_RISK_MAP
-
-                                    await record_legacy_agent_event(
-                                        conversation_id,
-                                        event_type="tool_call",
-                                        username=user["username"],
-                                        tool_name=tc["name"],
-                                        tool_input=json.dumps(tc["args"], ensure_ascii=False)[:1000],
-                                        risk_level=TOOL_RISK_MAP.get(tc["name"], "safe"),
-                                    )
-                                except Exception as e:
-                                    logger.debug("记录 tool_call 事件失败: %s", e)
-                        elif msg.content:
-                            payload = {
-                                "run_id": run_id,
-                                "content": msg.content,
-                                "role": "assistant",
-                                "id": msg_id or "",
-                            }
-                            await append_run_event(run_id, conversation_id, "message.final", payload)
-                            yield {"event": "message.final", "data": json.dumps(payload, ensure_ascii=False)}
+                        for event in await _process_ai_message(
+                            msg, run_id, conversation_id, emitted_ids, user["username"]
+                        ):
+                            yield event
 
                     elif isinstance(msg, ToolMessage):
-                        payload = {
-                            "run_id": run_id,
-                            "tool": getattr(msg, "name", ""),
-                            "content": msg.content[:1500] if msg.content else "",
-                            "id": msg_id or "",
-                        }
-                        await append_run_event(run_id, conversation_id, "tool.result", payload)
-                        yield {"event": "tool.result", "data": json.dumps(payload, ensure_ascii=False)}
-                        try:
-                            await record_legacy_agent_event(
-                                conversation_id,
-                                event_type="tool_result",
-                                username=user["username"],
-                                tool_name=getattr(msg, "name", ""),
-                                tool_output=(msg.content[:500] if msg.content else ""),
-                            )
-                        except Exception as e:
-                            logger.debug("记录 tool_result 事件失败: %s", e)
+                        for event in await _process_tool_message(
+                            msg, run_id, conversation_id, user["username"]
+                        ):
+                            yield event
 
                 emitted_count = len(messages)
 
+            # 流结束后检查是否有中断（审批请求）
             snapshot = await agent.aget_state(config)
             if snapshot.next:
-                tasks = snapshot.tasks
-                if tasks and tasks[0].interrupts:
-                    interrupt_value = tasks[0].interrupts[0].value
-                    action_requests = interrupt_value.get("action_requests", [])
-                    review_configs = interrupt_value.get("review_configs", [])
-
-                    if action_requests:
-                        approval_ids = []
-                        for action in action_requests:
-                            aid = str(uuid.uuid4())
-                            approval_ids.append(aid)
-                            await db.execute(
-                                """
-                                INSERT INTO agent_approvals (
-                                    id, conversation_id, run_id, tool_name, tool_input, risk_level, description
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    aid,
-                                    conversation_id,
-                                    run_id,
-                                    action.get("name", ""),
-                                    json.dumps(action.get("args", {}), ensure_ascii=False),
-                                    "danger",
-                                    f"执行 {action.get('name', '')}",
-                                ),
-                            )
-                        await db.commit()
-                        payload = {
-                            "approval_id": approval_ids[0],
-                            "conversation_id": conversation_id,
-                            "run_id": run_id,
-                            "actions": action_requests,
-                            "review_configs": review_configs,
-                            "description": f"待审批: {action_requests[0].get('name', '')}",
-                        }
-                        await append_run_event(run_id, conversation_id, "approval.request", payload)
-                        await update_run_status(run_id, status="waiting_approval")
-                        yield {"event": "approval.request", "data": json.dumps(payload, ensure_ascii=False)}
-                    else:
-                        approval_id = str(uuid.uuid4())
-                        tool_name = interrupt_value.get("tool_name", "unknown")
-                        await db.execute(
-                            """
-                            INSERT INTO agent_approvals (
-                                id, conversation_id, run_id, tool_name, tool_input, risk_level, description
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                approval_id,
-                                conversation_id,
-                                run_id,
-                                tool_name,
-                                json.dumps(interrupt_value, ensure_ascii=False),
-                                "danger",
-                                interrupt_value.get("description", ""),
-                            ),
-                        )
-                        await db.commit()
-                        payload = {
-                            "approval_id": approval_id,
-                            "conversation_id": conversation_id,
-                            "run_id": run_id,
-                            **interrupt_value,
-                        }
-                        await append_run_event(run_id, conversation_id, "approval.request", payload)
-                        await update_run_status(run_id, status="waiting_approval")
-                        yield {"event": "approval.request", "data": json.dumps(payload, ensure_ascii=False)}
-                else:
-                    payload = {"conversation_id": conversation_id, "run_id": run_id, "status": "completed"}
-                    await append_run_event(run_id, conversation_id, "run.completed", payload)
-                    await update_run_status(run_id, status="completed", completed=True)
-                    yield {"event": "run.completed", "data": json.dumps(payload, ensure_ascii=False)}
+                for event in await _handle_interrupt(snapshot, run_id, conversation_id, db):
+                    yield event
             else:
                 payload = {"conversation_id": conversation_id, "run_id": run_id, "status": "completed"}
                 await append_run_event(run_id, conversation_id, "run.completed", payload)
