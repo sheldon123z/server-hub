@@ -1,5 +1,9 @@
 """认证路由"""
 
+import logging
+import time
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from auth.dependencies import get_current_user, get_user_from_token
@@ -14,7 +18,38 @@ from auth.user_store import (
 from config import settings
 from database import get_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/auth", tags=["认证"])
+
+
+# ─── 登录速率限制（内存实现） ───
+
+# {ip: [timestamp, timestamp, ...]}  — 滑动窗口内的请求时间戳
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_WINDOW = 60  # 秒
+_RATE_LIMIT_MAX = 5  # 窗口内最大尝试次数
+
+
+def _check_login_rate_limit(client_ip: str) -> None:
+    """检查登录速率限制，超限则抛出 429"""
+    now = time.time()
+    attempts = _login_attempts[client_ip]
+    # 清理过期记录
+    _login_attempts[client_ip] = [t for t in attempts if now - t < _RATE_LIMIT_WINDOW]
+    attempts = _login_attempts[client_ip]
+
+    if len(attempts) >= _RATE_LIMIT_MAX:
+        logger.warning("登录速率限制触发: IP=%s, 尝试次数=%d/%d", client_ip, len(attempts), _RATE_LIMIT_MAX)
+        raise HTTPException(
+            status_code=429,
+            detail=f"登录尝试过于频繁，请 {_RATE_LIMIT_WINDOW} 秒后重试",
+        )
+
+
+def _record_login_attempt(client_ip: str) -> None:
+    """记录一次登录尝试"""
+    _login_attempts[client_ip].append(time.time())
 
 
 def _cookie_secure(request: Request) -> bool:
@@ -49,8 +84,13 @@ def _clear_auth_cookies(response: Response, secure: bool) -> None:
 
 @router.post("/login")
 async def login(req: LoginRequest, response: Response, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate_limit(client_ip)
+    _record_login_attempt(client_ip)
+
     user = await authenticate(req.username, req.password)
     if not user:
+        logger.warning("登录失败: username=%s, IP=%s", req.username, client_ip)
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     secure = _cookie_secure(request)

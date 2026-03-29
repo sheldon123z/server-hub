@@ -195,6 +195,17 @@ app.include_router(ws_router)
 app.add_middleware(AuditMiddleware)
 
 
+# ─── HTTP 安全头中间件 ───
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 # ─── React 前端 sidebar API ───
 
 @app.get("/api/sidebar")

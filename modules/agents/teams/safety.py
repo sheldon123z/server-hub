@@ -2,16 +2,46 @@
 
 团队成员直接通过 create_react_agent 执行，不经过 Deep Agents 的
 SafeLocalShellBackend，因此需要独立的安全包装。
+
+安全机制:
+1. execute 类工具调用前检查 Shell 黑名单 (check_shell_command)
+2. supervised 模式下 DANGER 工具阻止执行并记录审批请求
+3. 剥离敏感环境变量 (*API_KEY*/*SECRET*/*TOKEN*)，防止泄露到子进程
 """
 
 import logging
+import os
+import re
 from copy import deepcopy
 
 from langchain_core.tools import BaseTool, StructuredTool
 
-from modules.agents.safety import TOOL_RISK_MAP, RiskLevel
+from modules.agents.safety import TOOL_RISK_MAP, RiskLevel, check_shell_command
 
 logger = logging.getLogger(__name__)
+
+# 需要检查 Shell 命令安全性的工具名 (execute 类)
+_EXECUTE_TOOLS = {"execute", "execute_ops_script", "ssh_execute_command", "docker_container_exec"}
+
+# 敏感环境变量模式 — 与 sandbox.py 保持一致
+_SENSITIVE_ENV_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r".*API_KEY.*", r".*SECRET.*", r".*TOKEN.*", r".*PASSWORD.*",
+        r"OPENROUTER_.*", r"VOLCENGINE_.*", r"ZHIPU_.*", r"MOONSHOT_.*",
+        r"MINIMAX_.*", r"DEEPSEEK_.*", r"OPENAI_.*", r"TAVILY_.*",
+        r"SERVERHUB_SECRET.*", r"SERVERHUB_ADMIN_PASSWORD",
+    ]
+]
+
+
+def _strip_sensitive_env() -> dict[str, str]:
+    """从当前环境变量中剥离敏感信息，返回安全的环境副本"""
+    safe = {}
+    for key, value in os.environ.items():
+        if any(p.match(key) for p in _SENSITIVE_ENV_PATTERNS):
+            continue
+        safe[key] = value
+    return safe
 
 
 def resolve_tools(tool_names: list[str], user_role: str = "admin") -> list[BaseTool]:
@@ -59,10 +89,14 @@ def wrap_tools_for_team(
     for tool in tools:
         risk = TOOL_RISK_MAP.get(tool.name, RiskLevel.SAFE)
 
-        if safety_mode == "supervised" and risk == RiskLevel.DANGER:
-            wrapped.append(_make_logged_tool(tool, member_name, risk))
+        if risk == RiskLevel.DANGER:
+            # DANGER 工具始终包装（supervised 模式下会阻止执行）
+            wrapped.append(_make_logged_tool(tool, member_name, risk, safety_mode))
         elif risk == RiskLevel.MODERATE:
-            wrapped.append(_make_logged_tool(tool, member_name, risk))
+            wrapped.append(_make_logged_tool(tool, member_name, risk, safety_mode))
+        elif tool.name in _EXECUTE_TOOLS:
+            # execute 类工具即使标记为 SAFE 也需要 Shell 黑名单检查
+            wrapped.append(_make_logged_tool(tool, member_name, risk, safety_mode))
         else:
             wrapped.append(tool)
     return wrapped
@@ -72,32 +106,88 @@ def _make_logged_tool(
     original: BaseTool,
     member_name: str,
     risk: RiskLevel,
+    safety_mode: str = "supervised",
 ) -> BaseTool:
-    """包装工具：执行前记录审计日志，保持 name/description/schema 不变"""
+    """包装工具：执行前记录审计日志 + 安全检查，保持 name/description/schema 不变
+
+    安全检查:
+    1. execute 类工具 — 调用 check_shell_command() 检查黑名单
+    2. DANGER 级别 + supervised 模式 — 阻止执行，返回审批提示
+    3. 所有调用剥离敏感环境变量
+    """
 
     original_func = original.func
     original_coroutine = original.coroutine
+    tool_name = original.name
+
+    def _pre_check(kwargs: dict) -> str | None:
+        """执行前安全检查，返回 None 表示放行，返回字符串表示拦截原因"""
+        # 1. execute 类工具：检查 Shell 黑名单
+        if tool_name in _EXECUTE_TOOLS:
+            command = kwargs.get("command", "") or kwargs.get("cmd", "") or str(kwargs)
+            is_safe, reason = check_shell_command(command)
+            if not is_safe:
+                logger.warning(
+                    "[Team/BLOCKED] %s 的 %s 被黑名单拦截: %s",
+                    member_name, tool_name, reason,
+                )
+                return f"安全拦截: {reason}"
+
+        # 2. DANGER 级别 + supervised 模式：阻止执行
+        if risk == RiskLevel.DANGER and safety_mode == "supervised":
+            logger.warning(
+                "[Team/BLOCKED] %s 的 %s (DANGER) 在 supervised 模式下被阻止，需管理员审批",
+                member_name, tool_name,
+            )
+            return f"操作被阻止: {tool_name} 为高危工具，需管理员在 supervised 模式下审批后方可执行"
+
+        return None
 
     async def async_wrapper(*args, **kwargs):
         logger.info(
             "[Team] %s 调用 %s (risk=%s) args=%s",
-            member_name, original.name, risk.value, kwargs,
+            member_name, tool_name, risk.value, kwargs,
         )
-        if original_coroutine is not None:
-            return await original_coroutine(*args, **kwargs)
-        # 回退到同步调用
-        if original_func is not None:
-            return original_func(*args, **kwargs)
-        return await original.ainvoke(*args, **kwargs)
+        # 安全检查
+        block_reason = _pre_check(kwargs)
+        if block_reason:
+            return block_reason
+
+        # 剥离敏感环境变量（通过临时替换 os.environ）
+        original_env = os.environ.copy()
+        try:
+            os.environ.clear()
+            os.environ.update(_strip_sensitive_env())
+            if original_coroutine is not None:
+                return await original_coroutine(*args, **kwargs)
+            if original_func is not None:
+                return original_func(*args, **kwargs)
+            return await original.ainvoke(*args, **kwargs)
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
 
     def sync_wrapper(*args, **kwargs):
         logger.info(
             "[Team] %s 调用 %s (risk=%s) args=%s",
-            member_name, original.name, risk.value, kwargs,
+            member_name, tool_name, risk.value, kwargs,
         )
-        if original_func is not None:
-            return original_func(*args, **kwargs)
-        return original.invoke(*args, **kwargs)
+        # 安全检查
+        block_reason = _pre_check(kwargs)
+        if block_reason:
+            return block_reason
+
+        # 剥离敏感环境变量
+        original_env = os.environ.copy()
+        try:
+            os.environ.clear()
+            os.environ.update(_strip_sensitive_env())
+            if original_func is not None:
+                return original_func(*args, **kwargs)
+            return original.invoke(*args, **kwargs)
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
 
     return StructuredTool(
         name=original.name,
