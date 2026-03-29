@@ -116,10 +116,8 @@ ws_manager = MetricsWSManager()
 
 
 async def _ws_authenticate(websocket: WebSocket) -> dict | None:
-    """从 WebSocket cookie 或 query param 验证 JWT"""
+    """从 WebSocket cookie 验证 JWT (CWE-598: 不从 query param 读取 token)"""
     token = websocket.cookies.get("access_token")
-    if not token:
-        token = websocket.query_params.get("token")
     return await get_user_from_access_token(token)
 
 

@@ -356,6 +356,22 @@ async def pull_image(image: str) -> str:
 # ─── 容器 exec ───
 
 
+_EXEC_INJECTION_PATTERNS = re.compile(
+    r"""
+    ;           # 命令分隔符
+    | \|        # 管道
+    | &&        # 逻辑与链接
+    | \|\|      # 逻辑或链接
+    | `         # 反引号命令替换
+    | \$\(      # $() 命令替换
+    | \$\{      # ${} 变量展开
+    | >\s*/     # 重定向到绝对路径
+    | >>\s*/    # 追加重定向到绝对路径
+    """,
+    re.VERBOSE,
+)
+
+
 async def container_exec(name: str, command: str) -> str:
     """在运行中的容器内执行命令
 
@@ -367,6 +383,10 @@ async def container_exec(name: str, command: str) -> str:
     # 限制命令长度
     if len(command) > 500:
         raise ValueError("命令长度不能超过 500 字符")
+
+    # CWE-78: 拒绝含 Shell 注入元字符的命令
+    if _EXEC_INJECTION_PATTERNS.search(command):
+        raise ValueError("命令包含不允许的 Shell 元字符 (;, |, &&, `, $() 等)")
 
     output = await run_cmd(
         ["docker", "exec", name, "sh", "-c", command],
