@@ -612,7 +612,7 @@ async def check_and_enforce_quotas():
         if username in settings.admin_linux_users:
             continue
 
-        q = get_user_quota(username, quotas)
+        q = get_user_quota(username, u.get("groups", ""), quotas)
         if not q:
             continue
 

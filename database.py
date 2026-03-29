@@ -3,10 +3,13 @@
 import asyncio
 import logging
 import os
+import re
 
 import aiosqlite
 
 from config import settings
+
+_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
@@ -14,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 async def _table_columns(db: aiosqlite.Connection, table_name: str) -> set[str]:
+    if not _IDENTIFIER_RE.match(table_name):
+        raise ValueError(f"Invalid table name: {table_name}")
     cursor = await db.execute(f"PRAGMA table_info({table_name})")
     rows = await cursor.fetchall()
     return {row[1] for row in rows}
@@ -25,6 +30,8 @@ async def _ensure_column(
     column_name: str,
     column_definition: str,
 ) -> None:
+    if not _IDENTIFIER_RE.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
     columns = await _table_columns(db, table_name)
     if column_name in columns:
         return
