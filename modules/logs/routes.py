@@ -42,7 +42,7 @@ async def get_log_tail(
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
         # Hub 端也做基本检查，agent 端会做 realpath 校验
-        if not path.startswith("/var/log"):
+        if not path.startswith("/var/log/"):
             raise HTTPException(status_code=403, detail="远程日志仅允许读取 /var/log 下的文件")
         client = await get_agent_client(server_id)
         result = await client.log_tail(path, lines=lines)
