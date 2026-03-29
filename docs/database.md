@@ -18,7 +18,7 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 
 应用启动时由 `database.py:init_tables()` 自动创建所有表（`CREATE TABLE IF NOT EXISTS`）。
 
-共 16 个表（含 1 个 FTS5 虚拟表）。
+共 35 个表 + 1 个 FTS5 虚拟表（共 36 个）。
 
 ---
 
@@ -402,6 +402,118 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 | created_at | TIMESTAMP | 创建时间 |
 
 **加密方式**：Fernet 对称加密，密钥从 `settings.secret_key` 通过 SHA-256 派生。
+
+---
+
+### servers — 远程服务器注册
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 服务器 ID |
+| name | TEXT NOT NULL UNIQUE | 服务器名称 |
+| host | TEXT NOT NULL | 主机地址 |
+| port | INTEGER DEFAULT 9901 | Agent 端口 |
+| agent_token_encrypted | TEXT | Fernet 加密的 Agent Token |
+| status | TEXT DEFAULT 'unknown' | 状态：online/offline/unknown |
+| ... | ... | 其他元数据字段 |
+
+---
+
+### server_groups — 服务器分组
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 分组 ID |
+| name | TEXT NOT NULL UNIQUE | 分组名称 |
+| description | TEXT | 描述 |
+| created_at | TIMESTAMP | 创建时间 |
+
+---
+
+### server_group_members — 分组成员关系
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| group_id | TEXT NOT NULL | 分组 ID |
+| server_id | TEXT NOT NULL | 服务器 ID |
+
+---
+
+### quota_violations — 配额违规记录
+
+记录用户资源超限事件。
+
+---
+
+### notification_channels — 通知渠道配置
+
+存储多通知渠道（Telegram、Webhook 等）的配置信息。
+
+---
+
+### async_agent_tasks — 异步 Agent 任务
+
+异步 SubAgent 执行的后台任务队列。
+
+---
+
+### agent_runs — Agent 运行记录
+
+Deep Agents `run` 生命周期的执行记录。
+
+---
+
+### agent_run_events — Agent 运行事件
+
+`agent_runs` 的详细事件日志。
+
+---
+
+### agent_skills — Agent 技能
+
+Agent Studio 技能注册表。
+
+---
+
+### agent_skill_versions — 技能版本
+
+技能的版本历史。
+
+---
+
+### agent_skill_installs — 技能安装
+
+技能安装记录。
+
+---
+
+### agent_skill_bindings — 技能绑定
+
+技能与 Agent 的绑定关系。
+
+---
+
+### agent_teams — 智能体团队
+
+Agent Teams 团队定义。
+
+---
+
+### agent_team_members — 团队成员
+
+团队内的 Agent 成员配置。
+
+---
+
+### agent_team_executions — 团队执行记录
+
+团队任务执行历史。
+
+---
+
+### agent_team_messages — 团队消息
+
+团队内 Agent 间的通信消息。
 
 ---
 

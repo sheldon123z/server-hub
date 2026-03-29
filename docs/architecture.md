@@ -130,8 +130,8 @@ def discover_modules():
 modules/agents/
 ├── deep_agent.py     # 工厂函数，组装所有组件
 ├── llm.py            # 8 家 LLM 服务商注册表
-├── tools.py          # 22 个服务器管理工具
-├── subagents.py      # 3 个 SubAgent 定义
+├── tools/            # 50 个 @tool 服务器管理工具（11 个子模块）
+├── subagents/        # 6 个 SubAgent 定义（各自独立文件）
 ├── safety.py         # 审批规则 + Shell 黑名单
 ├── sandbox.py        # SafeLocalShellBackend
 ├── prompts.py        # 系统提示词（支持自定义覆盖）
@@ -358,17 +358,22 @@ server-hub/
 │   ├── panel_users/           # 面板账户管理
 │   ├── settings/              # 系统设置
 │   ├── assets/                # 资产管理
-│   └── agents/                # AI 智能体
+│   ├── agents/                # AI 智能体
+│   ├── servers/               # 多服务器管理（Hub-Agent 架构）
+│   └── playbooks/             # 运维剧本引擎
 │
 ├── scripts_bridge/            # 运维脚本白名单桥接
 │   ├── registry.py            # 可执行脚本注册表
 │   └── executor.py            # 沙箱化执行
 │
-├── templates/                 # Jinja2 HTML 模板
-│   ├── base.html              # 基础布局（侧边栏、顶栏、主题）
-│   └── *.html                 # 各页面模板
-│
-├── static/                    # 静态文件（CSS, JS）
+├── frontend/                  # React SPA 前端
+│   ├── src/                   # TypeScript 源码
+│   │   ├── App.tsx            # 路由配置 + 认证守卫
+│   │   ├── api/client.ts      # Axios 实例 (cookie auth, 401 refresh)
+│   │   ├── pages/             # 页面组件 (React.lazy 代码分割)
+│   │   ├── hooks/             # 自定义 Hooks (useSSEChat, useWebSocket)
+│   │   └── stores/            # Zustand 状态管理
+│   └── dist/                  # 生产构建产物（SPA catch-all 路由服务）
 │
 ├── data/                      # 运行时数据（.gitignore）
 │   ├── server-hub.db
@@ -378,9 +383,49 @@ server-hub/
 │   ├── custom_prompt.txt      # 自定义提示词（可选）
 │   └── custom_subagents.json  # 自定义 SubAgent（可选）
 │
+├── serverhub-agent/           # 远程 Agent 守护进程（独立部署包）
 ├── docs/                      # 项目文档
 ├── CLAUDE.md                  # 开发者指引
 ├── AGENTS.md                  # 仓库协作说明
 ├── server-hub.service         # systemd 服务文件
 └── requirements.txt           # Python 依赖
 ```
+
+---
+
+## 7. 多服务器管理架构
+
+ServerHub 采用 Hub-Agent 架构管理多台服务器：
+
+```
+┌────────────────────┐       HTTP + Fernet Token
+│  ServerHub (Hub)   │─────────────────────────────┐
+│  :9900             │                              │
+│  modules/servers/  │◄──── 心跳 (30s) ────────────┤
+│  heartbeat.py      │                              │
+│  agent_client.py   │                              ▼
+│  metrics_store.py  │              ┌──────────────────────────┐
+└────────────────────┘              │  serverhub-agent :9901   │
+                                    │  12 个结构化端点           │
+                                    │  Bearer Token 认证        │
+                                    │  create_subprocess_exec   │
+                                    └──────────────────────────┘
+```
+
+- **服务器注册**: 注册时生成 `secrets.token_urlsafe(32)` Token，Fernet 加密存储
+- **三层健康检查**: 存活 → 鉴权 → 业务
+- **远程采集**: 60s 间隔并行采集所有远程服务器指标，`executemany` 批量写入
+- **server_id 贯穿全栈**: TopBar 选择器 → Zustand store → TanStack Query → API → 后端 dispatch
+
+---
+
+## 8. 运维剧本引擎
+
+剧本系统提供参数化、可复用的运维工作流：
+
+- **剧本定义**: `playbooks` 表存储模板（含提示词模板、参数定义、触发配置）
+- **参数化执行**: 支持 `{param}` 占位符，运行时解析参数并解密凭据
+- **执行记录**: `playbook_executions` 表记录每次执行的状态、报告、耗时
+- **凭据管理**: `playbook_credentials` 表使用 Fernet 加密存储敏感参数
+- **触发方式**: 手动触发 / 定时触发（通过 `trigger_config` JSON 配置）
+- **AI 工具集成**: Agent 通过 5 个剧本工具（`playbook_create/execute/list/search` + `ssh_execute_command`）操作剧本

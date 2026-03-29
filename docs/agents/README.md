@@ -21,7 +21,7 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 ## 架构图
 
 ```
-用户请求（HTMX SSE）
+用户请求（React SSE）
        │
        ▼
   routes.py (FastAPI)
@@ -40,18 +40,20 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
   │              ┌──────────────┼──────────────────┐ │
   │              ▼              ▼                  ▼ │
   │         自定义工具     内置工具(9个)      task()  │
-  │         (22个)        execute/read       委派     │
+  │         (50个)        execute/read       委派     │
   │                       write/edit        SubAgent │
   │                       ls/glob/grep               │
   │                       write_todos/task           │
   └─────────────────────────────────────────────────┘
        │                                   │
        ▼                                   ▼
-  SafeLocalShellBackend             SubAgent(4个)
+  SafeLocalShellBackend             SubAgent(6个)
   (Shell + 文件系统)                researcher
   /tmp/serverhub-sandbox/           log-analyzer
                                     security-auditor
                                     correlation-analyzer
+                                    ops-scheduler
+                                    knowledge-retriever
 ```
 
 ### Middleware 栈（注入顺序）
@@ -78,26 +80,28 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 
 ### 工具层（tools.py）
 
-22 个 `@tool` 装饰的服务器管理工具，按风险分三级：
+50 个 `@tool` 装饰的服务器管理工具，分布在 14 个子模块（`modules/agents/tools/`），按风险分三级：
 
 | 风险级别 | 工具数量 | 典型工具 |
 |---------|---------|---------|
-| safe（只读）| 15 | get_system_overview, list_docker_containers, check_compliance, analyze_resource_trend |
-| moderate（可逆操作）| 6 | docker_container_action, service_control, update_user_quotas, create_cron_job |
-| danger（高危）| 4 | kill_user_processes, auto_fix_compliance, execute_ops_script, delete_cron_job_tool |
+| safe（只读）| 25+ | get_system_overview, list_docker_containers, check_compliance, analyze_resource_trend, playbook_list |
+| moderate（可逆操作）| 12+ | docker_container_action, service_control, update_user_quotas, create_cron_job, playbook_execute |
+| danger（高危）| 7+ | kill_user_processes, auto_fix_compliance, execute_ops_script, ssh_execute_command |
 
 详细说明见 [tools.md](./tools.md)。
 
-### SubAgent 层（subagents.py）
+### SubAgent 层（subagents/ 目录）
 
-4 个专业化子智能体，遵循 LangChain 官方 SubAgent 规范：
+6 个专业化子智能体（每个独立文件），遵循 LangChain 官方 SubAgent 规范：
 
 | 名称 | 专长 | 工具集 |
 |------|------|-------|
 | researcher | 联网搜索 | web_search, think |
 | log-analyzer | 日志分析 | get_container_logs, get_service_logs |
-| security-auditor | 安全审计 | get_system_overview |
-| correlation-analyzer | 多源关联分析 | 6 个工具 |
+| security-auditor | 安全审计 | get_system_overview, check_compliance |
+| correlation-analyzer | 多源关联分析 | 11 个工具 |
+| ops-scheduler | 定时任务管理 | 6 个 cron 工具 |
+| knowledge-retriever | RAG 知识检索 | retrieve_knowledge, search_fault_cases, web_search, think |
 
 详细说明见 [subagents.md](./subagents.md)。
 
@@ -159,8 +163,8 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 | 文件 | 说明 |
 |------|------|
 | `modules/agents/deep_agent.py` | Agent 工厂，build_agent() 入口 |
-| `modules/agents/tools.py` | 22 个自定义工具 |
-| `modules/agents/subagents.py` | 4 个 SubAgent 定义 |
+| `modules/agents/tools/` | 50 个自定义工具（14 个子模块） |
+| `modules/agents/subagents/` | 6 个 SubAgent 定义（各自独立文件） |
 | `modules/agents/patrol.py` | 巡检任务 + 调度器 |
 | `modules/agents/alert_engine.py` | 告警规则引擎 |
 | `modules/agents/diagnosis.py` | 故障诊断工作流 |
@@ -168,7 +172,7 @@ Deep Agents 是基于 LangGraph 的多智能体框架，通过 `create_deep_agen
 | `modules/agents/prompts.py` | 系统提示词 |
 | `modules/agents/llm.py` | 8 家 LLM 服务商注册表 |
 | `modules/agents/sandbox.py` | SafeLocalShellBackend |
-| `modules/agents/routes.py` | SSE / 审批 / 巡检 / 管理 API |
+| `modules/agents/routes/` | 9 个 HTTP 端点子模块（chat/conversations/approvals 等） |
 | `data/compliance_baselines.json` | 15 条 CIS 合规基线定义 |
 | `data/agent-memory.md` | AI 助手长期记忆文件 |
 | `data/custom_prompt.txt` | 自定义系统提示词（可选）|

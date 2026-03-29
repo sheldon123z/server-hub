@@ -41,7 +41,7 @@ ServerHub 专为以下场景设计：
 | 组件 | 版本/说明 |
 |------|---------|
 | **FastAPI** | 异步 Web 框架，提供 REST API 和 SSE 流式响应 |
-| **Jinja2** | 服务端模板渲染 |
+| **Pydantic** | 请求/响应数据模型验证 |
 | **SQLite + aiosqlite** | 轻量级异步数据库，3 个独立数据库文件 |
 | **Deep Agents (LangGraph)** | AI 智能体框架，支持工具调用、SubAgent、记忆系统 |
 | **LangChain** | LLM 集成层，统一接入 8 家服务商 |
@@ -49,13 +49,17 @@ ServerHub 专为以下场景设计：
 
 ### 前端
 
-| 组件 | 说明 |
-|------|------|
-| **HTMX** | 局部页面刷新（仪表盘卡片、Docker 状态） |
-| **Alpine.js** | 客户端交互逻辑（AI 对话、Cron 编辑、设置页面） |
-| **xterm.js** | 浏览器内 WebTerminal（基于 WebSocket + pty） |
-| **Tabler Icons** | UI 图标库 |
-| **CSS 变量** | 暗色主题，定义在 `base.html` |
+| 组件 | 版本/说明 |
+|------|---------|
+| **React** | ^19.2 SPA，React Router v7，React.lazy 代码分割 |
+| **TypeScript** | ~5.9，严格类型检查 |
+| **Tailwind CSS** | ^4.2，暗色主题 |
+| **Vite** | ^8.0 构建工具，开发服务 :5173 代理到后端 :9900 |
+| **TanStack Query** | ^5.95 API 数据缓存和状态管理 |
+| **Zustand** | ^5.0 客户端状态管理 |
+| **echarts-for-react** | 监控图表 + 暗色主题 |
+| **@xterm/xterm** | ^6.0 浏览器内 WebTerminal（WebSocket + pty） |
+| **Lucide React** | UI 图标库 |
 
 ### AI 智能体
 
@@ -90,10 +94,12 @@ ServerHub 专为以下场景设计：
 | 设置 | `modules/settings/` | 系统配置（配额文件、服务列表等） | admin |
 | 资产 | `modules/assets/` | 服务器资产信息管理 | admin |
 | AI 智能体 | `modules/agents/` | AI 对话、自动巡检、WebTerminal | admin |
+| 服务器管理 | `modules/servers/` | 多服务器注册、分组、心跳、舰队概览 | admin |
+| 运维剧本 | `modules/playbooks/` | 参数化运维剧本、定时触发、执行历史 | admin |
 
 ### 3.2 AI 智能体能力
 
-**内置工具（22 个）**
+**自定义工具（50 个）**
 
 按安全级别分为三类：
 
