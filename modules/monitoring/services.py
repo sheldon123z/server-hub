@@ -118,21 +118,32 @@ async def get_fleet_top(metric: str, limit: int) -> list:
 async def get_history_data(metric: str, hours: int, server_id: str) -> list:
     """查询历史指标数据
 
-    默认 LIMIT 500 行防止大查询拖慢 SQLite。
-    超过 30 天 (720h) 的查询在应用层做均匀降采样。
+    短期查询 (<=720h) 使用 LIMIT 500 防止大查询拖慢 SQLite。
+    长期查询 (>720h) 取全量数据后在应用层均匀降采样到 max_rows 条。
     """
     max_rows = 500
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
     db = await get_db()
-    cursor = await db.execute(
-        "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
-        "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? "
-        "ORDER BY timestamp ASC LIMIT ?",
-        (server_id, cutoff, max_rows),
-    )
+
+    if hours > 720:
+        # 长期查询: 取全量数据，应用层降采样
+        cursor = await db.execute(
+            "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
+            "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? "
+            "ORDER BY timestamp ASC",
+            (server_id, cutoff),
+        )
+    else:
+        # 短期查询: LIMIT 限制即可
+        cursor = await db.execute(
+            "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
+            "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? "
+            "ORDER BY timestamp ASC LIMIT ?",
+            (server_id, cutoff, max_rows),
+        )
     rows = await cursor.fetchall()
 
-    # 30 天以上查询自动降采样: 均匀抽取 max_rows 条
+    # 长期查询均匀降采样: 按 stride 抽取
     downsample_step = max(1, len(rows) // max_rows) if hours > 720 else 1
 
     result = []
@@ -151,7 +162,8 @@ async def get_history_data(metric: str, hours: int, server_id: str) -> list:
         except (json.JSONDecodeError, KeyError):
             continue
 
-    return result
+    # 降采样后仍可能略多于 max_rows（取整误差），截断保证上限
+    return result[:max_rows]
 
 
 async def get_alerts_summary_data(server_id: str) -> dict:
