@@ -6,19 +6,26 @@
 import asyncio
 import json
 import logging
-from collections import deque
-from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from auth.dependencies import get_current_user, get_user_from_access_token
-from database import get_db
 from modules.monitoring.collectors import (
     collect_all,
     collect_gpu,
     collect_inode,
     collect_top_processes,
 )
+from modules.monitoring.services import (
+    get_alerts_recent_data,
+    get_alerts_summary_data,
+    get_fleet_compare,
+    get_fleet_heatmap,
+    get_fleet_overview,
+    get_fleet_top,
+    get_history_data,
+)
+from modules.monitoring.ws_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -26,88 +33,6 @@ router = APIRouter(prefix="/api/monitoring", tags=["系统监控"])
 
 # 单独的 WebSocket router，不带 prefix（由 main.py 直接挂载）
 ws_router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# WebSocket 管理器
-# ---------------------------------------------------------------------------
-
-
-class MetricsWSManager:
-    """WebSocket 管理器 — 支持 per-client 服务器订阅过滤 + 内存缓存"""
-
-    def __init__(self):
-        self._connections: dict[WebSocket, set[str]] = {}  # ws → subscribed server_ids
-        self._cache: dict[str, deque] = {}  # server_id → recent snapshots (5min)
-        self._cache_max = 60  # 5min @ 5s interval
-
-    async def connect(self, ws: WebSocket, server_ids: set[str] | None = None):
-        await ws.accept()
-        subs = server_ids or {"local"}
-        self._connections[ws] = subs
-        logger.info("WebSocket 客户端连接, 订阅=%s (当前: %d)", subs, len(self._connections))
-
-        # Push cached data immediately so client doesn't wait
-        for sid in subs:
-            if sid in self._cache:
-                for snapshot in self._cache[sid]:
-                    try:
-                        await ws.send_json(snapshot)
-                    except Exception:
-                        break
-
-    def disconnect(self, ws: WebSocket):
-        subs = self._connections.pop(ws, None)
-        logger.info("WebSocket 客户端断开, 订阅=%s (当前: %d)", subs, len(self._connections))
-
-    async def update_subscription(self, ws: WebSocket, server_ids: set[str]):
-        """Update a client's subscription list and push cached data for new subscriptions"""
-        if ws in self._connections:
-            old = self._connections[ws]
-            self._connections[ws] = server_ids
-            logger.debug("WebSocket 订阅更新: %s → %s", old, server_ids)
-
-            # Push cached snapshots for newly subscribed servers
-            new_sids = server_ids - old if "*" not in old else set()
-            if "*" in server_ids:
-                new_sids = set(self._cache.keys()) - (old if "*" not in old else set())
-            for sid in new_sids:
-                if sid in self._cache:
-                    for snapshot in self._cache[sid]:
-                        try:
-                            await ws.send_json(snapshot)
-                        except Exception:
-                            return
-
-    async def broadcast(self, message: dict):
-        """Broadcast to subscribed clients only"""
-        server_id = message.get("server_id", "local")
-
-        # Update cache
-        if server_id not in self._cache:
-            self._cache[server_id] = deque(maxlen=self._cache_max)
-        self._cache[server_id].append(message)
-
-        # Send to subscribed clients
-        if not self._connections:
-            return
-        disconnected = []
-        for ws, subscribed in self._connections.items():
-            if "*" in subscribed or server_id in subscribed:
-                try:
-                    await ws.send_json(message)
-                except Exception:
-                    disconnected.append(ws)
-
-        for ws in disconnected:
-            self.disconnect(ws)
-
-    @property
-    def connection_count(self) -> int:
-        return len(self._connections)
-
-
-ws_manager = MetricsWSManager()
 
 
 # ---------------------------------------------------------------------------
@@ -208,30 +133,7 @@ async def get_history(
         hours: 查询最近多少小时的数据，默认 24
         server_id: 服务器ID，默认 "local" 只返回本机数据
     """
-    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
-    db = await get_db()
-    cursor = await db.execute(
-        "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
-        "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? ORDER BY timestamp ASC",
-        (server_id, cutoff),
-    )
-    rows = await cursor.fetchall()
-
-    result = []
-    for row in rows:
-        ts = row[0]
-        try:
-            data = json.loads(row[1])
-            if metric == "all":
-                result.append({"timestamp": ts, "value": json.dumps(data)})
-            else:
-                value = data.get(metric)
-                if value is not None:
-                    result.append({"timestamp": ts, "value": value})
-        except (json.JSONDecodeError, KeyError):
-            continue
-
-    return result
+    return await get_history_data(metric, hours, server_id)
 
 
 @router.get("/gpu")
@@ -254,7 +156,7 @@ async def get_gpu_detail(
     except Exception as e:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=502, detail=f"远程 GPU 信��获取失败: {e}")
+        raise HTTPException(status_code=502, detail=f"远程 GPU 信息获取失败: {e}")
 
 
 @router.get("/top-processes")
@@ -285,31 +187,7 @@ async def get_alerts_summary(
     user=Depends(get_current_user),
 ):
     """获取告警摘要: 各级别数量 + 活跃规则数"""
-    db = await get_db()
-
-    # 活跃告警规则数
-    cursor = await db.execute("SELECT COUNT(*) FROM alert_rules WHERE enabled = 1")
-    row = await cursor.fetchone()
-    active_rules = row[0] if row else 0
-
-    # 最近24h各级别告警数（按 server_id 过滤）
-    cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
-    cursor = await db.execute(
-        "SELECT severity, COUNT(*) FROM alert_history "
-        "WHERE created_at >= ? AND (server_id = ? OR server_id IS NULL) GROUP BY severity",
-        (cutoff, server_id),
-    )
-    rows = await cursor.fetchall()
-    by_severity = {r[0]: r[1] for r in rows}
-
-    return {
-        "active_rules": active_rules,
-        "critical": by_severity.get("critical", 0),
-        "warning": by_severity.get("warning", 0),
-        "info": by_severity.get("info", 0),
-        "last_24h": by_severity,
-        "total_24h": sum(by_severity.values()),
-    }
+    return await get_alerts_summary_data(server_id)
 
 
 @router.get("/alerts/recent")
@@ -320,20 +198,7 @@ async def get_alerts_recent(
     user=Depends(get_current_user),
 ):
     """获取最近的告警历史记录"""
-    db = await get_db()
-
-    base_where = "WHERE (server_id = ? OR server_id IS NULL)"
-    params: list = [server_id]
-    if severity:
-        base_where += " AND severity = ?"
-        params.append(severity)
-
-    cursor = await db.execute(
-        f"SELECT * FROM alert_history {base_where} ORDER BY created_at DESC LIMIT ?",
-        (*params, limit),
-    )
-    rows = await cursor.fetchall()
-    return [dict(r) for r in rows]
+    return await get_alerts_recent_data(limit, severity, server_id)
 
 
 # ---------------------------------------------------------------------------
@@ -341,51 +206,10 @@ async def get_alerts_recent(
 # ---------------------------------------------------------------------------
 
 
-def extract_metric(snapshot: dict, metric: str) -> dict:
-    """Extract a specific metric value + timestamp from a full snapshot."""
-    ts = snapshot.get("_timestamp", "")
-    if metric == "cpu":
-        return {"ts": ts, "value": snapshot.get("cpu", {}).get("overall_percent", 0)}
-    elif metric == "memory":
-        return {"ts": ts, "value": snapshot.get("memory", {}).get("percent", 0)}
-    elif metric == "disk":
-        parts = snapshot.get("disk", {}).get("partitions", [])
-        root = next((p for p in parts if p.get("mountpoint") == "/"), parts[0] if parts else {})
-        return {"ts": ts, "value": root.get("percent", 0)}
-    elif metric == "gpu":
-        return {"ts": ts, "value": snapshot.get("gpu", {}).get("utilization", 0)}
-    elif metric == "swap":
-        return {"ts": ts, "value": snapshot.get("memory", {}).get("swap_percent", 0)}
-    elif metric == "network":
-        net = snapshot.get("network", {})
-        return {"ts": ts, "value": net.get("bytes_sent", 0) + net.get("bytes_recv", 0)}
-    return {"ts": ts, "value": 0}
-
-
-def extract_metric_percent(data: dict, metric: str) -> float:
-    """Extract a single percent value from a metrics snapshot."""
-    if metric == "cpu":
-        return data.get("cpu", {}).get("overall_percent", 0)
-    if metric == "memory":
-        return data.get("memory", {}).get("percent", 0)
-    if metric == "disk":
-        parts = data.get("disk", {}).get("partitions", [])
-        root = next((p for p in parts if p.get("mountpoint") == "/"), parts[0] if parts else {})
-        return root.get("percent", 0)
-    if metric == "gpu":
-        return data.get("gpu", {}).get("utilization", 0)
-    if metric == "swap":
-        return data.get("memory", {}).get("swap_percent", 0)
-    return 0
-
-
 @router.get("/fleet/overview")
 async def fleet_overview(user=Depends(get_current_user)):
     """全舰队概览 — 各服务器最新指标 + 聚合统计"""
-    from modules.monitoring.metrics_store import get_metrics_store
-
-    store = get_metrics_store()
-    return await store.get_fleet_summary()
+    return await get_fleet_overview()
 
 
 @router.get("/fleet/compare")
@@ -396,38 +220,14 @@ async def fleet_compare(
     user=Depends(get_current_user),
 ):
     """多服务器指标对比"""
-    from modules.monitoring.metrics_store import get_metrics_store
-
-    store = get_metrics_store()
     ids = [s.strip() for s in server_ids.split(",") if s.strip()]
-    # 并行查询所有服务器的历史数据
-    histories = await asyncio.gather(*(store.query_history(sid, hours) for sid in ids))
-    result = {sid: [extract_metric(h, metric) for h in hist] for sid, hist in zip(ids, histories)}
-    return {"server_ids": ids, "metric": metric, "hours": hours, "data": result}
+    return await get_fleet_compare(ids, metric, hours)
 
 
 @router.get("/fleet/heatmap")
 async def fleet_heatmap(user=Depends(get_current_user)):
     """热力图数据 — 所有服务器 × 所有指标"""
-    from modules.monitoring.metrics_store import get_metrics_store
-
-    store = get_metrics_store()
-    fleet = await store.query_fleet_latest()
-
-    metrics_list = ["cpu", "memory", "disk", "gpu", "swap"]
-
-    # 一次查询加载所有服务器名称，避免 N+1
-    db = await get_db()
-    name_rows = await (await db.execute("SELECT id, name FROM servers")).fetchall()
-    name_map = {r[0]: r[1] for r in name_rows}
-
-    servers = []
-    matrix = []
-    for sid, data in fleet.items():
-        servers.append({"id": sid, "name": name_map.get(sid, sid)})
-        matrix.append([extract_metric_percent(data, m) for m in metrics_list])
-
-    return {"servers": servers, "metrics": metrics_list, "matrix": matrix}
+    return await get_fleet_heatmap()
 
 
 @router.get("/fleet/top")
@@ -437,12 +237,4 @@ async def fleet_top(
     user=Depends(get_current_user),
 ):
     """Top N 服务器排行"""
-    from modules.monitoring.metrics_store import get_metrics_store
-
-    store = get_metrics_store()
-    summary = await store.get_fleet_summary()
-    servers = summary.get("servers", [])
-
-    key = f"{metric}_percent"
-    sorted_servers = sorted(servers, key=lambda s: s.get(key, 0), reverse=True)
-    return sorted_servers[:limit]
+    return await get_fleet_top(metric, limit)

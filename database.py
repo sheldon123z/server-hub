@@ -69,7 +69,13 @@ async def close_db():
         _db = None
 
 
-async def init_tables(db: aiosqlite.Connection):
+# ---------------------------------------------------------------------------
+# init_tables — 按领域拆分为子函数
+# ---------------------------------------------------------------------------
+
+
+async def _create_auth_tables(db: aiosqlite.Connection):
+    """用户认证、审计相关表"""
     await db.executescript("""
         CREATE TABLE IF NOT EXISTS panel_users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,16 +89,6 @@ async def init_tables(db: aiosqlite.Connection):
             last_login TIMESTAMP
         );
 
-        CREATE TABLE IF NOT EXISTS metrics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            metric_type TEXT NOT NULL,
-            value_json TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_metrics_type_time
-            ON metrics(metric_type, timestamp);
-        -- idx_metrics_server_time 在 _ensure_column 添加 server_id 后创建
-
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -105,7 +101,68 @@ async def init_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_audit_time
             ON audit_log(timestamp);
+    """)
+    await _ensure_column(db, "panel_users", "token_version", "INTEGER NOT NULL DEFAULT 0")
 
+
+async def _create_monitoring_tables(db: aiosqlite.Connection):
+    """指标采集、告警规则/历史、最新快照相关表"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            metric_type TEXT NOT NULL,
+            value_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_metrics_type_time
+            ON metrics(metric_type, timestamp);
+        -- idx_metrics_server_time 在 _ensure_column 添加 server_id 后创建
+
+        CREATE TABLE IF NOT EXISTS alert_rules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            operator TEXT NOT NULL DEFAULT '>',
+            warning_threshold REAL,
+            critical_threshold REAL,
+            cooldown_minutes INTEGER DEFAULT 60,
+            notify INTEGER DEFAULT 1,
+            enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS alert_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_id TEXT,
+            severity TEXT NOT NULL,
+            current_value REAL,
+            message TEXT,
+            notified INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_alert_hist_rule
+            ON alert_history(rule_id, created_at);
+
+        -- 最新指标快照表 (UPSERT，避免自联结查最新行)
+        CREATE TABLE IF NOT EXISTS metrics_latest (
+            server_id TEXT PRIMARY KEY,
+            data TEXT NOT NULL,
+            collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    # _ensure_column 迁移
+    await _ensure_column(db, "alert_rules", "rule_type", "TEXT DEFAULT 'threshold'")
+    await _ensure_column(db, "alert_rules", "baseline_window_hours", "INTEGER DEFAULT 168")
+    await _ensure_column(db, "alert_rules", "stddev_multiplier", "REAL DEFAULT 3.0")
+    await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
+    await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
+    # server_id 列就绪后才能创建复合索引
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
+
+
+async def _create_notification_tables(db: aiosqlite.Connection):
+    """通知记录、通知渠道配置相关表"""
+    await db.executescript("""
         CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -115,7 +172,6 @@ async def init_tables(db: aiosqlite.Connection):
             error TEXT
         );
 
-        -- 通知渠道配置
         CREATE TABLE IF NOT EXISTS notification_channels (
             id TEXT PRIMARY KEY,
             channel_type TEXT NOT NULL,
@@ -128,7 +184,13 @@ async def init_tables(db: aiosqlite.Connection):
             last_test_at TIMESTAMP,
             last_test_ok INTEGER
         );
+    """)
+    await _ensure_column(db, "notifications", "channel_id", "TEXT")
 
+
+async def _create_agent_tables(db: aiosqlite.Connection):
+    """Agent 对话、审批、巡检、技能、运行、团队相关表"""
+    await db.executescript("""
         -- Agent 对话线程
         CREATE TABLE IF NOT EXISTS agent_conversations (
             id TEXT PRIMARY KEY,
@@ -204,33 +266,6 @@ async def init_tables(db: aiosqlite.Connection):
         CREATE INDEX IF NOT EXISTS idx_patrol_hist
             ON agent_patrol_history(task_id, timestamp);
 
-        -- 告警规则
-        CREATE TABLE IF NOT EXISTS alert_rules (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            metric TEXT NOT NULL,
-            operator TEXT NOT NULL DEFAULT '>',
-            warning_threshold REAL,
-            critical_threshold REAL,
-            cooldown_minutes INTEGER DEFAULT 60,
-            notify INTEGER DEFAULT 1,
-            enabled INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- 告警历史
-        CREATE TABLE IF NOT EXISTS alert_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rule_id TEXT,
-            severity TEXT NOT NULL,
-            current_value REAL,
-            message TEXT,
-            notified INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_alert_hist_rule
-            ON alert_history(rule_id, created_at);
-
         -- 巡检模板
         CREATE TABLE IF NOT EXISTS patrol_templates (
             id TEXT PRIMARY KEY,
@@ -244,68 +279,6 @@ async def init_tables(db: aiosqlite.Connection):
             is_builtin INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-
-        -- 故障报告
-        CREATE TABLE IF NOT EXISTS fault_reports (
-            id TEXT PRIMARY KEY,
-            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            source TEXT,
-            severity TEXT,
-            affected_components TEXT,
-            symptoms TEXT,
-            root_cause TEXT,
-            evidence TEXT,
-            immediate_actions TEXT,
-            long_term_solutions TEXT,
-            similar_cases TEXT,
-            status TEXT DEFAULT 'open',
-            resolved_at TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_fault_reports_status
-            ON fault_reports(status, detected_at);
-
-        -- 故障案例库
-        CREATE TABLE IF NOT EXISTS fault_cases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            category TEXT,
-            symptoms TEXT,
-            root_cause TEXT,
-            solution TEXT,
-            tags TEXT,
-            source TEXT DEFAULT 'manual',
-            source_id TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- 资产台账
-        CREATE TABLE IF NOT EXISTS assets (
-            id TEXT PRIMARY KEY,
-            type TEXT NOT NULL,
-            name TEXT NOT NULL,
-            status TEXT DEFAULT 'unknown',
-            properties TEXT,
-            dependencies TEXT,
-            is_manual INTEGER DEFAULT 0,
-            last_seen TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_assets_type
-            ON assets(type);
-
-        -- 定时任务变更日志
-        CREATE TABLE IF NOT EXISTS cron_job_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cron_user TEXT NOT NULL,
-            schedule TEXT NOT NULL,
-            command TEXT NOT NULL,
-            comment TEXT,
-            created_by TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            action TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_cron_job_log_user
-            ON cron_job_log(cron_user);
 
         CREATE TABLE IF NOT EXISTS async_agent_tasks (
             id TEXT PRIMARY KEY,
@@ -394,108 +367,6 @@ async def init_tables(db: aiosqlite.Connection):
         CREATE INDEX IF NOT EXISTS idx_agent_skill_bindings_skill
             ON agent_skill_bindings(skill_id, binding_type, binding_target);
 
-        -- 配额违规记录
-        CREATE TABLE IF NOT EXISTS quota_violations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            violation_type TEXT NOT NULL,
-            mem_gb REAL,
-            quota_mem_gb REAL,
-            usage_pct REAL,
-            action_taken TEXT,
-            first_detected_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            notified_at TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_quota_violations_user
-            ON quota_violations(username, created_at);
-
-        -- 运维剧本
-        CREATE TABLE IF NOT EXISTS playbooks (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            category TEXT DEFAULT 'general',
-            system_prompt TEXT NOT NULL,
-            parameters TEXT NOT NULL DEFAULT '[]',
-            tools_required TEXT NOT NULL DEFAULT '',
-            validation_rules TEXT DEFAULT '{}',
-            trigger_config TEXT DEFAULT '{"type":"manual"}',
-            safety_mode TEXT,
-            steps_visual TEXT,
-            is_builtin INTEGER DEFAULT 0,
-            tags TEXT DEFAULT '',
-            created_by TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_playbooks_category ON playbooks(category);
-
-        -- 剧本执行记录
-        CREATE TABLE IF NOT EXISTS playbook_executions (
-            id TEXT PRIMARY KEY,
-            playbook_id TEXT NOT NULL,
-            parameters_json TEXT DEFAULT '{}',
-            status TEXT DEFAULT 'pending',
-            report TEXT,
-            triggered_by TEXT NOT NULL,
-            trigger_type TEXT DEFAULT 'manual',
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP,
-            duration_seconds REAL,
-            thread_id TEXT,
-            tool_calls_count INTEGER DEFAULT 0
-        );
-        CREATE INDEX IF NOT EXISTS idx_pb_exec_playbook
-            ON playbook_executions(playbook_id, started_at);
-
-        -- 剧本凭据存储
-        CREATE TABLE IF NOT EXISTS playbook_credentials (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            description TEXT,
-            encrypted_value TEXT NOT NULL,
-            credential_type TEXT DEFAULT 'generic',
-            created_by TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- 多服务器管理
-        CREATE TABLE IF NOT EXISTS servers (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            hostname TEXT NOT NULL,
-            ip_address TEXT NOT NULL,
-            agent_port INTEGER DEFAULT 9901,
-            agent_token_hash TEXT,
-            ssh_user TEXT,
-            ssh_port INTEGER DEFAULT 22,
-            ssh_key_credential TEXT,
-            os_info TEXT,
-            tags TEXT DEFAULT '[]',
-            is_local INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'unknown',
-            last_heartbeat TIMESTAMP,
-            agent_version TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
-
-        CREATE TABLE IF NOT EXISTS server_groups (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            description TEXT,
-            color TEXT DEFAULT '#38bdf8',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS server_group_members (
-            group_id TEXT NOT NULL,
-            server_id TEXT NOT NULL,
-            PRIMARY KEY (group_id, server_id)
-        );
-
         -- 智能体团队
         CREATE TABLE IF NOT EXISTS agent_teams (
             id TEXT PRIMARY KEY,
@@ -568,28 +439,50 @@ async def init_tables(db: aiosqlite.Connection):
             collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
-
-    try:
-        await db.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS fault_cases_fts USING fts5("
-            "title, symptoms, root_cause, solution, tags, content=fault_cases, content_rowid=id)"
-        )
-    except Exception:
-        logger.exception("创建 FTS5 虚拟表 fault_cases_fts 失败")
-        raise
-
-    await _ensure_column(db, "panel_users", "token_version", "INTEGER NOT NULL DEFAULT 0")
-    await _ensure_column(db, "alert_rules", "rule_type", "TEXT DEFAULT 'threshold'")
-    await _ensure_column(db, "alert_rules", "baseline_window_hours", "INTEGER DEFAULT 168")
-    await _ensure_column(db, "alert_rules", "stddev_multiplier", "REAL DEFAULT 3.0")
+    # _ensure_column 迁移
     await _ensure_column(db, "agent_patrol_history", "report_json", "TEXT")
     await _ensure_column(db, "agent_patrol_history", "triggered_by", "TEXT DEFAULT 'scheduler'")
-    await _ensure_column(db, "notifications", "channel_id", "TEXT")
-    await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
-    await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "agent_approvals", "run_id", "TEXT")
-    # server_id 列就绪后才能创建复合索引
-    await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
+
+
+async def _create_server_tables(db: aiosqlite.Connection):
+    """多服务器管理相关表"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            hostname TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            agent_port INTEGER DEFAULT 9901,
+            agent_token_hash TEXT,
+            ssh_user TEXT,
+            ssh_port INTEGER DEFAULT 22,
+            ssh_key_credential TEXT,
+            os_info TEXT,
+            tags TEXT DEFAULT '[]',
+            is_local INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'unknown',
+            last_heartbeat TIMESTAMP,
+            agent_version TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
+
+        CREATE TABLE IF NOT EXISTS server_groups (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            color TEXT DEFAULT '#38bdf8',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS server_group_members (
+            group_id TEXT NOT NULL,
+            server_id TEXT NOT NULL,
+            PRIMARY KEY (group_id, server_id)
+        );
+    """)
     # Issue #8: agent_token_hash 实际存 Fernet 加密值而非 hash，新增正确命名的字段
     # 不能 ALTER TABLE RENAME COLUMN (旧版 SQLite 不支持)，所以新增并双写
     await _ensure_column(db, "servers", "agent_token_encrypted", "TEXT")
@@ -605,5 +498,158 @@ async def init_tables(db: aiosqlite.Connection):
         "VALUES ('local', ?, ?, '127.0.0.1', 1, 'online')",
         (_hostname, _hostname),
     )
+
+
+async def _create_other_tables(db: aiosqlite.Connection):
+    """故障报告、资产台账、定时任务日志、配额违规、剧本、凭据等"""
+    await db.executescript("""
+        -- 故障报告
+        CREATE TABLE IF NOT EXISTS fault_reports (
+            id TEXT PRIMARY KEY,
+            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            source TEXT,
+            severity TEXT,
+            affected_components TEXT,
+            symptoms TEXT,
+            root_cause TEXT,
+            evidence TEXT,
+            immediate_actions TEXT,
+            long_term_solutions TEXT,
+            similar_cases TEXT,
+            status TEXT DEFAULT 'open',
+            resolved_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_fault_reports_status
+            ON fault_reports(status, detected_at);
+
+        -- 故障案例库
+        CREATE TABLE IF NOT EXISTS fault_cases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            category TEXT,
+            symptoms TEXT,
+            root_cause TEXT,
+            solution TEXT,
+            tags TEXT,
+            source TEXT DEFAULT 'manual',
+            source_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 资产台账
+        CREATE TABLE IF NOT EXISTS assets (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT DEFAULT 'unknown',
+            properties TEXT,
+            dependencies TEXT,
+            is_manual INTEGER DEFAULT 0,
+            last_seen TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_assets_type
+            ON assets(type);
+
+        -- 定时任务变更日志
+        CREATE TABLE IF NOT EXISTS cron_job_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cron_user TEXT NOT NULL,
+            schedule TEXT NOT NULL,
+            command TEXT NOT NULL,
+            comment TEXT,
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            action TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cron_job_log_user
+            ON cron_job_log(cron_user);
+
+        -- 配额违规记录
+        CREATE TABLE IF NOT EXISTS quota_violations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            violation_type TEXT NOT NULL,
+            mem_gb REAL,
+            quota_mem_gb REAL,
+            usage_pct REAL,
+            action_taken TEXT,
+            first_detected_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            notified_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_quota_violations_user
+            ON quota_violations(username, created_at);
+
+        -- 运维剧本
+        CREATE TABLE IF NOT EXISTS playbooks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            category TEXT DEFAULT 'general',
+            system_prompt TEXT NOT NULL,
+            parameters TEXT NOT NULL DEFAULT '[]',
+            tools_required TEXT NOT NULL DEFAULT '',
+            validation_rules TEXT DEFAULT '{}',
+            trigger_config TEXT DEFAULT '{"type":"manual"}',
+            safety_mode TEXT,
+            steps_visual TEXT,
+            is_builtin INTEGER DEFAULT 0,
+            tags TEXT DEFAULT '',
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_playbooks_category ON playbooks(category);
+
+        -- 剧本执行记录
+        CREATE TABLE IF NOT EXISTS playbook_executions (
+            id TEXT PRIMARY KEY,
+            playbook_id TEXT NOT NULL,
+            parameters_json TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'pending',
+            report TEXT,
+            triggered_by TEXT NOT NULL,
+            trigger_type TEXT DEFAULT 'manual',
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            duration_seconds REAL,
+            thread_id TEXT,
+            tool_calls_count INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_pb_exec_playbook
+            ON playbook_executions(playbook_id, started_at);
+
+        -- 剧本凭据存储
+        CREATE TABLE IF NOT EXISTS playbook_credentials (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            encrypted_value TEXT NOT NULL,
+            credential_type TEXT DEFAULT 'generic',
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+
+async def init_tables(db: aiosqlite.Connection):
+    """初始化所有数据库表 — 按领域分组调用子函数"""
+    await _create_auth_tables(db)
+    await _create_monitoring_tables(db)
+    await _create_notification_tables(db)
+    await _create_agent_tables(db)
+    await _create_server_tables(db)
+    await _create_other_tables(db)
+
+    # FTS5 虚拟表（跨领域，单独创建）
+    try:
+        await db.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fault_cases_fts USING fts5("
+            "title, symptoms, root_cause, solution, tags, content=fault_cases, content_rowid=id)"
+        )
+    except Exception:
+        logger.exception("创建 FTS5 虚拟表 fault_cases_fts 失败")
+        raise
 
     await db.commit()
