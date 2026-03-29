@@ -199,6 +199,29 @@ async def _init_stale_cleanup():
     from modules.agents.async_tasks import cleanup_stale_tasks
 
     await cleanup_stale_tasks()
+    # 清理 30 天前的 agent checkpoint 记录，防止数据库膨胀
+    await _cleanup_old_checkpoints()
+
+
+async def _cleanup_old_checkpoints():
+    """清理 30 天前的 LangGraph checkpoint 记录"""
+    import aiosqlite
+
+    from config import settings
+
+    try:
+        async with aiosqlite.connect(settings.agent_checkpoint_db) as db:
+            await db.execute("PRAGMA busy_timeout=5000")
+            cursor = await db.execute(
+                "DELETE FROM checkpoints WHERE thread_ts < datetime('now', '-30 days')"
+            )
+            deleted = cursor.rowcount
+            await db.commit()
+            if deleted:
+                logger.info("[ServerHub] 已清理 %d 条过期 checkpoint 记录", deleted)
+    except Exception as e:
+        # checkpoint 表可能不存在（首次启动），或字段名不同 — 非致命
+        logger.debug("[ServerHub] checkpoint 清理跳过: %s", e)
 
 
 async def _init_lg_compat():

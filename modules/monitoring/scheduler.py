@@ -23,9 +23,16 @@ async def _collect_and_store():
     try:
         snapshot = await asyncio.to_thread(collect_all)
         db = await get_db()
+        snapshot_json = json.dumps(snapshot, ensure_ascii=False)
         await db.execute(
             "INSERT INTO metrics (metric_type, value_json) VALUES (?, ?)",
-            ("all", json.dumps(snapshot, ensure_ascii=False)),
+            ("all", snapshot_json),
+        )
+        # UPSERT metrics_latest — 避免 query_fleet_latest 自联结
+        now_iso = datetime.now().isoformat()
+        await db.execute(
+            "INSERT OR REPLACE INTO metrics_latest (server_id, data, collected_at) VALUES (?, ?, ?)",
+            ("local", snapshot_json, now_iso),
         )
         await db.commit()
 
@@ -39,7 +46,7 @@ async def _collect_and_store():
 
         # 全量数据也通过 WS 广播
         try:
-            from modules.monitoring.routes import ws_manager
+            from modules.monitoring.ws_manager import ws_manager
 
             await ws_manager.broadcast({"type": "metrics_full", "server_id": "local", "data": snapshot})
         except Exception as e:
@@ -98,7 +105,7 @@ async def _scheduler_loop():
 
 async def _ws_broadcast_loop():
     """5秒快速采集并广播到 WebSocket 客户端"""
-    from modules.monitoring.routes import ws_manager
+    from modules.monitoring.ws_manager import ws_manager
 
     logger.info("WebSocket 广播循环已启动 (间隔: %ss)", settings.ws_metrics_interval)
     while True:
@@ -192,7 +199,7 @@ async def _collect_remote_metrics():
 
             # 通过 WS 广播（带 server_id）
             try:
-                from modules.monitoring.routes import ws_manager
+                from modules.monitoring.ws_manager import ws_manager
 
                 await ws_manager.broadcast(
                     {
@@ -209,12 +216,22 @@ async def _collect_remote_metrics():
 
     # 批量写入 — 单次 executemany + 单次 commit
     if collected:
+        now_iso = datetime.now().isoformat()
         insert_rows = [
             (server_dict["id"], "all", json.dumps(snapshot, ensure_ascii=False)) for server_dict, snapshot in collected
         ]
         await db.executemany(
             "INSERT INTO metrics (server_id, metric_type, value_json) VALUES (?, ?, ?)",
             insert_rows,
+        )
+        # UPSERT metrics_latest — 远程服务器也维护最新快照
+        latest_rows = [
+            (server_dict["id"], json.dumps(snapshot, ensure_ascii=False), now_iso)
+            for server_dict, snapshot in collected
+        ]
+        await db.executemany(
+            "INSERT OR REPLACE INTO metrics_latest (server_id, data, collected_at) VALUES (?, ?, ?)",
+            latest_rows,
         )
         await db.commit()
 
