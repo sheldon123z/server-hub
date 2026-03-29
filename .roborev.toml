@@ -1,15 +1,15 @@
 # Default agent for this repo when no workflow-specific agent is set.
-agent = ''
+agent = 'codex'
 # Default model for this repo when no workflow-specific model is set.
 model = ''
 # Backup agent for this repo if the primary agent fails.
-backup_agent = ''
+backup_agent = 'claude-code'
 # Backup model for this repo if the primary model fails.
 backup_model = ''
 # Number of related reviews to include as context for this repo.
 review_context_count = 0
 # Extra review instructions added to prompts for this repo.
-review_guidelines = ''
+review_guidelines = '所有 review 结论、摘要、问题说明、修复建议默认使用简体中文输出。代码、命令、路径、配置键名、类名、函数名、错误消息原文保持不翻译。'
 # Override the review job timeout in minutes for this repo.
 job_timeout_minutes = 0
 # Branches that should be skipped for automatic review in this repo.
@@ -17,9 +17,9 @@ excluded_branches = []
 # Commit message substrings that should skip review for this repo.
 excluded_commit_patterns = []
 # Display name shown for this repo in the TUI and output.
-display_name = ''
+display_name = 'ServerHub'
 # Reasoning level for reviews in this repo: fast, standard, medium, thorough, or maximum.
-review_reasoning = ''
+review_reasoning = 'medium'
 # Reasoning level for refine in this repo: fast, standard, medium, thorough, or maximum.
 refine_reasoning = ''
 # Reasoning level for fix in this repo: fast, standard, medium, thorough, or maximum.
@@ -29,9 +29,9 @@ fix_min_severity = ''
 # Minimum severity for refine in this repo: critical, high, medium, low.
 refine_min_severity = ''
 # Filenames or glob patterns to exclude from review diffs for this repo.
-exclude_patterns = []
+exclude_patterns = ['*.md', '*.txt', 'CHANGELOG.md', 'docs/**', 'frontend/package-lock.json']
 # Automatic post-commit review mode for this repo: commit or branch.
-post_commit_review = ''
+post_commit_review = 'commit'
 reuse_review_session_lookback = 0
 # Agent override for standard review in this repo.
 review_agent = ''
@@ -82,7 +82,7 @@ refine_model_thorough = ''
 # Model override for maximum refine in this repo.
 refine_model_maximum = ''
 # Agent override for fix in this repo.
-fix_agent = ''
+fix_agent = 'codex'
 # Agent override for fast fix in this repo.
 fix_agent_fast = ''
 # Agent override for standard fix in this repo.
@@ -173,9 +173,13 @@ fix_backup_model = ''
 security_backup_model = ''
 # Backup model for design review in this repo.
 design_backup_model = ''
-hooks = []
 # Maximum prompt size for this repo before falling back to file paths.
 max_prompt_size = 0
+
+# 评审失败时自动创建 GitHub Issue + 触发 Claude Code 修复
+[[hooks]]
+event = 'review.completed'
+command = "[ '{verdict}' = 'F' ] && /home/zhengxiaodong/scripts/server-hub/.roborev-issue.sh {job_id} {sha}"
 
 [ci]
 # Override the agents used by CI for this repo.
