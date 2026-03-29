@@ -7,9 +7,9 @@ const client = axios.create({
 })
 
 let isRefreshing = false
-let failedQueue: Array<{ resolve: (v: any) => void; reject: (e: any) => void }> = []
+let failedQueue: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
 
-const processQueue = (error: any) => {
+const processQueue = (error: unknown) => {
   failedQueue.forEach(({ resolve, reject }) => {
     if (error) reject(error)
     else resolve(undefined)

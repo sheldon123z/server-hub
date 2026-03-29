@@ -124,9 +124,12 @@ export function useSSEChat() {
     if (typeof raw === 'string') return raw
     if (Array.isArray(raw)) {
       return raw
-        .map((block: any) => {
+        .map((block: unknown) => {
           if (typeof block === 'string') return block
-          if (block?.type === 'text' && typeof block.text === 'string') return block.text
+          if (block && typeof block === 'object' && 'type' in block && 'text' in block) {
+            const b = block as { type: string; text: string }
+            if (b.type === 'text' && typeof b.text === 'string') return b.text
+          }
           return ''
         })
         .join('')

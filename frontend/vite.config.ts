@@ -20,5 +20,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-echarts': ['echarts', 'echarts-for-react'],
+          'vendor-mermaid': ['mermaid'],
+          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit'],
+          'vendor-markdown': ['marked', 'highlight.js', 'dompurify'],
+        },
+      },
+    },
   },
 })
