@@ -1,10 +1,17 @@
 """Cron 任务解析、描述、CRUD 和备份管理"""
 
 import asyncio
+import logging
 import re
 from datetime import datetime
+from pathlib import Path
 
 from config import BASE_DIR
+
+logger = logging.getLogger(__name__)
+
+# crontab 文件目录（systemd ReadOnlyPaths 已授权）
+_CRONTAB_DIR = Path("/var/spool/cron/crontabs")
 
 # ─── 表达式描述 ───
 
@@ -78,14 +85,6 @@ def _validate_username(username: str):
         raise ValueError(f"无效的用户名: {username}")
 
 
-def _crontab_read_cmd(cron_user: str) -> list[str]:
-    """构建读取 crontab 的命令"""
-    if cron_user == "root":
-        return ["sudo", "crontab", "-l"]
-    _validate_username(cron_user)
-    return ["crontab", "-l", "-u", cron_user]
-
-
 def _crontab_write_cmd(cron_user: str) -> list[str]:
     """构建写入 crontab 的命令"""
     if cron_user == "root":
@@ -95,8 +94,27 @@ def _crontab_write_cmd(cron_user: str) -> list[str]:
 
 
 async def _read_crontab_raw(cron_user: str) -> str:
-    """读取原始 crontab 内容"""
-    cmd = _crontab_read_cmd(cron_user)
+    """读取原始 crontab 内容
+
+    优先直接读文件（配合 systemd ReadOnlyPaths，无需 sudo），
+    失败时回退到 crontab 命令。
+    """
+    _validate_username(cron_user)
+
+    # 优先直接读文件，避免 sudo 提权
+    crontab_file = _CRONTAB_DIR / cron_user
+    try:
+        return await asyncio.to_thread(crontab_file.read_text)
+    except FileNotFoundError:
+        return ""
+    except PermissionError:
+        logger.debug("直接读取 %s 权限不足，回退到 crontab 命令", crontab_file)
+
+    # 回退：crontab 命令（对当前用户有效，root 需要 sudo）
+    if cron_user == "root":
+        cmd = ["sudo", "crontab", "-l"]
+    else:
+        cmd = ["crontab", "-l", "-u", cron_user]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,

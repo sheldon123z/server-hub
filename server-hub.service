@@ -17,7 +17,12 @@ StartLimitBurst=5
 StartLimitIntervalSec=60
 
 # 安全加固
+# NoNewPrivileges=no 是必需的：Agent 工具通过 sudo 执行 Docker/服务/用户/
+# 网络等运维操作（6 个模块共 19 处 sudo 调用）。
+# CapabilityBoundingSet 作为补偿控制，限制可提升的 Linux 能力集上界，
+# 即使 sudo 提权也无法：加载内核模块、原始磁盘 I/O、重启系统、raw socket 等。
 NoNewPrivileges=no
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_KILL CAP_NET_ADMIN CAP_FOWNER CAP_CHOWN CAP_SYS_PTRACE
 ProtectSystem=full
 ReadWritePaths=/home/zhengxiaodong/scripts/server-hub/data /home/zhengxiaodong/scripts/server-hub/logs /tmp/serverhub-sandbox /home/zhengxiaodong/logs
 ReadOnlyPaths=/home/zhengxiaodong/.api_keys /home/zhengxiaodong/scripts/server-hub/.env /var/log /var/spool/cron /var/spool/cron/crontabs
