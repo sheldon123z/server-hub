@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from auth.dependencies import get_current_user, get_user_from_access_token
 from modules.monitoring.collectors import (
@@ -100,12 +100,10 @@ async def get_realtime(
     try:
         client = await get_agent_client(server_id)
     except ValueError:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail=f"服务器 {server_id} 不存在")
 
-    # 尝试完整指标 → 快速指标 → health 兜底，保证仪表盘始终有数据
-    for getter_name in ("get_metrics", "get_fast_metrics", "health_check"):
+    # 尝试完整指标 → 快速指标（不含 health_check，因为 /health 不返回监控指标）
+    for getter_name in ("get_metrics", "get_fast_metrics"):
         try:
             getter = getattr(client, getter_name)
             result = await asyncio.wait_for(getter(), timeout=15)
@@ -116,8 +114,18 @@ async def get_realtime(
         except Exception:  # noqa: S112 — fallback chain, errors expected
             continue
 
-    # 所有方式都失败 — 返回最小骨架避免前端空白
-    from fastapi import HTTPException
+    # 所有指标端点都失败 — 尝试 health 判断服务器状态
+    try:
+        health = await asyncio.wait_for(client.health_check(), timeout=5)
+        if isinstance(health, dict) and health.get("ok"):
+            raise HTTPException(
+                status_code=503,
+                detail="远程服务器在线但指标采集不可用 (degraded)",
+            )
+    except HTTPException:
+        raise
+    except Exception:  # noqa: S110 — health probe failure is non-critical
+        pass
 
     raise HTTPException(status_code=502, detail="远程指标获取失败: 所有采集方式均不可用")
 

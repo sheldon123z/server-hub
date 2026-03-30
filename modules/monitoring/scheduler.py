@@ -247,8 +247,9 @@ async def _collect_remote_metrics():
             )
             client = AgentClient(server_dict)
             snapshot = None
-            # 尝试完整指标 → 快速指标 → health 兜底
-            for method in ("get_metrics", "get_fast_metrics", "health_check"):
+            # 尝试完整指标 → 快速指标（不含 health_check，/health 不返回监控指标，
+            # 写入 metrics 会导致 CPU/内存/磁盘显示为 0，污染历史数据）
+            for method in ("get_metrics", "get_fast_metrics"):
                 try:
                     result = await asyncio.wait_for(getattr(client, method)(), timeout=15)
                     if result.get("ok") and isinstance(result.get("data"), dict):
