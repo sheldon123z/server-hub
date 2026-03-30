@@ -58,10 +58,16 @@ if [ -n "$OPEN_ISSUES" ]; then
         CREATED_EPOCH=$(date -d "$created_at" +%s 2>/dev/null || echo "")
         if [ -n "$CREATED_EPOCH" ]; then
             AGE=$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
-            if [ "$AGE" -ge 0 ]; then
-                # 每次运行都关闭 roborev issue（30 分钟清理周期足够了）
-                gh issue close "$num" --repo "$REPO" --comment "自动关闭：roborev issue 已由定期清理处理" 2>/dev/null
-                log "CLOSED-STALE: Issue #$num ($title, age=${AGE}h)"
+            if [ "$AGE" -ge 48 ]; then
+                # 检查是否有关联的 open PR（分支名 fix/roborev-<issue_number>）
+                LINKED_PRS=$(gh pr list --repo "$REPO" --state open --head "fix/roborev-$num" \
+                    --json number --jq 'length' 2>/dev/null)
+                if [ "${LINKED_PRS:-0}" = "0" ]; then
+                    gh issue close "$num" --repo "$REPO" --comment "自动关闭：超过 48 小时未处理且无关联的 open PR" 2>/dev/null
+                    log "CLOSED-STALE: Issue #$num ($title, age=${AGE}h)"
+                else
+                    log "SKIPPED: Issue #$num ($title, age=${AGE}h, linked_prs=$LINKED_PRS)"
+                fi
             fi
         fi
     done <<< "$OPEN_ISSUES"
