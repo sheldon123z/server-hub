@@ -22,6 +22,9 @@ from fastapi import APIRouter, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
+# 异步 SubAgent 全局超时限制（秒），防止 graph 执行无限挂起
+_ASYNC_SUBAGENT_TIMEOUT = 600
+
 lg_router = APIRouter(prefix="/lg", tags=["LG Compat"])
 
 # ─── 状态存储 ───
@@ -101,7 +104,10 @@ def _run_to_dict(r: RunData) -> dict:
 
 
 async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
-    """在后台执行 graph，更新 run 和 thread 状态"""
+    """在后台执行 graph，更新 run 和 thread 状态
+
+    超时保护: 使用 _ASYNC_SUBAGENT_TIMEOUT (默认 600s) 防止无限挂起。
+    """
     graph = _graphs.get(run.assistant_id)
     if not graph:
         run.status = "error"
@@ -116,7 +122,7 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
         config = {"configurable": {"thread_id": run.thread_id}}
         result = await asyncio.wait_for(
             graph.ainvoke(input_data, config),
-            timeout=300,
+            timeout=_ASYNC_SUBAGENT_TIMEOUT,
         )
 
         messages = result.get("messages", [])
@@ -140,11 +146,11 @@ async def _execute_graph(run: RunData, thread: ThreadData, input_data: dict):
 
     except TimeoutError:
         run.status = "error"
-        run.error = "Execution timed out (300s limit)"
+        run.error = f"Execution timed out ({_ASYNC_SUBAGENT_TIMEOUT}s limit)"
         run.updated_at = _now_iso()
         async with thread.lock:
             thread.status = "idle"
-        logger.warning("LG Compat: run %s 超时", run.run_id)
+        logger.warning("LG Compat: run %s 超时 (%ds)", run.run_id, _ASYNC_SUBAGENT_TIMEOUT)
 
     except asyncio.CancelledError:
         run.status = "cancelled"
@@ -234,9 +240,24 @@ async def create_run(thread_id: str, request: Request):
         thread.values["messages"] = existing
         thread.status = "busy"
 
-    # 启动后台执行
+    # 启动后台执行 — 外层再加安全超时，防止 _execute_graph 内部超时失效
+    async def _guarded_execute():
+        try:
+            await asyncio.wait_for(
+                _execute_graph(run, thread, input_data),
+                timeout=_ASYNC_SUBAGENT_TIMEOUT + 60,  # 比内部超时多 60s 余量
+            )
+        except TimeoutError:
+            if run.status in ("pending", "running"):
+                run.status = "error"
+                run.error = f"Task-level safety timeout ({_ASYNC_SUBAGENT_TIMEOUT + 60}s)"
+                run.updated_at = _now_iso()
+                async with thread.lock:
+                    thread.status = "idle"
+                logger.error("LG Compat: run %s 触发安全超时兜底", run.run_id)
+
     run.task = asyncio.create_task(
-        _execute_graph(run, thread, input_data),
+        _guarded_execute(),
         name=f"lg-run-{run.run_id[:8]}",
     )
 
