@@ -58,20 +58,25 @@ echo "=== ServerHub Agent 安装程序 ==="
 echo "安装目录: $INSTALL_DIR"
 echo "Agent 端口: $AGENT_PORT"
 
-# 检查 Python 3.9+
-if ! command -v python3 &>/dev/null; then
-    echo "ERROR: 需要 Python 3.9+，请先安装"
-    exit 1
-fi
+# 自动检测最高可用 Python 版本 (>=3.9)
+PYTHON=""
+for candidate in python3.13 python3.12 python3.11 python3.10 python3.9 python3; do
+    if command -v "$candidate" &>/dev/null; then
+        PY_VER=$("$candidate" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
+        PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
+        if [[ "${PY_MINOR:-0}" -ge 9 ]]; then
+            PYTHON="$candidate"
+            break
+        fi
+    fi
+done
 
-PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
-PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
-if [[ "$PY_MAJOR" -lt 3 ]] || [[ "$PY_MAJOR" -eq 3 && "$PY_MINOR" -lt 9 ]]; then
-    echo "ERROR: Python 版本 $PY_VER 过低，需要 3.9+"
+if [[ -z "$PYTHON" ]]; then
+    echo "ERROR: 未找到 Python 3.9+，请先安装 (apt install python3.11 或从源码编译)"
+    echo "  当前 python3 版本: $(python3 --version 2>/dev/null || echo '未安装')"
     exit 1
 fi
-echo "Python 版本: $PY_VER"
+echo "Python: $PYTHON ($PY_VER)"
 
 # ---------------------------------------------------------------------------
 # 安装文件
@@ -116,7 +121,7 @@ echo "[3/5] 创建虚拟环境并安装依赖..."
 cd "$INSTALL_DIR"
 
 if [[ ! -d "venv" ]]; then
-    python3 -m venv venv
+    "$PYTHON" -m venv venv
 fi
 
 source venv/bin/activate
