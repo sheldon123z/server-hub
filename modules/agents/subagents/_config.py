@@ -55,6 +55,16 @@ def _get_subagent_model(purpose: str):
         return None
 
 
+def _get_subagent_model_by_id(model_id: str):
+    """通过 provider:model 格式直接获取模型实例，失败返回 None"""
+    try:
+        from modules.agents.llm import get_chat_model_by_id
+
+        return get_chat_model_by_id(model_id)
+    except Exception:
+        return None
+
+
 # ─── 模型 purpose / middleware profile 反向映射 ───
 
 _MODEL_PURPOSE_MAP = {
@@ -92,12 +102,18 @@ def _build_subagents_from_config(configs: list[dict]) -> list[dict]:
         tool_names = cfg.get("tools", [])
         if tool_names:
             agent_def["tools"] = _get_tools_by_names(tool_names)
-        # 模型 — 按 purpose 获取实例
-        model_purpose = cfg.get("model_purpose")
-        if model_purpose:
-            model = _get_subagent_model(model_purpose)
+        # 模型 — 优先使用直接指定的 model，否则按 purpose 获取
+        direct_model = cfg.get("model")
+        if direct_model:
+            model = _get_subagent_model_by_id(direct_model)
             if model:
                 agent_def["model"] = model
+        else:
+            model_purpose = cfg.get("model_purpose")
+            if model_purpose:
+                model = _get_subagent_model(model_purpose)
+                if model:
+                    agent_def["model"] = model
         # Middleware — 按 profile 构建
         mw_profile = cfg.get("middleware_profile")
         if mw_profile and mw_profile in MIDDLEWARE_PROFILES:
@@ -118,17 +134,18 @@ def save_subagents_config(configs: list[dict]):
     serializable = []
     for cfg in configs:
         name = cfg["name"]
-        serializable.append(
-            {
-                "name": name,
-                "description": cfg["description"],
-                "system_prompt": cfg["system_prompt"],
-                "tools": [t.name if hasattr(t, "name") else str(t) for t in cfg.get("tools", [])],
-                "model_purpose": cfg.get("model_purpose", _MODEL_PURPOSE_MAP.get(name)),
-                "middleware_profile": cfg.get("middleware_profile", _MIDDLEWARE_PROFILE_MAP.get(name)),
-                "interrupt_on": cfg.get("interrupt_on"),
-            }
-        )
+        entry: dict = {
+            "name": name,
+            "description": cfg["description"],
+            "system_prompt": cfg["system_prompt"],
+            "tools": [t.name if hasattr(t, "name") else str(t) for t in cfg.get("tools", [])],
+            "model_purpose": cfg.get("model_purpose", _MODEL_PURPOSE_MAP.get(name)),
+            "middleware_profile": cfg.get("middleware_profile", _MIDDLEWARE_PROFILE_MAP.get(name)),
+            "interrupt_on": cfg.get("interrupt_on"),
+        }
+        if cfg.get("model"):
+            entry["model"] = cfg["model"]
+        serializable.append(entry)
     custom_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

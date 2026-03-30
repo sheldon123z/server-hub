@@ -122,16 +122,24 @@ function SkillsTab() {
       const path = skill.enabled ? 'disable' : 'enable'
       await client.post(`/api/agents/admin/skills/${skill.id}/${path}`)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['studio-skills'] }),
+    onSuccess: (_data, skill) => {
+      qc.invalidateQueries({ queryKey: ['studio-skills'] })
+      qc.invalidateQueries({ queryKey: ['skill-detail', skill.id] })
+    },
   })
 
   const deleteMut = useMutation({
     mutationFn: async (skillId: string) => client.delete(`/api/agents/admin/skills/${skillId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['studio-skills'] }),
+    onSuccess: (_data, skillId) => {
+      qc.invalidateQueries({ queryKey: ['studio-skills'] })
+      if (selectedSkillId === skillId) {
+        setSelectedSkillId(null)
+      }
+    },
   })
 
   return (
-    <div className="relative flex gap-4">
+    <div className="relative flex flex-col gap-4 lg:flex-row">
       <div className="flex-1 space-y-3">
         {skills.map((skill) => (
           <div
@@ -176,7 +184,7 @@ function SkillsTab() {
       </div>
 
       {selectedSkillId && skillDetail && (
-        <div className="w-[420px] shrink-0 rounded-xl border border-border bg-bg p-5">
+        <div className="w-full shrink-0 rounded-xl border border-border bg-bg p-5 lg:w-[420px]">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text">{skillDetail.name}</h3>
             <button
@@ -410,6 +418,7 @@ function SubagentsTab() {
     description: '',
     system_prompt: '',
     tools: [] as string[],
+    model: '' as string | null,
     model_purpose: 'chat',
     middleware_profile: 'light',
   })
@@ -448,6 +457,7 @@ function SubagentsTab() {
       description: String(item.description ?? ''),
       system_prompt: String(item.system_prompt ?? ''),
       tools: Array.isArray(item.tools) ? (item.tools as string[]) : [],
+      model: item.model ? String(item.model) : null,
       model_purpose: String(item.model_purpose ?? 'chat'),
       middleware_profile: String(item.middleware_profile ?? 'light'),
     })
@@ -533,6 +543,15 @@ function SubagentsTab() {
                     onChange={(e) => setEditForm((p) => ({ ...p, system_prompt: e.target.value }))}
                     rows={6}
                     className="mt-1 h-40 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-text3">模型覆盖</label>
+                  <input
+                    value={editForm.model ?? ''}
+                    onChange={(e) => setEditForm((p) => ({ ...p, model: e.target.value || null }))}
+                    placeholder="留空则按模型用途自动选择"
+                    className="mt-1 w-full rounded-lg border border-border bg-bg2 px-3 py-2 text-sm text-text"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">

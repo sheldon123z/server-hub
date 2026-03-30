@@ -206,10 +206,6 @@ async def list_subagents(user=Depends(require_role("admin"))):
 
     subagents = get_subagents_config()
     available_tools = get_available_tools()
-    for item in subagents:
-        if "model" not in item:
-            model_purpose = item.get("model_purpose")
-            item["model"] = model_purpose if model_purpose else None
     for tool in available_tools:
         tool["risk_level"] = tool.get("risk")
     return {
