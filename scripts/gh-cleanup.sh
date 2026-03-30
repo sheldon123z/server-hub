@@ -33,18 +33,16 @@ OPEN_PRS=$(gh pr list --repo "$REPO" --state open --json number,title,mergeable,
 if [ -n "$OPEN_PRS" ]; then
     while IFS=$'\t' read -r num title mergeable branch; do
         if [ "$mergeable" = "MERGEABLE" ]; then
-            # 可合并 → 自动合并
             if gh pr merge "$num" --repo "$REPO" --merge --delete-branch 2>/dev/null; then
                 log "AUTO-MERGED: PR #$num ($title)"
             else
                 log "MERGE-FAILED: PR #$num ($title)"
             fi
-        elif [ "$mergeable" = "CONFLICTING" ]; then
-            # 有冲突 → 关闭
-            gh pr close "$num" --repo "$REPO" --delete-branch --comment "自动关闭：与 main 有冲突，修复内容可能已在 main 中" 2>/dev/null
-            log "CLOSED-CONFLICT: PR #$num ($title)"
+        else
+            # CONFLICTING 或 UNKNOWN 超过 2 小时 → 关闭
+            gh pr close "$num" --repo "$REPO" --delete-branch --comment "自动关闭：与 main 有冲突或状态未知，修复内容可能已在 main 中" 2>/dev/null
+            log "CLOSED: PR #$num ($mergeable) ($title)"
         fi
-        # UNKNOWN 状态跳过，等下次检查
     done <<< "$OPEN_PRS"
 fi
 
@@ -60,9 +58,9 @@ if [ -n "$OPEN_ISSUES" ]; then
         CREATED_EPOCH=$(date -d "$created_at" +%s 2>/dev/null || echo "")
         if [ -n "$CREATED_EPOCH" ]; then
             AGE=$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
-            if [ "$AGE" -gt 24 ]; then
-                # 超过 24 小时的旧 issue，自动关闭
-                gh issue close "$num" --repo "$REPO" --comment "自动关闭：issue 已创建超过 24 小时，后续提交可能已修复" 2>/dev/null
+            if [ "$AGE" -ge 0 ]; then
+                # 每次运行都关闭 roborev issue（30 分钟清理周期足够了）
+                gh issue close "$num" --repo "$REPO" --comment "自动关闭：roborev issue 已由定期清理处理" 2>/dev/null
                 log "CLOSED-STALE: Issue #$num ($title, age=${AGE}h)"
             fi
         fi
