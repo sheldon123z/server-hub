@@ -1,5 +1,6 @@
 """多服务器管理 API 路由"""
 
+import asyncio
 import logging
 import os
 
@@ -273,3 +274,53 @@ async def api_rotate_token(server_id: str, user=Depends(require_role("admin"))):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"ok": True, "token": new_token}
+
+
+def _read_text_file(path: str) -> str:
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+# ─── Agent 远程更新 ───
+
+
+@router.post("/{server_id}/push-update")
+async def api_push_agent_update(server_id: str, user=Depends(require_role("admin"))):
+    """将本地 serverhub-agent/ 源码推送到远程 Agent 并重启
+
+    流程:
+    1. 读取本地 serverhub-agent/*.py 文件
+    2. 逐个 POST 到远程 Agent 的 /admin/update-file 端点
+    3. 最后一个文件带 restart=true 触发重启
+    """
+    from modules.servers.agent_client import get_agent_client
+
+    try:
+        client = await get_agent_client(server_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    # 读取本地 agent 源码
+    agent_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "serverhub-agent")
+    py_files = sorted(f for f in os.listdir(agent_dir) if f.endswith(".py"))
+    if not py_files:
+        raise HTTPException(status_code=500, detail="未找到 serverhub-agent/*.py 文件")
+
+    results = []
+    for i, filename in enumerate(py_files):
+        filepath = os.path.join(agent_dir, filename)
+        content = await asyncio.to_thread(_read_text_file, filepath)
+
+        is_last = i == len(py_files) - 1
+        resp = await client._request(
+            "POST",
+            "/admin/update-file",
+            json_body={"filename": filename, "content": content, "restart": is_last},
+            timeout=30.0,
+        )
+        results.append({"file": filename, "ok": resp.get("ok", False), "detail": resp.get("error", "")})
+
+        if not resp.get("ok"):
+            return {"ok": False, "message": f"推送 {filename} 失败: {resp.get('error')}", "results": results}
+
+    return {"ok": True, "message": f"已推送 {len(py_files)} 个文件并触发重启", "results": results}

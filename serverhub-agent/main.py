@@ -502,6 +502,71 @@ async def get_services():
 
 
 # ---------------------------------------------------------------------------
+# 管理端点: 远程文件更新 (仅限 agent 安装目录内的 .py 文件)
+# ---------------------------------------------------------------------------
+
+
+class FileUpdateRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=128, description="目标文件名 (仅 .py)")
+    content: str = Field(..., min_length=1, description="文件内容")
+    restart: bool = Field(default=False, description="更新后是否自动重启 agent 服务")
+
+
+@app.post("/admin/update-file", dependencies=[Depends(verify_token)])
+async def admin_update_file(body: FileUpdateRequest):
+    """安全地更新 agent 安装目录内的 Python 文件
+
+    安全限制:
+    - 仅允许 .py 文件
+    - 文件名不能含路径分隔符 (防止路径穿越)
+    - 仅写入 agent 安装目录 (__file__ 所在目录)
+    """
+    if not body.filename.endswith(".py"):
+        raise HTTPException(status_code=400, detail="仅允许更新 .py 文件")
+    if "/" in body.filename or "\\" in body.filename or ".." in body.filename:
+        raise HTTPException(status_code=400, detail="文件名不能包含路径分隔符")
+
+    agent_dir = os.path.dirname(os.path.abspath(__file__))
+    target = os.path.join(agent_dir, body.filename)
+    resolved = os.path.realpath(target)
+    if not resolved.startswith(agent_dir):
+        raise HTTPException(status_code=400, detail="路径穿越检测")
+
+    try:
+        # 备份原文件
+        if os.path.exists(target):
+            backup = target + ".bak"
+            with open(target, "r", encoding="utf-8") as f:
+                old_content = f.read()
+            with open(backup, "w", encoding="utf-8") as f:
+                f.write(old_content)
+
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(body.content)
+
+        logger.info("文件已更新: %s (%d bytes)", body.filename, len(body.content))
+
+        result = {"ok": True, "file": body.filename, "size": len(body.content)}
+
+        if body.restart:
+            # 延迟 1 秒后重启自身
+            async def _delayed_restart():
+                await asyncio.sleep(1)
+                logger.info("Agent 重启中...")
+                os.execv(
+                    "/usr/bin/sudo",
+                    ["sudo", "systemctl", "restart", "serverhub-agent"],
+                )
+
+            asyncio.create_task(_delayed_restart())
+            result["restarting"] = True
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"文件写入失败: {e}")
+
+
+# ---------------------------------------------------------------------------
 # 异常处理
 # ---------------------------------------------------------------------------
 

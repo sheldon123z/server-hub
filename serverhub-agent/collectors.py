@@ -71,6 +71,20 @@ def _run_cmd(args: list[str], timeout: int = 10) -> str:
         return ""
 
 
+def _safe_int(value: str, default: int = 0) -> int:
+    """安全将字符串转 int，处理 N/A、空串、浮点等情况"""
+    if not value:
+        return default
+    value = value.strip()
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return int(float(value))
+        except (ValueError, OverflowError):
+            return default
+
+
 # ---------------------------------------------------------------------------
 # 系统基础信息
 # ---------------------------------------------------------------------------
@@ -149,7 +163,7 @@ def collect_disk() -> list:
                 "free": usage.free,
                 "percent": usage.percent,
             })
-        except (PermissionError, OSError):
+        except (PermissionError, OSError, ValueError):
             continue
     return disks
 
@@ -202,13 +216,17 @@ _GPU_CACHE_TTL = 10  # seconds
 
 
 def collect_gpu() -> dict:
-    """采集 GPU 指标（nvidia-smi）"""
+    """采集 GPU 指标（nvidia-smi），支持多 GPU
+
+    多 GPU 时返回第一块 GPU 的概要 + gpus 列表。
+    前端兼容字段: name/util/mem_used/mem_total/temp (主 GPU 概要)。
+    """
     now = time.time()
     cached = _gpu_cache["value"]
     if cached is not None and now - _gpu_cache["ts"] < _GPU_CACHE_TTL:
         return cached
 
-    result = {
+    result: dict = {
         "available": False,
         "name": "",
         "util": 0,
@@ -216,6 +234,7 @@ def collect_gpu() -> dict:
         "mem_total": 0,
         "temp": 0,
         "processes": [],
+        "gpus": [],
     }
 
     raw = _run_cmd([
@@ -226,14 +245,39 @@ def collect_gpu() -> dict:
     if not raw:
         return result
 
-    parts = [x.strip() for x in raw.split(",")]
-    if len(parts) >= 5:
+    # 每行一块 GPU — 必须按行分割再按逗号分割
+    total_util = 0
+    total_mem_used = 0
+    total_mem_total = 0
+    max_temp = 0
+    for line in raw.splitlines():
+        parts = [x.strip() for x in line.split(",")]
+        if len(parts) < 5:
+            continue
+        gpu_info = {
+            "name": parts[0],
+            "util": _safe_int(parts[1]),
+            "mem_used": _safe_int(parts[2]),
+            "mem_total": _safe_int(parts[3]),
+            "temp": _safe_int(parts[4]),
+        }
+        result["gpus"].append(gpu_info)
+        total_util += gpu_info["util"]
+        total_mem_used += gpu_info["mem_used"]
+        total_mem_total += gpu_info["mem_total"]
+        max_temp = max(max_temp, gpu_info["temp"])
+
+    gpu_count = len(result["gpus"])
+    if gpu_count > 0:
         result["available"] = True
-        result["name"] = parts[0]
-        result["util"] = int(parts[1])
-        result["mem_used"] = int(parts[2])
-        result["mem_total"] = int(parts[3])
-        result["temp"] = int(parts[4])
+        result["name"] = result["gpus"][0]["name"]
+        if gpu_count > 1:
+            result["name"] += f" (×{gpu_count})"
+        # 聚合: 平均利用率, 总显存, 最高温度
+        result["util"] = round(total_util / gpu_count)
+        result["mem_used"] = total_mem_used
+        result["mem_total"] = total_mem_total
+        result["temp"] = max_temp
 
     procs_raw = _run_cmd([
         "nvidia-smi",
@@ -244,7 +288,9 @@ def collect_gpu() -> dict:
         for line in procs_raw.splitlines():
             pparts = [x.strip() for x in line.split(",")]
             if len(pparts) >= 3:
-                pid = int(pparts[0])
+                pid = _safe_int(pparts[0])
+                if pid < 1:
+                    continue
                 user = ""
                 try:
                     user = psutil.Process(pid).username()
@@ -253,7 +299,7 @@ def collect_gpu() -> dict:
                 result["processes"].append({
                     "pid": pid,
                     "user": user,
-                    "gpu_mem_mb": int(pparts[1]),
+                    "gpu_mem_mb": _safe_int(pparts[1]),
                     "name": pparts[2],
                 })
 
@@ -393,7 +439,7 @@ def collect_fast() -> dict:
                 "mountpoint": part.mountpoint,
                 "percent": usage.percent,
             })
-        except (PermissionError, OSError):
+        except (PermissionError, OSError, ValueError):
             continue
 
     return {
