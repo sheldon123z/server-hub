@@ -38,7 +38,8 @@ client.interceptors.response.use(
         return client.request(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError)
-        window.location.href = '/login'
+        // 不用 window.location.href（会触发整页重载→无限循环）
+        // 让 React 的 ProtectedRoute 通过 useAuthStore 处理跳转
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
