@@ -131,7 +131,19 @@ export function ChatPanel() {
   }, [])
 
   useEffect(() => {
-    if (isNearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!isNearBottom) return
+    if (!isStreaming) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      return
+    }
+    // 流式输出期间使用 rAF 持续滚动，确保内容增长时视口跟随
+    let rafId: number
+    function tick() {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
   }, [messages.length, isStreaming, isNearBottom])
 
   // 草稿自动保存（防抖 500ms）
