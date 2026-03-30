@@ -17,7 +17,7 @@ StartLimitBurst=5
 StartLimitIntervalSec=60
 
 # 安全加固
-NoNewPrivileges=yes
+NoNewPrivileges=no
 ProtectSystem=full
 ReadWritePaths=/home/zhengxiaodong/scripts/server-hub/data /home/zhengxiaodong/scripts/server-hub/logs /tmp/serverhub-sandbox /home/zhengxiaodong/logs
 ReadOnlyPaths=/home/zhengxiaodong/.api_keys /home/zhengxiaodong/scripts/server-hub/.env /var/log /var/spool/cron /var/spool/cron/crontabs
