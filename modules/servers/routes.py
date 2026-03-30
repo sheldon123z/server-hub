@@ -119,6 +119,7 @@ async def api_remove_group_member(
 # ─── 服务器 CRUD ───
 
 
+@router.get("")
 @router.get("/")
 async def api_list_servers(
     status: str | None = None,

@@ -10,6 +10,7 @@ playbooks_router = APIRouter()
 
 
 @playbooks_router.get("/")
+@playbooks_router.get("")
 async def list_playbooks(category: str = "", user=Depends(require_role("admin"))):
     return await services.list_playbooks(category or None)
 

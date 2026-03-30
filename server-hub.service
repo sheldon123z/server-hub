@@ -18,9 +18,9 @@ StartLimitIntervalSec=60
 
 # 安全加固
 NoNewPrivileges=yes
-ProtectSystem=strict
+ProtectSystem=full
 ReadWritePaths=/home/zhengxiaodong/scripts/server-hub/data /home/zhengxiaodong/scripts/server-hub/logs /tmp/serverhub-sandbox /home/zhengxiaodong/logs
-ReadOnlyPaths=/home/zhengxiaodong/.api_keys /home/zhengxiaodong/scripts/server-hub/.env
+ReadOnlyPaths=/home/zhengxiaodong/.api_keys /home/zhengxiaodong/scripts/server-hub/.env /var/log /var/spool/cron /var/spool/cron/crontabs
 
 [Install]
 WantedBy=multi-user.target

@@ -404,13 +404,14 @@ def _register_spa_fallback(application: FastAPI):
     if not FRONTEND_DIR.exists():
         return
 
-    @application.get("/{full_path:path}", response_class=HTMLResponse)
+    @application.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
     async def spa_fallback(full_path: str):
+        # API/WS/LG 路径不应走 SPA，返回明确的 404
         if full_path.startswith(("api/", "ws/", "lg/")):
-            raise HTTPException(status_code=404, detail="API endpoint not found")
+            raise HTTPException(status_code=404, detail=f"Not found: /{full_path}")
         return HTMLResponse(_read_frontend_index_html())
 
-    logger.info("[ServerHub] SPA catch-all 路由已注册（在 %d 个模块路由之后）", len(application.routes))
+    logger.info("[ServerHub] SPA catch-all 路由已注册")
 
 
 # ─── 入口 ───
