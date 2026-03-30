@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useAuthStore } from '@/stores/authStore'
 
 const client = axios.create({
   baseURL: '',
@@ -38,8 +39,8 @@ client.interceptors.response.use(
         return client.request(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError)
-        // 不用 window.location.href（会触发整页重载→无限循环）
-        // 让 React 的 ProtectedRoute 通过 useAuthStore 处理跳转
+        // refresh 失败 → 清空认证状态，ProtectedRoute 会自动跳转登录页
+        useAuthStore.getState().setUser(null)
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
