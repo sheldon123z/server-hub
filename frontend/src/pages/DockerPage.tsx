@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import React, { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate, formatBytes } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatDate, formatBytes } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 /* ── Types ────────────────────────────────────────── */
@@ -64,6 +64,78 @@ function containerStateColor(state: string) {
   return 'bg-yellow/20 text-yellow'
 }
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeContainers(value: unknown): Container[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.containers
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    name: toString(item.name ?? item.Names, 'unknown'),
+    id: toString(item.id ?? item.ID),
+    image: toString(item.image ?? item.Image),
+    state: toString(item.state ?? item.State, 'unknown'),
+    status: toString(item.status ?? item.Status),
+    ports: toString(item.ports ?? item.Ports),
+    created: toString(item.created ?? item.CreatedAt),
+  }))
+}
+
+function normalizeStacks(value: unknown): Stack[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.stacks
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    name: toString(item.name, 'unknown'),
+    display_name: toString(item.display_name ?? item.displayName ?? item.name),
+    path: toString(item.path),
+    services: toNumber(item.services),
+    running: toNumber(item.running),
+  }))
+}
+
+function normalizeImages(value: unknown): DockerImage[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.images
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    Repository: toString(item.Repository ?? item.repository, '<none>'),
+    Tag: toString(item.Tag ?? item.tag, '<none>'),
+    ID: toString(item.ID ?? item.id),
+    Size: typeof item.Size === 'string' ? item.Size : toNumber(item.Size ?? item.size),
+    Created: toString(item.Created ?? item.created),
+  }))
+}
+
+function normalizeNetworks(value: unknown): Network[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.networks
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    Name: toString(item.Name ?? item.name, 'unknown'),
+    Driver: toString(item.Driver ?? item.driver),
+    Scope: toString(item.Scope ?? item.scope),
+    ID: toString(item.ID ?? item.id),
+  }))
+}
+
+function normalizeVolumes(value: unknown): Volume[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.volumes
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    Name: toString(item.Name ?? item.name, 'unknown'),
+    Driver: toString(item.Driver ?? item.driver),
+    Mountpoint: toString(item.Mountpoint ?? item.mountpoint),
+  }))
+}
+
 /* ── Page ─────────────────────────────────────────── */
 
 export default function DockerPage() {
@@ -76,34 +148,34 @@ export default function DockerPage() {
   const [pullImage, setPullImage] = useState('')
 
   /* Queries */
-  const { data: containers = [], isLoading: loadingContainers } = useQuery<Container[]>({
+  const { data: containersData, isLoading: loadingContainers } = useQuery<Container[]>({
     queryKey: ['docker-containers', serverId],
-    queryFn: () => client.get('/api/docker/containers', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/containers', { params: { server_id: serverId } }).then((r) => normalizeContainers(r.data)),
     refetchInterval: 10000,
     enabled: tab === '容器',
   })
 
-  const { data: stacks = [] } = useQuery<Stack[]>({
+  const { data: stacksData } = useQuery<Stack[]>({
     queryKey: ['docker-stacks', serverId],
-    queryFn: () => client.get('/api/docker/stacks', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/stacks', { params: { server_id: serverId } }).then((r) => normalizeStacks(r.data)),
     enabled: tab === '堆栈',
   })
 
-  const { data: images = [] } = useQuery<DockerImage[]>({
+  const { data: imagesData } = useQuery<DockerImage[]>({
     queryKey: ['docker-images', serverId],
-    queryFn: () => client.get('/api/docker/images', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/images', { params: { server_id: serverId } }).then((r) => normalizeImages(r.data)),
     enabled: tab === '镜像',
   })
 
-  const { data: networksData } = useQuery<{ networks: Network[] }>({
+  const { data: networksData } = useQuery<Network[]>({
     queryKey: ['docker-networks', serverId],
-    queryFn: () => client.get('/api/docker/networks', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/networks', { params: { server_id: serverId } }).then((r) => normalizeNetworks(r.data)),
     enabled: tab === '网络',
   })
 
-  const { data: volumesData } = useQuery<{ volumes: Volume[] }>({
+  const { data: volumesData } = useQuery<Volume[]>({
     queryKey: ['docker-volumes', serverId],
-    queryFn: () => client.get('/api/docker/volumes', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/volumes', { params: { server_id: serverId } }).then((r) => normalizeVolumes(r.data)),
     enabled: tab === '卷',
   })
 
@@ -175,24 +247,30 @@ export default function DockerPage() {
   })
 
   // Always-on queries for stat summary (not gated by tab)
-  const { data: allContainers = [] } = useQuery<Container[]>({
+  const { data: allContainersData } = useQuery<Container[]>({
     queryKey: ['docker-containers-all', serverId],
-    queryFn: () => client.get('/api/docker/containers', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/containers', { params: { server_id: serverId } }).then((r) => normalizeContainers(r.data)),
     refetchInterval: 15000,
   })
-  const { data: allImages = [] } = useQuery<DockerImage[]>({
+  const { data: allImagesData } = useQuery<DockerImage[]>({
     queryKey: ['docker-images-all', serverId],
-    queryFn: () => client.get('/api/docker/images', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/images', { params: { server_id: serverId } }).then((r) => normalizeImages(r.data)),
     staleTime: 30000,
   })
-  const { data: allStacks = [] } = useQuery<Stack[]>({
+  const { data: allStacksData } = useQuery<Stack[]>({
     queryKey: ['docker-stacks-all', serverId],
-    queryFn: () => client.get('/api/docker/stacks', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/docker/stacks', { params: { server_id: serverId } }).then((r) => normalizeStacks(r.data)),
     staleTime: 30000,
   })
 
-  const networks = networksData?.networks ?? []
-  const volumes = volumesData?.volumes ?? []
+  const containers = ensureArray<Container>(containersData)
+  const stacks = ensureArray<Stack>(stacksData)
+  const images = ensureArray<DockerImage>(imagesData)
+  const networks = ensureArray<Network>(networksData)
+  const volumes = ensureArray<Volume>(volumesData)
+  const allContainers = ensureArray<Container>(allContainersData)
+  const allImages = ensureArray<DockerImage>(allImagesData)
+  const allStacks = ensureArray<Stack>(allStacksData)
 
   const runningCount = allContainers.filter((c) => c.state === 'running').length
 

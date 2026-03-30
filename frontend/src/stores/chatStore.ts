@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ChatMessage, TodoItem } from '@/types/agent'
+import { ensureArray } from '@/lib/utils'
 
 interface ChatState {
   conversationId: string | null
@@ -48,10 +49,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setMessages: (msgs) => {
     const seen = new Set<string>()
-    for (const m of msgs) {
+    const safeMessages = ensureArray<ChatMessage>(msgs)
+    for (const m of safeMessages) {
       if (m._serverId) seen.add(m._serverId)
     }
-    set({ messages: msgs, _seenIds: seen })
+    set({ messages: safeMessages, _seenIds: seen })
   },
 
   removeMessage: (id) =>
@@ -64,7 +66,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { messages: s.messages.slice(0, idx) }
     }),
 
-  setTodos: (todos) => set({ todos }),
+  setTodos: (todos) => set({ todos: ensureArray<TodoItem>(todos) }),
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
 
@@ -102,7 +104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       args: msg.args,
       approval_id: msg.approval_id,
       description: msg.description,
-      actions: msg.actions,
+      actions: Array.isArray(msg.actions) ? msg.actions : undefined,
       _serverId: msg._serverId,
     }
 

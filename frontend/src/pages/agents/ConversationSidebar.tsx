@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, X, Check, MessageSquare } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, ensureArray } from '@/lib/utils'
 import { useChatStore } from '@/stores/chatStore'
 import client from '@/api/client'
-import type { Conversation, ChatMessage } from '@/types/agent'
+import type { Conversation, ChatMessage, TodoItem } from '@/types/agent'
 
 async function fetchConversations(): Promise<Conversation[]> {
   const { data } = await client.get('/api/agents/conversations')
-  return data
+  return ensureArray<Conversation>(data)
 }
 
 async function fetchConversation(
@@ -62,7 +62,7 @@ export function ConversationSidebar() {
       const detail = await fetchConversation(id)
 
       // Map server messages to ChatMessage with stable _ids
-      const msgs: ChatMessage[] = (detail.messages ?? []).map(
+      const msgs: ChatMessage[] = ensureArray<any>(detail.messages).map(
         (m: any, i: number) => ({
           _id: 'h_' + i,
           role: (m.role as ChatMessage['role']) ?? 'assistant',
@@ -71,14 +71,14 @@ export function ConversationSidebar() {
           args: m.args as Record<string, unknown> | undefined,
           approval_id: m.approval_id as string | undefined,
           description: m.description as string | undefined,
-          actions: m.actions as ChatMessage['actions'] | undefined,
+          actions: Array.isArray(m.actions) ? (m.actions as ChatMessage['actions']) : undefined,
           _serverId: m.id as string | undefined,
         }),
       )
 
       setConversationId(detail.conversation_id)
       setMessages(msgs)
-      setTodos(detail.todos ?? [])
+      setTodos(ensureArray<TodoItem>(detail.todos))
     } catch {
       // Silently fail; user can retry
     }

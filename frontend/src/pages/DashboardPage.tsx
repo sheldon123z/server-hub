@@ -15,8 +15,15 @@ import {
 import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { useWebSocket, type MetricsData, type AlertData } from '@/hooks/useWebSocket'
+import {
+  normalizeDockerContainers,
+  normalizeGpuProcesses,
+  normalizeMetricsSnapshot,
+  normalizeTimestamp,
+  normalizeTopProcesses,
+} from '@/lib/monitoring'
 import { useServerStore } from '@/stores/serverStore'
-import { cn, formatBytes, formatPercent } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatBytes, formatPercent } from '@/lib/utils'
 import ErrorBoundary from '@/components/ErrorBoundary'
 
 // ---------------------------------------------------------------------------
@@ -393,11 +400,12 @@ function AlertDonut({ summary }: { summary: AlertSummary | null }) {
 // ---------------------------------------------------------------------------
 function DockerHealthDonut({ containers }: { containers: Array<{ state: string }> | null }) {
   const option = useMemo(() => {
-    const running = containers?.filter((c) => c.state === 'running').length ?? 0
-    const stopped = containers?.filter((c) => c.state === 'exited' || c.state === 'dead').length ?? 0
-    const restarting = containers?.filter((c) => c.state === 'restarting').length ?? 0
-    const other = (containers?.length ?? 0) - running - stopped - restarting
-    const total = containers?.length ?? 0
+    const items = ensureArray<{ state: string }>(containers)
+    const running = items.filter((c) => c.state === 'running').length
+    const stopped = items.filter((c) => c.state === 'exited' || c.state === 'dead').length
+    const restarting = items.filter((c) => c.state === 'restarting').length
+    const other = items.length - running - stopped - restarting
+    const total = items.length
 
     return {
       title: { text: '容器健康度', subtext: total > 0 ? `共 ${total} 个` : '无容器', textStyle: { color: '#e2e8f0', fontSize: 13, fontWeight: 500 }, subtextStyle: { color: '#64748b', fontSize: 10 }, left: 'center', top: 8 },
@@ -510,7 +518,7 @@ function DiskPressureChart({ metrics }: { metrics: MetricsData }) {
 // ---------------------------------------------------------------------------
 function TopProcessChart({ processes }: { processes: Array<{ name: string; cpu_percent: number; mem_rss_mb: number }> | null }) {
   const option = useMemo(() => {
-    const top5 = (processes ?? []).slice(0, 5)
+    const top5 = ensureArray<{ name: string; cpu_percent: number; mem_rss_mb: number }>(processes).slice(0, 5)
     const names = top5.map((p) => p.name.length > 12 ? p.name.slice(0, 12) + '...' : p.name)
 
     return {
@@ -541,10 +549,11 @@ function ContainerGroupChart({ containers }: { containers: Array<{ name: string;
   const option = useMemo(() => {
     // Group by compose project prefix (name before the first hyphen-number pattern)
     const groups: Record<string, { running: number; stopped: number }> = {}
-    for (const c of (containers ?? [])) {
+    for (const c of ensureArray<{ name: string; state: string }>(containers)) {
       // Try to extract stack name: e.g., "docker-api-1" -> "docker", "grid-autopilot-redis" -> "grid-autopilot"
-      const match = c.name.match(/^(.+?)-[^-]+-?\d*$/) || c.name.match(/^(.+?)-\d+$/)
-      const stack = match?.[1] ?? c.name
+      const name = typeof c.name === 'string' ? c.name : 'unknown'
+      const match = name.match(/^(.+?)-[^-]+-?\d*$/) || name.match(/^(.+?)-\d+$/)
+      const stack = match?.[1] ?? name
       if (!groups[stack]) groups[stack] = { running: 0, stopped: 0 }
       if (c.state === 'running') groups[stack].running++
       else groups[stack].stopped++
@@ -1038,8 +1047,9 @@ function GpuDetail({ metrics, history }: { metrics: MetricsData; history: Metric
   const { data: gpuData } = useQuery({
     queryKey: ['gpu-processes', serverId],
     queryFn: async () => {
-      const res = await client.get<{ processes?: Array<{ pid: number; name: string; gpu_memory_usage: number | string }> }>('/api/monitoring/gpu', { params: { server_id: serverId } })
-      return res.data
+      const res = await client.get('/api/monitoring/gpu', { params: { server_id: serverId } })
+      const raw = ensureRecord(res.data)
+      return { processes: normalizeGpuProcesses(raw.processes ?? res.data) }
     },
     refetchInterval: 10_000,
   })
@@ -1050,7 +1060,7 @@ function GpuDetail({ metrics, history }: { metrics: MetricsData; history: Metric
   const labels = history.map((_, i) => `${i}`)
   const utilData = history.map((m) => m.gpu?.utilization ?? 0)
   const tempData = history.map((m) => m.gpu?.temperature ?? 0)
-  const gpuProcesses = gpu.processes ?? gpuData?.processes ?? []
+  const gpuProcesses = normalizeGpuProcesses(gpu.processes ?? gpuData?.processes ?? [])
 
   return (
     <div className="space-y-4">
@@ -1182,8 +1192,9 @@ function ProcessTable({ sort = 'cpu' }: { sort?: 'cpu' | 'mem' }) {
   const { data: processes } = useQuery({
     queryKey: ['top-processes', sort, serverId],
     queryFn: async () => {
-      const res = await client.get<Record<string, Array<{ pid: number; name: string; user: string; cpu_percent: number; mem_rss_mb: number; cmdline: string }>>>('/api/monitoring/top-processes', { params: { limit: 15, sort, server_id: serverId } })
-      return res.data[sortKey] ?? res.data.by_cpu ?? []
+      const res = await client.get('/api/monitoring/top-processes', { params: { limit: 15, sort, server_id: serverId } })
+      const raw = ensureRecord(res.data)
+      return normalizeTopProcesses(raw[sortKey] ?? raw.by_cpu ?? raw.cpu ?? raw.memory ?? res.data)
     },
     refetchInterval: 10_000,
   })
@@ -1260,8 +1271,14 @@ function RecentAlertsList() {
   const { data: recentAlerts } = useQuery({
     queryKey: ['recent-alerts', serverId],
     queryFn: async () => {
-      const res = await client.get<RecentAlert[]>('/api/monitoring/alerts/recent', { params: { limit: 6, server_id: serverId } })
-      return res.data ?? []
+      const res = await client.get('/api/monitoring/alerts/recent', { params: { limit: 6, server_id: serverId } })
+      return ensureArray<Record<string, unknown>>(res.data).map((item) => ({
+        id: Number(item.id ?? 0),
+        rule_name: typeof item.rule_name === 'string' ? item.rule_name : '告警',
+        level: typeof item.level === 'string' ? item.level : typeof item.severity === 'string' ? item.severity : 'info',
+        message: typeof item.message === 'string' ? item.message : '',
+        created_at: normalizeTimestamp(item.created_at ?? item.timestamp),
+      }))
     },
     refetchInterval: 30_000,
   })
@@ -1328,8 +1345,8 @@ export default function DashboardPage() {
   const { data: fallbackMetrics } = useQuery({
     queryKey: ['metrics-fallback', serverId],
     queryFn: async () => {
-      const res = await client.get<MetricsData>('/api/monitoring/realtime', { params: { server_id: serverId } })
-      return res.data
+      const res = await client.get('/api/monitoring/realtime', { params: { server_id: serverId } })
+      return normalizeMetricsSnapshot(res.data)
     },
     enabled: !connected && !metrics,
     refetchInterval: 5000,
@@ -1349,8 +1366,8 @@ export default function DashboardPage() {
   const { data: dockerContainers } = useQuery({
     queryKey: ['docker-containers-list', serverId],
     queryFn: async () => {
-      const res = await client.get<Array<{ name: string; state: string; image: string; status: string }>>('/api/docker/containers', { params: { server_id: serverId } })
-      return res.data ?? []
+      const res = await client.get('/api/docker/containers', { params: { server_id: serverId } })
+      return normalizeDockerContainers(res.data)
     },
     refetchInterval: 30_000,
   })
@@ -1360,12 +1377,21 @@ export default function DashboardPage() {
   const { data: historyData } = useQuery({
     queryKey: ['monitoring-history', historyPeriod, serverId],
     queryFn: async () => {
-      const res = await client.get<HistoryPoint[]>('/api/monitoring/history', { params: { metric: 'all', hours: Number(historyPeriod), server_id: serverId } })
-      // The API returns raw HistoryPoint[] with `value` as a JSON string for metric=all
-      return (res.data ?? []).map((item) => ({
-        ...item,
-        value: typeof item.value === 'string' ? JSON.parse(item.value) : item.value,
-      }))
+      const res = await client.get('/api/monitoring/history', { params: { metric: 'all', hours: Number(historyPeriod), server_id: serverId } })
+      return ensureArray<Record<string, unknown>>(res.data).map((item) => {
+        let rawValue = item.value
+        if (typeof rawValue === 'string') {
+          try {
+            rawValue = JSON.parse(rawValue)
+          } catch {
+            rawValue = {}
+          }
+        }
+        return {
+          timestamp: normalizeTimestamp(item.timestamp),
+          value: normalizeMetricsSnapshot(rawValue) ?? {},
+        }
+      })
     },
     refetchInterval: 60_000,
     enabled: !activeCard,
@@ -1375,8 +1401,9 @@ export default function DashboardPage() {
   const { data: topProcessesData } = useQuery({
     queryKey: ['top-processes-overview', serverId],
     queryFn: async () => {
-      const res = await client.get<{ by_cpu: Array<{ name: string; cpu_percent: number; mem_rss_mb: number }> }>('/api/monitoring/top-processes', { params: { limit: 5, server_id: serverId } })
-      return res.data.by_cpu
+      const res = await client.get('/api/monitoring/top-processes', { params: { limit: 5, server_id: serverId } })
+      const raw = ensureRecord(res.data)
+      return normalizeTopProcesses(raw.by_cpu ?? raw.cpu ?? res.data)
     },
     refetchInterval: 15_000,
     enabled: !activeCard,
@@ -1486,8 +1513,7 @@ function DockerDetail() {
     queryKey: ['docker-containers-detail', serverId],
     queryFn: async (): Promise<DockerContainer[]> => {
       const res = await client.get('/api/docker/containers', { params: { server_id: serverId } })
-      const raw = res.data
-      return Array.isArray(raw) ? raw : (raw?.containers ?? [])
+      return normalizeDockerContainers(res.data)
     },
     refetchInterval: 15_000,
   })

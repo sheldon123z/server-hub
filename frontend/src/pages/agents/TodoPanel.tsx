@@ -5,10 +5,11 @@
 
 import { useState } from 'react'
 import { useChatStore } from '@/stores/chatStore'
-import { cn } from '@/lib/utils'
+import { cn, ensureArray } from '@/lib/utils'
 
 export function TodoPanel() {
-  const todos = useChatStore((s) => s.todos)
+  const rawTodos = useChatStore((s) => s.todos)
+  const todos = ensureArray<typeof rawTodos[number]>(rawTodos)
   const [collapsed, setCollapsed] = useState(false)
 
   if (todos.length === 0) return null

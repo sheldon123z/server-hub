@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
-import { cn } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface PortInfo {
@@ -17,7 +17,43 @@ interface ProxyInfo {
   http_proxy?: string
 }
 
-/** Flatten a nested connections response into flat key-value pairs of state -> count. */
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizePorts(value: unknown): { ports: PortInfo[]; count: number } {
+  const record = ensureRecord(value)
+  const ports = ensureArray<Record<string, unknown>>(record.ports).map((item) => ({
+    port: toNumber(item.port),
+    protocol: toString(item.protocol ?? item.proto ?? item.state).toLowerCase(),
+    process: toString(item.process),
+    pid: toNumber(item.pid),
+    address: toString(item.address ?? item.local_addr ?? item.local_address),
+  }))
+  return {
+    ports,
+    count: toNumber(record.count, ports.length),
+  }
+}
+
+function normalizeProxy(value: unknown): ProxyInfo {
+  const record = ensureRecord(value)
+  return {
+    running: Boolean(record.running ?? record.clash_running),
+    port: typeof record.port === 'number' ? record.port : undefined,
+    http_proxy: toString(record.http_proxy) || undefined,
+  }
+}
+
 function flattenConnectionStats(data: Record<string, unknown>): Record<string, number> {
   const result: Record<string, number> = {}
   for (const [key, value] of Object.entries(data)) {
@@ -27,7 +63,6 @@ function flattenConnectionStats(data: Record<string, unknown>): Record<string, n
       const num = Number(value)
       if (!isNaN(num)) result[key] = num
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Nested object like {tcp_states: {ESTABLISHED: 5, ...}}
       for (const [subKey, subVal] of Object.entries(value as Record<string, unknown>)) {
         if (typeof subVal === 'number') {
           result[subKey] = subVal
@@ -39,6 +74,11 @@ function flattenConnectionStats(data: Record<string, unknown>): Record<string, n
     }
   }
   return result
+}
+
+function normalizeConnections(value: unknown): Record<string, number> {
+  const record = ensureRecord(value)
+  return flattenConnectionStats(record)
 }
 
 /** Color hint for TCP state labels */
@@ -60,20 +100,19 @@ export default function NetworkPage() {
     count: number
   }>({
     queryKey: ['network-ports', serverId],
-    queryFn: () => client.get('/api/network/ports', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/network/ports', { params: { server_id: serverId } }).then((r) => normalizePorts(r.data)),
   })
 
-  const { data: connData, isLoading: connLoading } = useQuery<Record<string, unknown>>({
+  const { data: connStats, isLoading: connLoading } = useQuery<Record<string, number>>({
     queryKey: ['network-connections', serverId],
-    queryFn: () => client.get('/api/network/connections', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/network/connections', { params: { server_id: serverId } }).then((r) => normalizeConnections(r.data)),
   })
 
   const { data: proxyData } = useQuery<ProxyInfo>({
     queryKey: ['network-proxy', serverId],
-    queryFn: () => client.get('/api/network/proxy', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/network/proxy', { params: { server_id: serverId } }).then((r) => normalizeProxy(r.data)),
   })
-
-  const connStats = connData ? flattenConnectionStats(connData) : {}
+  const ports = ensureArray<PortInfo>(portsData?.ports)
 
   return (
     <div className="space-y-6">
@@ -108,7 +147,7 @@ export default function NetworkPage() {
         <h3 className="text-sm font-medium text-text2 mb-3">连接统计</h3>
         {connLoading ? (
           <p className="text-text3 text-sm">加载中...</p>
-        ) : Object.keys(connStats).length === 0 ? (
+        ) : !connStats || Object.keys(connStats).length === 0 ? (
           <p className="text-text3 text-sm">暂无数据</p>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
@@ -151,14 +190,14 @@ export default function NetworkPage() {
                   加载中...
                 </td>
               </tr>
-            ) : !portsData?.ports.length ? (
+            ) : ports.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-text3">
                   暂无数据
                 </td>
               </tr>
             ) : (
-              portsData.ports.map((p, i) => (
+              ports.map((p, i) => (
                 <tr key={i} className="border-b border-border hover:bg-bg2/50">
                   <td className="px-4 py-2.5 text-accent font-mono font-medium">{p.port}</td>
                   <td className="px-4 py-2.5 text-text2 uppercase text-xs">{p.protocol}</td>

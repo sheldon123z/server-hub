@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/stores/chatStore'
 import type { TodoItem } from '@/types/agent'
+import { ensureArray } from '@/lib/utils'
 
 function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -178,7 +179,7 @@ export function useSSEChat() {
 
       case 'todo.update':
       case 'todo_update': {
-        const items = ((Array.isArray(data) ? data : data.todos ?? []) as TodoItem[]) ?? []
+        const items = ensureArray<TodoItem>(Array.isArray(data) ? data : data.todos ?? [])
         const prevTodos = useChatStore.getState().todos
         const updated = items.map((item) => {
           const prev = prevTodos.find((t) => t.content === item.content)
@@ -201,7 +202,7 @@ export function useSSEChat() {
           role: 'approval',
           approval_id: data.approval_id as string,
           description: (data.description as string) ?? '需要审批',
-          actions: (data.actions as Array<{ name: string; args: Record<string, unknown> }>) ?? [],
+          actions: ensureArray<{ name: string; args: Record<string, unknown> }>(data.actions),
           content: '',
           _serverId: 'approval_' + String(data.approval_id ?? ''),
         })

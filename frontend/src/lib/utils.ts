@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
   return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
@@ -26,4 +26,21 @@ export function formatDate(iso: string): string {
   if (!iso) return '-'
   const d = new Date(iso)
   return d.toLocaleString('zh-CN', { hour12: false })
+}
+
+export function ensureArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (Array.isArray(record.items)) return record.items as T[]
+    if (Array.isArray(record.data)) return record.data as T[]
+  }
+  return []
+}
+
+export function ensureRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
 }

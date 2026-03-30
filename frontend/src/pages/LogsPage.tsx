@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
-import { cn, formatBytes, formatDate } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatBytes, formatDate } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface LogFile {
@@ -12,6 +12,48 @@ interface LogFile {
 }
 
 type LogLevel = 'ALL' | 'ERROR' | 'WARN' | 'INFO'
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeLogFiles(value: unknown): { files: LogFile[]; count: number } {
+  const record = ensureRecord(value)
+  const files = ensureArray<Record<string, unknown>>(record.files).map((item) => ({
+    path: toString(item.path),
+    name: toString(item.name),
+    size: toNumber(item.size ?? item.size_bytes),
+    modified: toString(item.modified),
+  }))
+  return { files, count: toNumber(record.count, files.length) }
+}
+
+function normalizeSearchResults(value: unknown): { path: string; pattern: string; results: string; count: number } {
+  const record = ensureRecord(value)
+  const results = ensureArray<Record<string, unknown>>(record.results)
+    .map((item) => {
+      const lineNumber = toNumber(item.line_number)
+      const content = toString(item.content)
+      return lineNumber > 0 ? `${lineNumber}: ${content}` : content
+    })
+    .join('\n')
+
+  return {
+    path: toString(record.path),
+    pattern: toString(record.pattern),
+    results,
+    count: toNumber(record.count, results ? results.split('\n').length : 0),
+  }
+}
 
 /** Highlight a single log line based on level */
 function highlightLine(line: string): string {
@@ -62,7 +104,7 @@ export default function LogsPage() {
     count: number
   }>({
     queryKey: ['log-files', serverId],
-    queryFn: () => client.get('/api/logs/files', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/logs/files', { params: { server_id: serverId } }).then((r) => normalizeLogFiles(r.data)),
   })
 
   const { data: tailData, isLoading: tailLoading } = useQuery<{
@@ -85,10 +127,12 @@ export default function LogsPage() {
     queryKey: ['log-search', selectedFile, activeSearch, serverId],
     queryFn: () =>
       client
-        .get('/api/logs/search', { params: { path: selectedFile, pattern: activeSearch, server_id: serverId } })
-        .then((r) => r.data),
+        .get('/api/logs/search', { params: { path: selectedFile, q: activeSearch, server_id: serverId } })
+        .then((r) => normalizeSearchResults(r.data)),
     enabled: !!selectedFile && !!activeSearch && !streaming,
   })
+
+  const files = ensureArray<LogFile>(filesData?.files)
 
   // Auto-scroll while streaming
   useEffect(() => {
@@ -182,10 +226,10 @@ export default function LogsPage() {
           <div className="overflow-y-auto flex-1">
             {filesLoading ? (
               <p className="px-3 py-4 text-sm text-text3">加载中...</p>
-            ) : !filesData?.files.length ? (
+            ) : files.length === 0 ? (
               <p className="px-3 py-4 text-sm text-text3">暂无日志文件</p>
             ) : (
-              filesData.files.map((f) => (
+              files.map((f) => (
                 <button
                   key={f.path}
                   onClick={() => {

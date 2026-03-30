@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord } from '@/lib/utils'
 import mermaid from 'mermaid'
 
 /* ── Types ────────────────────────────────────────── */
@@ -37,6 +37,57 @@ const TYPE_COLORS: Record<string, string> = {
 
 function typeBadge(type: string) {
   return TYPE_COLORS[type] || 'bg-text3/20 text-text3'
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeAssets(value: unknown): Asset[] {
+  const items = Array.isArray(value) ? value : ensureRecord(value).assets
+  return ensureArray<Record<string, unknown>>(items).map((item, index) => {
+    const properties = ensureRecord(item.properties)
+    return {
+      id: toNumber(item.id, index + 1),
+      name: toString(item.name, 'unknown'),
+      type: toString(item.type, 'manual'),
+      description: toString(item.description ?? properties.description),
+      ip: toString(item.ip ?? properties.ip ?? properties.local_addr),
+      port: item.port == null ? null : toNumber(item.port, null as never),
+      status: toString(item.status, 'unknown'),
+      source: toString(item.source, Boolean(item.is_manual) ? 'manual' : 'auto'),
+      created_at: toString(item.created_at ?? item.last_seen),
+      updated_at: toString(item.updated_at ?? item.last_seen),
+    }
+  })
+}
+
+function normalizeAssetSummary(value: unknown): AssetSummary {
+  const record = ensureRecord(value)
+  const byType: Record<string, number> = {}
+  let total = 0
+
+  for (const [key, raw] of Object.entries(record)) {
+    const entry = ensureRecord(raw)
+    const count = toNumber(entry.total, 0)
+    byType[key] = count
+    total += count
+  }
+
+  return {
+    by_type: byType,
+    by_status: {},
+    total,
+  }
 }
 
 /* ── Topology Diagram ────────────────────────────── */
@@ -94,14 +145,14 @@ export default function AssetsPage() {
   const [newAsset, setNewAsset] = useState({ name: '', type: 'manual', description: '', ip: '', port: '' })
 
   /* Queries */
-  const { data: assets = [], isLoading } = useQuery<Asset[]>({
+  const { data: assetsData, isLoading } = useQuery<Asset[]>({
     queryKey: ['assets'],
-    queryFn: () => client.get('/api/assets/').then((r) => r.data),
+    queryFn: () => client.get('/api/assets/').then((r) => normalizeAssets(r.data)),
   })
 
   const { data: summary } = useQuery<AssetSummary>({
     queryKey: ['assets-summary'],
-    queryFn: () => client.get('/api/assets/summary').then((r) => r.data),
+    queryFn: () => client.get('/api/assets/summary').then((r) => normalizeAssetSummary(r.data)),
   })
 
   /* Mutations */
@@ -148,6 +199,8 @@ export default function AssetsPage() {
     },
     onError: () => toast.error('删除失败'),
   })
+
+  const assets = ensureArray<Asset>(assetsData)
 
   /* Summary cards */
   const typeEntries = summary?.by_type ? Object.entries(summary.by_type) : []

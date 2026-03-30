@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import React, { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface Service {
@@ -49,15 +49,50 @@ function stateBadge(state: string) {
   return 'bg-yellow/20 text-yellow'
 }
 
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeServices(value: unknown): Service[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.services
+  return ensureArray<Record<string, unknown>>(items).map((item) => {
+    const activeState = typeof item.active_state === 'string'
+      ? item.active_state
+      : item.active === true
+        ? 'active'
+        : 'inactive'
+    return {
+      name: toString(item.name, 'unknown'),
+      display_name: toString(item.display_name ?? item.name),
+      description: toString(item.description),
+      active_state: activeState,
+      sub_state: toString(item.sub_state ?? item.status_text ?? activeState),
+      enabled: Boolean(item.enabled),
+    }
+  })
+}
+
+function normalizeDependencies(value: unknown): ServiceDependencies {
+  const record = ensureRecord(value)
+  const dependencies = ensureArray<string>(record.dependencies)
+  return {
+    requires: ensureArray<string>(record.requires ?? dependencies),
+    required_by: ensureArray<string>(record.required_by),
+    wants: ensureArray<string>(record.wants),
+    wanted_by: ensureArray<string>(record.wanted_by),
+  }
+}
+
 export default function ServicesPage() {
   const queryClient = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
-  const { data: services = [], isLoading } = useQuery<Service[]>({
+  const { data: servicesData, isLoading } = useQuery<Service[]>({
     queryKey: ['services', serverId],
-    queryFn: () => client.get('/api/services/', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/services/', { params: { server_id: serverId } }).then((r) => normalizeServices(r.data)),
     refetchInterval: 10000,
   })
 
@@ -69,7 +104,7 @@ export default function ServicesPage() {
 
   const { data: deps } = useQuery<ServiceDependencies>({
     queryKey: ['service-deps', expanded, serverId],
-    queryFn: () => client.get(`/api/services/${expanded}/dependencies`, { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get(`/api/services/${expanded}/dependencies`, { params: { server_id: serverId } }).then((r) => normalizeDependencies(r.data)),
     enabled: !!expanded,
   })
 
@@ -108,6 +143,8 @@ export default function ServicesPage() {
     },
     onError: () => toast.error('Reload 失败'),
   })
+
+  const services = ensureArray<Service>(servicesData)
 
   const filtered = services.filter(
     (s) =>

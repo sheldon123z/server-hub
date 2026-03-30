@@ -7,8 +7,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn } from '@/lib/utils'
-import { formatDate } from '@/lib/utils'
+import { cn, ensureArray, formatDate } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
 
 /** Compute "N分钟后运行" text from a next_run ISO timestamp. */
@@ -95,7 +94,7 @@ function TasksView() {
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['patrols'],
-    queryFn: () => client.get<PatrolTask[]>('/api/agents/patrols').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/patrols').then((r) => ensureArray<PatrolTask>(r.data)),
   })
 
   const selected = tasks.find((t) => t.id === selectedId) ?? null
@@ -302,12 +301,12 @@ function AlertsView() {
 
   const { data: rules = [] } = useQuery({
     queryKey: ['alert-rules'],
-    queryFn: () => client.get<AlertRule[]>('/api/agents/alerts/rules').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/alerts/rules').then((r) => ensureArray<AlertRule>(r.data)),
   })
 
   const { data: history = [] } = useQuery({
     queryKey: ['alert-history'],
-    queryFn: () => client.get<AlertHistory[]>('/api/agents/alerts/history').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/alerts/history').then((r) => ensureArray<AlertHistory>(r.data)),
   })
 
   const selectedRule = rules.find((r) => r.id === selectedId) ?? null
@@ -532,7 +531,7 @@ function TemplatesView() {
 
   const { data: templates = [] } = useQuery({
     queryKey: ['patrol-templates'],
-    queryFn: () => client.get<PatrolTemplate[]>('/api/agents/templates').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/templates').then((r) => ensureArray<PatrolTemplate>(r.data)),
   })
 
   const selected = templates.find((t) => t.id === selectedId) ?? null
@@ -786,7 +785,7 @@ function ReportsView() {
 
   const { data: reports = [] } = useQuery({
     queryKey: ['fault-reports'],
-    queryFn: () => client.get<FaultReport[]>('/api/agents/fault-reports').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/fault-reports').then((r) => ensureArray<FaultReport>(r.data)),
   })
 
   const { data: detail } = useQuery({
@@ -920,7 +919,7 @@ function CasesView() {
 
   const { data: cases = [] } = useQuery({
     queryKey: ['fault-cases', query],
-    queryFn: () => client.get<FaultCase[]>('/api/agents/fault-cases', { params: { q: query } }).then((r) => r.data),
+    queryFn: () => client.get('/api/agents/fault-cases', { params: { q: query } }).then((r) => ensureArray<FaultCase>(r.data)),
   })
 
   const selected = cases.find((c) => c.id === selectedId) ?? null
@@ -1016,7 +1015,7 @@ function PatrolAdminView() {
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['patrols'],
-    queryFn: () => client.get<PatrolTask[]>('/api/agents/patrols').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/patrols').then((r) => ensureArray<PatrolTask>(r.data)),
   })
 
   const toggleOpen = (id: string) => {

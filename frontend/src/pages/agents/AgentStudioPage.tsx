@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import type { AgentRun, InstalledSkill } from '@/types/agent'
+import { ensureArray, ensureRecord } from '@/lib/utils'
 
 type StudioTab = 'overview' | 'skills' | 'install' | 'subagents' | 'memory' | 'runs'
 
@@ -67,15 +68,15 @@ export default function AgentStudioPage() {
 function OverviewTab() {
   const { data: skills } = useQuery({
     queryKey: ['studio-skills'],
-    queryFn: () => client.get<{ skills: InstalledSkill[] }>('/api/agents/admin/skills').then((r) => r.data.skills),
+    queryFn: () => client.get('/api/agents/admin/skills').then((r) => ensureArray<InstalledSkill>(ensureRecord(r.data).skills)),
   })
   const { data: runs } = useQuery({
     queryKey: ['agent-runs'],
-    queryFn: () => client.get<AgentRun[]>('/api/agents/runs').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/runs').then((r) => ensureArray<AgentRun>(r.data)),
   })
   const { data: approvals } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data)),
   })
 
   const enabledSkills = useMemo(() => skills?.filter((item) => item.enabled).length ?? 0, [skills])
@@ -105,7 +106,7 @@ function SkillsTab() {
   const qc = useQueryClient()
   const { data: skills = [] } = useQuery({
     queryKey: ['studio-skills'],
-    queryFn: () => client.get<{ skills: InstalledSkill[] }>('/api/agents/admin/skills').then((r) => r.data.skills),
+    queryFn: () => client.get('/api/agents/admin/skills').then((r) => ensureArray<InstalledSkill>(ensureRecord(r.data).skills)),
   })
 
   const toggleMut = useMutation({
@@ -169,7 +170,7 @@ function InstallTab() {
 
   const { data: discovered } = useQuery({
     queryKey: ['skill-discovery'],
-    queryFn: () => client.post('/api/agents/admin/skills/discover').then((r) => r.data.items),
+    queryFn: () => client.post('/api/agents/admin/skills/discover').then((r) => ensureArray(ensureRecord(r.data).items)),
   })
 
   const saveSourcesMut = useMutation({
@@ -291,7 +292,10 @@ function InstallTab() {
 function SubagentsTab() {
   const { data } = useQuery({
     queryKey: ['admin-subagents'],
-    queryFn: () => client.get('/api/agents/admin/subagents').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/admin/subagents').then((r) => {
+      const raw = ensureRecord(r.data)
+      return { ...raw, subagents: ensureArray(raw.subagents) }
+    }),
   })
 
   return (
@@ -392,11 +396,11 @@ function MemoryAndPromptsTab() {
 function RunsAndApprovalsTab() {
   const { data: runs = [] } = useQuery({
     queryKey: ['agent-runs'],
-    queryFn: () => client.get<AgentRun[]>('/api/agents/runs').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/runs').then((r) => ensureArray<AgentRun>(r.data)),
   })
   const { data: approvals = [] } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => r.data),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data)),
   })
 
   return (

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Send, ShieldAlert, Square, Sparkles } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { cn } from '@/lib/utils'
+import { cn, ensureArray } from '@/lib/utils'
 import client from '@/api/client'
 import { useChatStore } from '@/stores/chatStore'
 import { useSSEChat } from '@/hooks/useSSEChat'
@@ -32,6 +32,8 @@ function ApprovalCard({
     setLoading(false)
   }
 
+  const actions = ensureArray<NonNullable<ChatMessage['actions']>[number]>(msg.actions)
+
   return (
     <div className="flex justify-start px-3">
       <div className="max-w-[85%] rounded-lg border border-yellow/40 bg-yellow/10 px-3 py-2.5">
@@ -40,9 +42,9 @@ function ApprovalCard({
           <span>需要审批</span>
         </div>
         <div className="mb-2 text-sm text-text">{msg.description || '确认执行此操作？'}</div>
-        {msg.actions && msg.actions.length > 0 && (
+        {actions.length > 0 && (
           <div className="mb-2 rounded bg-bg/50 px-2 py-1 font-mono text-xs text-text3">
-            {msg.actions.map((a, i) => (
+            {actions.map((a, i) => (
               <div key={i}>
                 {a.name}({JSON.stringify(a.args)})
               </div>
@@ -113,7 +115,7 @@ export function ChatPanel() {
       const { data } = await client.get<{ items: SkillRecommendation[] }>('/api/agents/skills/recommendations', {
         params: { message: trimmedInput, page_context: pageContext },
       })
-      return data.items
+      return ensureArray<SkillRecommendation>(data.items)
     },
     enabled: trimmedInput.length >= 2,
     staleTime: 15_000,

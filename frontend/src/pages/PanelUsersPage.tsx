@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { formatDate } from '@/lib/utils'
+import { ensureArray, ensureRecord, formatDate } from '@/lib/utils'
 
 interface PanelUser {
   id: number
@@ -21,6 +21,34 @@ interface UserForm {
 
 const emptyForm: UserForm = { username: '', password: '', display_name: '', role: 'user' }
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizePanelUsersResponse(value: unknown): { users: PanelUser[]; count: number } {
+  const record = ensureRecord(value)
+  const users = ensureArray<Record<string, unknown>>(record.users).map((item) => ({
+    id: toNumber(item.id),
+    username: toString(item.username),
+    display_name: toString(item.display_name),
+    role: toString(item.role, 'user'),
+    created_at: toString(item.created_at),
+  }))
+  return {
+    users,
+    count: toNumber(record.count, users.length),
+  }
+}
+
 export default function PanelUsersPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
@@ -29,8 +57,10 @@ export default function PanelUsersPage() {
 
   const { data, isLoading } = useQuery<{ users: PanelUser[]; count: number }>({
     queryKey: ['panel-users'],
-    queryFn: () => client.get('/api/panel-users/').then((r) => r.data),
+    queryFn: () => client.get('/api/panel-users/').then((r) => normalizePanelUsersResponse(r.data)),
   })
+
+  const users = ensureArray<PanelUser>(data?.users)
 
   const createMutation = useMutation({
     mutationFn: (body: UserForm) => client.post('/api/panel-users/', body),
@@ -177,14 +207,14 @@ export default function PanelUsersPage() {
                   加载中...
                 </td>
               </tr>
-            ) : !data?.users.length ? (
+            ) : users.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-text3">
                   暂无用户
                 </td>
               </tr>
             ) : (
-              data.users.map((user) => (
+              users.map((user) => (
                 <tr key={user.id} className="border-b border-border hover:bg-bg2/50">
                   <td className="px-4 py-2.5 text-text3">{user.id}</td>
                   <td className="px-4 py-2.5 text-text font-medium">{user.username}</td>

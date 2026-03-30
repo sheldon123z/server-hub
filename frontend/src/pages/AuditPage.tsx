@@ -1,16 +1,15 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
-import { formatDate } from '@/lib/utils'
+import { ensureArray, ensureRecord, formatDate } from '@/lib/utils'
 
 interface AuditItem {
-  id: number
+  timestamp: string
   username: string
-  method: string
-  path: string
-  status_code: number
-  ip_address: string
-  created_at: string
+  action: string
+  target: string
+  ip: string
+  success: boolean
 }
 
 interface AuditResponse {
@@ -27,6 +26,37 @@ const methodColor: Record<string, string> = {
   DELETE: 'text-red',
 }
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeAuditResponse(value: unknown): AuditResponse {
+  const record = ensureRecord(value)
+  const items = ensureArray<Record<string, unknown>>(record.items).map((item) => ({
+    timestamp: toString(item.timestamp ?? item.created_at),
+    username: toString(item.username),
+    action: toString(item.action ?? item.method),
+    target: toString(item.target ?? item.path),
+    ip: toString(item.ip ?? item.ip_address),
+    success: Boolean(item.success ?? (toNumber(item.status_code) < 400)),
+  }))
+  return {
+    total: toNumber(record.total, items.length),
+    page: toNumber(record.page, 1),
+    limit: toNumber(record.limit, 50),
+    items,
+  }
+}
+
 export default function AuditPage() {
   const [page, setPage] = useState(1)
   const [limit] = useState(50)
@@ -37,10 +67,11 @@ export default function AuditPage() {
     queryFn: () =>
       client
         .get('/api/audit/', { params: { page, limit, username: username || undefined } })
-        .then((r) => r.data),
+        .then((r) => normalizeAuditResponse(r.data)),
   })
 
   const totalPages = data ? Math.ceil(data.total / limit) : 0
+  const items = ensureArray<AuditItem>(data?.items)
 
   return (
     <div className="space-y-4">
@@ -77,39 +108,31 @@ export default function AuditPage() {
                   加载中...
                 </td>
               </tr>
-            ) : !data?.items.length ? (
+            ) : items.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-text3">
                   暂无记录
                 </td>
               </tr>
             ) : (
-              data.items.map((item) => (
-                <tr key={item.id} className="border-b border-border hover:bg-bg2/50">
+              items.map((item, index) => (
+                <tr key={`${item.timestamp}-${item.username}-${index}`} className="border-b border-border hover:bg-bg2/50">
                   <td className="px-4 py-2.5 text-text3 whitespace-nowrap">
-                    {formatDate(item.created_at)}
+                    {formatDate(item.timestamp)}
                   </td>
                   <td className="px-4 py-2.5 text-text">{item.username}</td>
-                  <td className={`px-4 py-2.5 font-mono font-medium ${methodColor[item.method] || 'text-text2'}`}>
-                    {item.method}
+                  <td className={`px-4 py-2.5 font-mono font-medium ${methodColor[item.action] || 'text-text2'}`}>
+                    {item.action}
                   </td>
                   <td className="px-4 py-2.5 text-text2 font-mono text-xs max-w-xs truncate">
-                    {item.path}
+                    {item.target}
                   </td>
                   <td className="px-4 py-2.5">
-                    <span
-                      className={
-                        item.status_code >= 400
-                          ? 'text-red'
-                          : item.status_code >= 300
-                            ? 'text-yellow'
-                            : 'text-green'
-                      }
-                    >
-                      {item.status_code}
+                    <span className={item.success ? 'text-green' : 'text-red'}>
+                      {item.success ? '成功' : '失败'}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-text3 font-mono text-xs">{item.ip_address}</td>
+                  <td className="px-4 py-2.5 text-text3 font-mono text-xs">{item.ip}</td>
                 </tr>
               ))
             )}

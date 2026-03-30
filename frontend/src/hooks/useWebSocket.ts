@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { normalizeAlertData, normalizeMetricsSnapshot } from '@/lib/monitoring'
 
 export interface GpuProcess {
   pid: number
@@ -103,14 +104,16 @@ export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
           return
         }
         if (msg.type === 'metrics' || msg.type === 'metrics_full') {
-          const data = msg.data as MetricsData
+          const data = normalizeMetricsSnapshot(msg.data)
+          if (!data) return
           setMetrics(data)
           setHistory((prev) => {
             const next = [...prev, data]
             return next.length > HISTORY_SIZE ? next.slice(next.length - HISTORY_SIZE) : next
           })
         } else if (msg.type === 'alert') {
-          const alert = msg.data as AlertData
+          const alert = normalizeAlertData(msg.data)
+          if (!alert) return
           setAlerts((prev) => [alert, ...prev].slice(0, 50))
         }
       } catch {

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate, formatBytes } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatDate } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 /* ---------- types ---------- */
@@ -84,30 +84,138 @@ interface QuotaStatus {
   over_quota: boolean
 }
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function toString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeUserStats(value: unknown): UserStat[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.users
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    name: toString(item.name),
+    uid: toNumber(item.uid),
+    mem_gb: toNumber(item.mem_gb),
+    mem_percent: toNumber(item.mem_percent ?? item.mem_usage_pct),
+    proc_count: toNumber(item.proc_count),
+    cpu_percent: toNumber(item.cpu_percent),
+    groups: Array.isArray(item.groups) ? item.groups.map((g) => toString(g)).filter(Boolean) : toString(item.groups),
+    home_dir: toString(item.home_dir ?? item.home),
+  }))
+}
+
+function normalizeSessions(value: unknown): Session[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.sessions
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    user: toString(item.user ?? item.username),
+    tty: toString(item.tty ?? item.terminal),
+    from: toString(item.from ?? item.source),
+    login_at: toString(item.login_at ?? item.login_time),
+    idle: toString(item.idle),
+  }))
+}
+
+function normalizeQuotaStatus(value: unknown): QuotaStatus[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.users
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    username: toString(item.username ?? item.name),
+    mem_gb: toNumber(item.mem_gb),
+    quota_mem_gb: toNumber(item.quota_mem_gb ?? ensureRecord(item.quota).mem_gb),
+    over_quota: Boolean(item.over_quota ?? item.status === 'critical'),
+  }))
+}
+
+function normalizeProcesses(value: unknown): ProcessInfo[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.processes
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    pid: toNumber(item.pid),
+    command: toString(item.command ?? item.cmdline ?? item.name),
+    cpu: toNumber(item.cpu ?? item.cpu_percent),
+    mem: toNumber(item.mem ?? item.mem_mb),
+    started: toString(item.started ?? item.elapsed),
+  }))
+}
+
+function normalizeLoginEntries(value: unknown): LoginEntry[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.entries
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    date: toString(item.date ?? item.time ?? item.raw),
+    ip: toString(item.ip ?? item.source),
+    duration: toString(item.duration ?? item.raw),
+  }))
+}
+
+function normalizeUserInfoList(value: unknown): UserInfo[] {
+  const record = ensureRecord(value)
+  const items = Array.isArray(value) ? value : record.users
+  return ensureArray<Record<string, unknown>>(items).map((item) => ({
+    name: toString(item.name),
+    uid: toNumber(item.uid),
+    groups: Array.isArray(item.groups) ? item.groups.map((g) => toString(g)).filter(Boolean) : toString(item.groups),
+    home_dir: toString(item.home_dir ?? item.home),
+    shell: toString(item.shell),
+    last_login: toString(item.last_login),
+  }))
+}
+
+function normalizeQuotas(value: unknown): QuotaEntry[] {
+  return ensureArray<Record<string, unknown>>(value).map((item) => ({
+    key: toString(item.key),
+    mem_gb: toNumber(item.mem_gb),
+    proc_limit: toNumber(item.proc_limit),
+    comment: toString(item.comment),
+  }))
+}
+
+function normalizeViolations(value: unknown): Violation[] {
+  return ensureArray<Record<string, unknown>>(value).map((item) => ({
+    id: toNumber(item.id),
+    username: toString(item.username),
+    type: toString(item.type),
+    mem_gb: toNumber(item.mem_gb),
+    quota_mem_gb: toNumber(item.quota_mem_gb),
+    usage_pct: toNumber(item.usage_pct),
+    action: toString(item.action),
+    time: toString(item.time),
+  }))
+}
+
 function StatSummaryCards() {
   const serverId = useServerStore((s) => s.selectedServerId)
 
   const { data: stats } = useQuery<UserStat[]>({
     queryKey: ['user-stats', serverId],
-    queryFn: () => client.get('/api/users/', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/', { params: { server_id: serverId } }).then((r) => normalizeUserStats(r.data)),
     refetchInterval: 15000,
   })
 
-  const { data: sessData } = useQuery<{ sessions: Session[]; count: number }>({
+  const { data: sessData } = useQuery<Session[]>({
     queryKey: ['user-sessions', serverId],
-    queryFn: () => client.get('/api/users/sessions', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/sessions', { params: { server_id: serverId } }).then((r) => normalizeSessions(r.data)),
     refetchInterval: 30000,
   })
 
   const { data: quotaStatus } = useQuery<QuotaStatus[]>({
     queryKey: ['quota-status', serverId],
-    queryFn: () => client.get('/api/users/quota-status', { params: { server_id: serverId } }).then((r) => r.data).catch(() => []),
+    queryFn: () => client.get('/api/users/quota-status', { params: { server_id: serverId } }).then((r) => normalizeQuotaStatus(r.data)).catch(() => []),
     refetchInterval: 30000,
   })
 
-  const users = stats ?? []
-  const sessions = sessData?.sessions ?? []
-  const quotaArr = Array.isArray(quotaStatus) ? quotaStatus : (quotaStatus as any)?.users ?? []
+  const users = ensureArray<UserStat>(stats)
+  const sessions = ensureArray<Session>(sessData)
+  const quotaArr = ensureArray<QuotaStatus>(quotaStatus)
   const overQuota = quotaArr.filter((q: any) => q.over_quota).length
   const totalMem = users.reduce((sum, u) => sum + (u.mem_gb ?? 0), 0)
 
@@ -191,9 +299,9 @@ function ProcessList({ username }: { username: string }) {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
 
-  const { data, isLoading } = useQuery<{ processes: ProcessInfo[]; count: number }>({
+  const { data, isLoading } = useQuery<ProcessInfo[]>({
     queryKey: ['user-processes', username, serverId],
-    queryFn: () => client.get(`/api/users/${username}/processes`, { params: { sort: 'mem', server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get(`/api/users/${username}/processes`, { params: { sort: 'mem', server_id: serverId } }).then((r) => normalizeProcesses(r.data)),
   })
 
   const killMut = useMutation({
@@ -210,7 +318,7 @@ function ProcessList({ username }: { username: string }) {
 
   if (isLoading) return <p className="text-text3 text-sm py-2">加载中...</p>
 
-  const procs = data?.processes ?? []
+  const procs = ensureArray<ProcessInfo>(data)
 
   return (
     <div className="mt-3">
@@ -260,20 +368,20 @@ function ResourceMonitorTab() {
 
   const { data: stats, isLoading: statsLoading } = useQuery<UserStat[]>({
     queryKey: ['user-stats', serverId],
-    queryFn: () => client.get('/api/users/', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/', { params: { server_id: serverId } }).then((r) => normalizeUserStats(r.data)),
     refetchInterval: 15000,
   })
 
-  const { data: sessData } = useQuery<{ sessions: Session[]; count: number }>({
+  const { data: sessData } = useQuery<Session[]>({
     queryKey: ['user-sessions', serverId],
-    queryFn: () => client.get('/api/users/sessions', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/sessions', { params: { server_id: serverId } }).then((r) => normalizeSessions(r.data)),
     refetchInterval: 30000,
   })
 
   if (statsLoading) return <p className="text-text3 text-sm">加载中...</p>
 
-  const users = stats ?? []
-  const sessions = sessData?.sessions ?? []
+  const users = ensureArray<UserStat>(stats)
+  const sessions = ensureArray<Session>(sessData)
 
   return (
     <>
@@ -358,14 +466,14 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
 function LoginHistory({ username }: { username: string }) {
   const serverId = useServerStore((s) => s.selectedServerId)
 
-  const { data, isLoading } = useQuery<{ entries: LoginEntry[]; count: number }>({
+  const { data, isLoading } = useQuery<LoginEntry[]>({
     queryKey: ['login-history', username, serverId],
-    queryFn: () => client.get(`/api/users/${username}/history`, { params: { count: 30, server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get(`/api/users/${username}/history`, { params: { count: 30, server_id: serverId } }).then((r) => normalizeLoginEntries(r.data)),
   })
 
   if (isLoading) return <p className="text-text3 text-xs py-2">加载中...</p>
 
-  const entries = data?.entries ?? []
+  const entries = ensureArray<LoginEntry>(data)
   if (entries.length === 0) return <p className="text-text3 text-xs">无登录记录</p>
 
   return (
@@ -400,9 +508,9 @@ function UserManagementTab() {
   const [pwUser, setPwUser] = useState<string | null>(null)
   const [newPw, setNewPw] = useState('')
 
-  const { data, isLoading } = useQuery<{ users: UserInfo[] }>({
+  const { data, isLoading } = useQuery<UserInfo[]>({
     queryKey: ['all-users', serverId],
-    queryFn: () => client.get('/api/users/all', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/all', { params: { server_id: serverId } }).then((r) => normalizeUserInfoList(r.data)),
   })
 
   const deleteMut = useMutation({
@@ -425,7 +533,7 @@ function UserManagementTab() {
 
   if (isLoading) return <p className="text-text3 text-sm">加载中...</p>
 
-  const users = data?.users ?? []
+  const users = ensureArray<UserInfo>(data)
 
   return (
     <>
@@ -532,7 +640,7 @@ function QuotaManagementTab() {
 
   const { data: quotas, isLoading: quotasLoading } = useQuery<QuotaEntry[]>({
     queryKey: ['quotas', serverId],
-    queryFn: () => client.get('/api/users/quotas', { params: { server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/quotas', { params: { server_id: serverId } }).then((r) => normalizeQuotas(r.data)),
   })
 
   const { data: enforcement } = useQuery<EnforcementConfig>({
@@ -542,7 +650,7 @@ function QuotaManagementTab() {
 
   const { data: violations } = useQuery<Violation[]>({
     queryKey: ['violations', serverId],
-    queryFn: () => client.get('/api/users/violations', { params: { limit: 30, server_id: serverId } }).then((r) => r.data),
+    queryFn: () => client.get('/api/users/violations', { params: { limit: 30, server_id: serverId } }).then((r) => normalizeViolations(r.data)),
   })
 
   const updateQuotasMut = useMutation({
@@ -576,7 +684,7 @@ function QuotaManagementTab() {
 
   const saveEdit = () => {
     if (!editingKey) return
-    const quotaList = quotas ?? []
+    const quotaList = ensureArray<QuotaEntry>(quotas)
     const updated = quotaList.map((q) =>
       q.key === editingKey ? { ...q, mem_gb: editValues.mem_gb, proc_limit: editValues.proc_limit, comment: editValues.comment } : q,
     )
@@ -585,8 +693,8 @@ function QuotaManagementTab() {
 
   if (quotasLoading) return <p className="text-text3 text-sm">加载中...</p>
 
-  const quotaList = quotas ?? []
-  const violationList = violations ?? []
+  const quotaList = ensureArray<QuotaEntry>(quotas)
+  const violationList = ensureArray<Violation>(violations)
 
   const inputCls = 'bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:border-accent focus:outline-none'
 
