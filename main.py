@@ -110,6 +110,9 @@ async def lifespan(app: FastAPI):
         app.include_router(m["router"])
     logger.info("[ServerHub] 已加载 %s 个模块", len(modules))
 
+    # SPA catch-all 必须在所有 API 路由之后注册（FastAPI 按顺序匹配）
+    _register_spa_fallback(app)
+
     # LG Compat router 也需要在 ready 前挂载（路由注册不能延迟）
     try:
         from modules.agents.lg_compat import lg_router
@@ -366,7 +369,19 @@ if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="frontend-assets")
 
     _favicon_path = FRONTEND_DIR / "favicon.svg"
-    _index_html = (FRONTEND_DIR / "index.html").read_text()
+    _index_path = FRONTEND_DIR / "index.html"
+    _index_html_cache = {"mtime": None, "content": ""}
+
+    def _read_frontend_index_html() -> str:
+        """按 mtime 缓存 index.html，避免前端重建后仍返回旧入口文件。"""
+        if not _index_path.exists():
+            raise HTTPException(status_code=404, detail="前端入口文件不存在")
+
+        mtime = _index_path.stat().st_mtime
+        if _index_html_cache["mtime"] != mtime:
+            _index_html_cache["mtime"] = mtime
+            _index_html_cache["content"] = _index_path.read_text(encoding="utf-8")
+        return _index_html_cache["content"]
 
     @app.get("/favicon.svg")
     async def frontend_favicon():
@@ -374,18 +389,28 @@ if FRONTEND_DIR.exists():
             return FileResponse(str(_favicon_path), media_type="image/svg+xml")
         raise HTTPException(status_code=404)
 
-    # SPA catch-all: 所有非 API/非 WS 路径都返回 React index.html
-    @app.get("/{full_path:path}", response_class=HTMLResponse)
-    async def spa_fallback(full_path: str):
-        return HTMLResponse(_index_html)
+    pass  # SPA catch-all 在 lifespan 中的 _register_spa_fallback() 注册
 else:
     logger.warning(
         "[ServerHub] frontend/dist/ 不存在。请运行 cd frontend && npm run build 构建前端。当前只能通过 API 端点访问。"
     )
 
 
-# ─── 旧 Jinja2 页面路由已移除，前端统一由 React SPA 提供 ───
-# 旧模板文件已归档到 archive/templates_legacy/
+# ─── SPA catch-all（在 lifespan 中调用，确保所有 API 路由之后注册） ───
+
+
+def _register_spa_fallback(application: FastAPI):
+    """SPA catch-all 路由 — 必须在所有模块路由注册之后调用"""
+    if not FRONTEND_DIR.exists():
+        return
+
+    @application.get("/{full_path:path}", response_class=HTMLResponse)
+    async def spa_fallback(full_path: str):
+        if full_path.startswith(("api/", "ws/", "lg/")):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        return HTMLResponse(_read_frontend_index_html())
+
+    logger.info("[ServerHub] SPA catch-all 路由已注册（在 %d 个模块路由之后）", len(application.routes))
 
 
 # ─── 入口 ───
