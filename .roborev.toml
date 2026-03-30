@@ -9,7 +9,17 @@ backup_model = ''
 # Number of related reviews to include as context for this repo.
 review_context_count = 0
 # Extra review instructions added to prompts for this repo.
-review_guidelines = '所有 review 结论、摘要、问题说明、修复建议默认使用简体中文输出。代码、命令、路径、配置键名、类名、函数名、错误消息原文保持不翻译。'
+review_guidelines = '''所有 review 结论、摘要、问题说明、修复建议默认使用简体中文输出。代码、命令、路径、配置键名、类名、函数名、错误消息原文保持不翻译。
+
+项目特定审查规则 (ServerHub):
+1. main.py 路由注册: SPA catch-all /{full_path:path} 必须在 lifespan 中所有 include_router() 之后注册，否则会拦截所有 /api/* 请求
+2. Trailing slash: 后端 @router.get("/") 前端请求不带斜杠，需确认兼容性
+3. API 返回格式: GET 列表端点必须返回数组，POST/PUT/DELETE 返回 {"ok": true}，前端用 ensureArray() 防御
+4. 日志格式: logger 必须用 %s lazy 格式化，禁止 f-string 日志
+5. systemd 权限: ProtectSystem=full，修改 ReadWritePaths/ReadOnlyPaths 后需测试 cron/logs 权限
+6. Agent 安全: Teams 成员工具需通过 user_role 过滤，DANGER 工具在 supervised 模式下阻止
+7. Cookie Secure: 默认 auto（非 always），否则 HTTP 环境下 cookie 不会存储
+8. 敏感文件: 不读取 .env/.api_keys/.telegram_config 的内容'''
 # Override the review job timeout in minutes for this repo.
 job_timeout_minutes = 0
 # Branches that should be skipped for automatic review in this repo.
