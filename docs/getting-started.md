@@ -160,7 +160,18 @@ chmod 600 ~/.telegram_config
 
 如果不配置，告警功能仍可用，只是无法推送 Telegram 消息。
 
-### 3.4 服务器特定配置
+### 3.4 Cookie 安全配置
+
+通过环境变量控制 JWT Cookie 的安全行为：
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `SERVERHUB_COOKIE_SECURE` | `auto` | Cookie Secure 标志：`always`（强制 HTTPS）/ `auto`（根据请求自动判断）/ `never`（关闭） |
+| `SERVERHUB_COOKIE_SAMESITE` | `lax` | Cookie SameSite 策略：`lax` / `strict` / `none` |
+
+> **注意**: 如果通过 HTTP（非 HTTPS）访问，`SERVERHUB_COOKIE_SECURE` 必须设置为 `auto` 或 `never`，否则浏览器不会发送 Cookie 导致登录失败。
+
+### 3.5 服务器特定配置
 
 `config.py` 中有一些与服务器环境相关的硬编码配置，按实际情况修改：
 
@@ -222,8 +233,22 @@ INFO:     Uvicorn running on http://0.0.0.0:9900 (Press CTRL+C to quit)
 [Service]
 User=zhengxiaodong              # 修改为实际用户
 WorkingDirectory=/home/zhengxiaodong/scripts/server-hub   # 项目路径
-ExecStart=/home/zhengxiaodong/miniconda3/envs/serverhub/bin/python main.py
+ExecStart=/bin/bash -c 'source /home/zhengxiaodong/.api_keys 2>/dev/null; exec /home/zhengxiaodong/miniconda3/envs/serverhub/bin/uvicorn main:app --host 0.0.0.0 --port 9900 --workers 1'
 ```
+
+> **重要**: `ExecStart` 通过 `source ~/.api_keys` 加载 API Key 环境变量。如果你的 API Key 存储在 `.env` 文件中，可以改为 `source .env`，或直接在 `[Service]` 下用 `Environment=` 指令设置。
+
+**systemd 安全加固说明**:
+
+服务文件包含多项安全加固配置：
+
+| 配置项 | 说明 |
+|--------|------|
+| `NoNewPrivileges=no` | Agent 工具需要通过 sudo 执行 Docker/服务/用户管理操作 |
+| `CapabilityBoundingSet` | 限制可提升的 Linux 能力集上界，禁止加载内核模块、原始磁盘 I/O 等 |
+| `ProtectSystem=full` | 系统目录只读保护 |
+| `ReadWritePaths` | 仅允许写入 `data/`、`logs/`、`/tmp/serverhub-sandbox/` |
+| `ReadOnlyPaths` | 允许只读访问 `.api_keys`、`.env`、`/var/log`、`/var/spool/cron` |
 
 **步骤二：安装服务**
 
@@ -345,6 +370,37 @@ sudo systemctl status server-hub
 | `/logs` | 最近系统日志 |
 | `/patrol` | 立即执行综合巡检 |
 | `/report` | 生成系统报告 |
+
+### Smoke Test 集成验证
+
+部署完成后，可以运行 Smoke Test 验证所有关键端点：
+
+```bash
+# 测试本地部署
+bash scripts/smoke-test.sh
+
+# 测试远程部署
+bash scripts/smoke-test.sh 192.168.1.100
+```
+
+测试覆盖：健康检查、认证流程、各模块 API 可达性。退出码 0 表示全部通过。
+
+### 一键添加远程服务器
+
+在 Web 界面的「服务器管理」页面，点击「一键部署」按钮，填入：
+
+1. **服务器名称**: 自定义标识
+2. **IP 地址**: 远程服务器 IP
+3. **SSH 用户/密码**: 用于远程安装 Agent
+4. **Agent 端口**: 默认 9901
+
+系统会自动完成：服务器注册 → SSH 连接 → 安装 serverhub-agent → 配置 Token → 验证连通性。部署日志实时显示在界面上。
+
+也可以通过命令行脚本手动部署：
+
+```bash
+bash scripts/add-server.sh <ip> <ssh_user> <ssh_password> [agent_port]
+```
 
 ---
 

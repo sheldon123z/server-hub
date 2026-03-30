@@ -24,6 +24,7 @@ ServerHub 使用 React 19 + TypeScript + Tailwind CSS 构建 SPA 前端，通过
 | Tabler Icons | 3.x | 侧边栏图标 (CDN Webfont) |
 | react-hot-toast | 2.x | Toast 通知 |
 | react-hook-form + zod | 7.x + 4.x | 表单校验 |
+| Vitest | 3.x | 前端单元测试 |
 | Axios | 1.x | HTTP 客户端 |
 | Lucide React | 1.x | 页面内图标 |
 
@@ -93,14 +94,18 @@ frontend/src/
 │   ├── AuditPage.tsx
 │   ├── PanelUsersPage.tsx
 │   ├── AssetsPage.tsx
+│   ├── FleetDashboardPage.tsx  # 舰队总览（概览网格/对比图表/热力图）
+│   ├── PlaybooksPage.tsx       # 运维剧本管理
+│   ├── ServersPage.tsx         # 服务器管理（注册/分组/一键部署）
 │   └── agents/
 │       ├── AgentsPage.tsx          # 三栏主页面
+│       ├── AgentStudioPage.tsx     # Agent Studio（Skills + SubAgents + Teams）
 │       ├── ConversationSidebar.tsx  # 对话列表
-│       ├── ChatPanel.tsx           # 聊天主区域
-│       ├── MessageBubble.tsx       # 消息气泡（hover 操作栏）
+│       ├── ChatPanel.tsx           # 聊天主区域（智能滚动 + 草稿保存）
+│       ├── MessageBubble.tsx       # 消息气泡（hover 操作栏 + React.memo）
 │       ├── MarkdownRenderer.tsx    # Markdown + Mermaid + Artifact 渲染
-│       ├── TodoPanel.tsx           # Todo 进度面板
-│       ├── SlashCommandMenu.tsx    # 快捷指令菜单
+│       ├── TodoPanel.tsx           # Todo 进度面板（进度条 + 脉冲动画）
+│       ├── SlashCommandMenu.tsx    # 快捷指令菜单（分组 + 模糊搜索 + 键盘导航）
 │       ├── PatrolPanel.tsx         # 巡检标签页
 │       ├── AdminPanel.tsx          # 管理标签页
 │       ├── TerminalPanel.tsx       # xterm.js 终端
@@ -175,6 +180,10 @@ frontend/src/
 | `/panel_users` | `PanelUsersPage` | 面板用户 |
 | `/assets` | `AssetsPage` | 资产管理 |
 | `/agents` | `AgentsPage` | AI OpsAgent |
+| `/agents/studio` | `AgentStudioPage` | Agent Studio（Skills/SubAgents/Teams） |
+| `/playbooks` | `PlaybooksPage` | 运维剧本 |
+| `/servers` | `ServersPage` | 服务器管理（注册/分组/一键部署） |
+| `/fleet` | `FleetDashboardPage` | 舰队总览（概览/对比/热力图） |
 | `/monitoring` | → `/dashboard` | 重定向（兼容旧路由） |
 
 ---
@@ -461,3 +470,81 @@ FastAPI 后端配置静态文件服务和 SPA catch-all 路由：
 ### Toast 通知
 
 使用 `react-hot-toast`，全局 `<Toaster>` 在 `main.tsx` 中渲染，配色与暗色主题一致（card 背景 + text 文字色 + border 边框）。
+
+---
+
+## 聊天 UX 优化
+
+### 智能滚动
+
+ChatPanel 使用 `requestAnimationFrame` 合并滚动请求，避免频繁 DOM 操作。通过 `isNearBottom` 阈值检测判断用户是否在阅读历史消息：
+
+- 在底部附近（阈值 100px）：新消息到达时自动滚动到底部
+- 在历史消息中：不自动滚动，避免打断阅读
+
+### 草稿保存
+
+聊天输入框的未发送内容通过 Zustand store 持久化。切换对话或刷新页面时，未发送的草稿不会丢失。
+
+### 删除确认
+
+删除消息和对话时弹出确认对话框，防止误操作。
+
+### React.memo 优化
+
+`MessageBubble` 组件使用 `React.memo` 包裹，仅在 props 变化时重渲染。对于长对话（50+ 条消息），可显著减少不必要的重渲染。
+
+### 工具卡片改进
+
+`tool_call` 和 `tool_result` 事件渲染为可折叠卡片，显示工具名称、风险级别标签（safe/moderate/danger 颜色标记）和执行状态。
+
+---
+
+## 快捷指令分组
+
+`SlashCommandMenu` 支持指令按分类分组显示。在聊天输入框输入 `/` 触发菜单：
+
+- **模糊搜索**: 输入关键词即时过滤指令
+- **键盘导航**: 上下箭头选择，Enter 确认，Escape 关闭
+- **分组显示**: 指令按功能分类（系统、Docker、服务等）
+
+---
+
+## Agent Studio 页面
+
+`AgentStudioPage` 提供 Agent 能力管理的可视化界面，包含三个标签：
+
+### Skills 标签
+
+- 查看已注册的 Agent 技能列表
+- Skills 详情面板：版本历史、安装状态、与 Agent 的绑定关系
+- 技能参数配置
+
+### SubAgents 标签
+
+- 查看 6 个 SubAgent 的配置详情
+- 在线编辑 SubAgent 配置（工具集、模型、提示词）
+- 保存后调用 `reset_agent_cache()` 热加载生效
+
+### Teams 标签
+
+- 团队列表、成员管理
+- 三种拓扑编排（Supervisor / Swarm / Pipeline）
+- 团队执行记录和消息通信
+
+---
+
+## 服务器管理页面
+
+`ServersPage` 提供多服务器管理界面：
+
+- **服务器列表**: 在线/离线状态、心跳延迟、标签
+- **一键部署**: SSH 密码 + 自动部署向导，实时显示部署日志
+- **分组管理**: 创建分组、拖拽添加/移除服务器
+- **连通性测试**: Ping + SSH + Agent API 三层检查
+- **Token 轮换**: 一键轮换 Agent Token
+
+`FleetDashboardPage` 提供舰队总览视图：
+- 概览网格：所有服务器的 CPU/内存/GPU 一览
+- 对比图表：多服务器指标横向对比
+- 热力图：资源使用率热力分布

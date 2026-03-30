@@ -1,6 +1,6 @@
 # Agent 工具详细说明
 
-工具按功能领域拆分为 11 个子模块，存放在 `modules/agents/tools/` 目录下：
+工具按功能领域拆分为 14 个子模块，存放在 `modules/agents/tools/` 目录下：
 
 ```
 modules/agents/tools/
@@ -8,27 +8,29 @@ modules/agents/tools/
 ├── system.py            # 系统监控（3 个工具）
 ├── docker.py            # Docker 管理（7 个工具）
 ├── services.py          # Systemd 服务（5 个工具）
-├── users.py             # 用户管理（8 个工具）
+├── users.py             # 用户管理（10 个工具）
 ├── cron.py              # 定时任务（6 个工具）
 ├── assets.py            # 资产与故障案例（4 个工具）
 ├── knowledge.py         # RAG 知识库（2 个工具）
 ├── security.py          # 安全合规（2 个工具）
 ├── notifications.py     # 通知推送（1 个工具）
 ├── scripts.py           # 运维脚本桥接（1 个工具）
-└── playbook.py          # 运维剧本 + SSH（5 个工具）
+├── playbook.py          # 运维剧本 + SSH（5 个工具）
+├── servers.py           # 服务器舰队管理（2 个工具）
+└── page_context_tool.py # 页面上下文数据查询（1 个工具）
 ```
 
 通过 `get_server_tools(user_role)` 注册到主 Agent：
-- **admin**: 返回全部 50 个工具（含 5 个剧本工具 + 2 个服务器管理工具）
+- **admin**: 返回全部 49 个自定义工具
 - **user**: 仅返回 SAFE 级别的只读工具
 
 工具使用 LangChain `@tool` 装饰器，分布在 14 个子模块中。框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
 
 ---
 
-## 自定义工具（50 个）
+## 自定义工具（49 个）
 
-### safe — 只读查询（21 个）
+### safe — 只读查询（21 个 + 4 个新增）
 
 这些工具不修改系统状态，可在 supervised 和 autonomous 模式下自由调用。
 
@@ -277,6 +279,36 @@ modules/agents/tools/
 
 ---
 
+#### server_list
+
+- **风险等级**: safe
+- **说明**: 列出所有已注册的服务器，包括状态和基本信息。
+- **参数**: 无
+- **返回**: 服务器列表（ID/名称/IP/状态/标签/最后心跳）
+- **使用场景**: 查看舰队状态，获取 server_id 供后续操作
+
+---
+
+#### server_test_connectivity
+
+- **风险等级**: safe
+- **说明**: 测试指定服务器的连通性（Ping + SSH + Agent API）。
+- **参数**: `server_id: str`（通过 server_list 获取）
+- **返回**: Ping 延迟、SSH 连接状态、Agent API 状态
+- **使用场景**: 诊断服务器连接问题
+
+---
+
+#### get_page_data
+
+- **风险等级**: safe
+- **说明**: 获取指定页面的实时数据摘要。用户从浮动气泡对话框提问时调用。
+- **参数**: `page_name: str`（dashboard/docker/users/services 等 14 种页面）
+- **返回**: 页面最新数据摘要
+- **使用场景**: ChatWidget 页面上下文感知
+
+---
+
 ### moderate — 可逆操作（10 个）
 
 这些工具会修改系统状态，但操作可撤销。supervised 模式下需要审批。
@@ -513,12 +545,12 @@ modules/agents/tools/
 
 | 风险级别 | 自定义工具 | 框架内置 | SubAgent 专属 | 合计 |
 |---------|-----------|---------|-------------|------|
-| safe | 25 | 5 | 2 | 32 |
+| safe | 28 | 5 | 2 | 35 |
 | moderate | 12 | 2 | 0 | 14 |
 | danger | 7 | 1 | 0 | 8 |
-| **合计** | **44** | **8** | **2** | **54** |
+| **合计** | **47** | **8** | **2** | **57** |
 
-> 注：自定义工具 44 个（含 5 个剧本工具）。TOOL_RISK_MAP 包含全部工具的风险标签。
+> 注：自定义工具 49 个（含 5 个剧本工具 + 2 个服务器工具 + 1 个页面上下文工具），部分工具未在 TOOL_RISK_MAP 中注册但默认为 safe。框架通过 Middleware 注入 8 个内置工具（不含 execute 的 9 个），SubAgent 专属工具 2 个（web_search, think）。
 
 ---
 

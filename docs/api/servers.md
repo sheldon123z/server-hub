@@ -3,12 +3,77 @@
 提供多服务器注册、分组管理、连通性测试、Token 轮换等接口。基于 Hub-Agent 架构，中心 Hub 通过此模块管理远程服务器。
 
 **路由前缀**: `/api/servers`
-**相关文件**: `modules/servers/routes.py`, `modules/servers/services.py`, `modules/servers/agent_client.py`
+**相关文件**: `modules/servers/routes.py`, `modules/servers/services.py`, `modules/servers/schemas.py`, `modules/servers/agent_client.py`
 **权限**: 所有端点需要 `admin` 角色
 
 ---
 
 ## 端点列表
+
+### POST /api/servers/deploy
+
+一键部署远程服务器：注册 → SSH 安装 Agent → 验证连通。
+
+**权限**: admin
+
+**请求体** (`ServerDeployRequest`):
+
+```json
+{
+  "name": "gpu-server-01",
+  "ip_address": "192.168.1.100",
+  "ssh_user": "root",
+  "ssh_port": 22,
+  "ssh_password": "your-ssh-password",
+  "agent_port": 9901,
+  "hostname": "",
+  "tags": ["gpu", "training"]
+}
+```
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| name | string | 是 | - | 服务器名称（1-64 字符）|
+| ip_address | string | 是 | - | 主机 IP 地址 |
+| ssh_password | string | 是 | - | SSH 登录密码 |
+| ssh_user | string | 否 | `root` | SSH 登录用户 |
+| ssh_port | int | 否 | `22` | SSH 端口 |
+| agent_port | int | 否 | `9901` | Agent 监听端口 |
+| hostname | string | 否 | name | 主机名（为空时回退到 name）|
+| tags | string/list | 否 | `[]` | 标签（逗号分隔字符串或数组）|
+
+**部署流程**:
+
+1. 在本地数据库注册服务器，生成 Agent Token
+2. 通过 `SERVERHUB_HUB_URL` 环境变量（或 Request Host 头）检测 Hub 地址
+3. SSH 连接远程服务器，自动安装 serverhub-agent 并配置 Token
+4. 等待 3 秒后测试连通性（三层健康检查）
+
+**成功响应** `200`:
+
+```json
+{
+  "ok": true,
+  "id": "server-uuid",
+  "deploy_ok": true,
+  "deploy_log": "部署日志（Token 已脱敏）",
+  "connectivity": {
+    "ping_ok": true,
+    "ping_ms": 2,
+    "ssh_ok": true,
+    "agent_ok": true,
+    "agent_version": "0.1.0"
+  }
+}
+```
+
+**错误响应**:
+- `409`: 服务器名称已存在
+- `400`: 参数错误
+
+> **安全提示**: 部署日志中的 Agent Token 会被自动脱敏。SSH 密码仅用于部署过程，不存储在数据库中。
+
+---
 
 ### GET /api/servers/overview
 
@@ -70,16 +135,30 @@
 
 **权限**: admin
 
-**请求体**:
+**请求体** (`ServerCreateRequest`):
 
 ```json
 {
   "name": "gpu-server-01",
-  "host": "192.168.1.100",
-  "port": 9901,
-  "description": "GPU 训练节点"
+  "ip_address": "192.168.1.100",
+  "agent_port": 9901,
+  "hostname": "gpu-node-01",
+  "ssh_user": "root",
+  "ssh_port": 22,
+  "tags": ["gpu", "training"]
 }
 ```
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| name | string | 是 | - | 服务器名称（1-64 字符，UNIQUE）|
+| ip_address | string | 是 | - | 主机 IP 地址 |
+| agent_port | int | 否 | `9901` | Agent 监听端口 |
+| hostname | string | 否 | name | 主机名 |
+| ssh_user | string | 否 | null | SSH 用户 |
+| ssh_port | int | 否 | `22` | SSH 端口 |
+| ssh_key_credential | string | 否 | null | SSH 密钥凭据引用 |
+| tags | string/list | 否 | `[]` | 标签 |
 
 **成功响应** `200`:
 

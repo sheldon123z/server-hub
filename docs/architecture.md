@@ -130,13 +130,16 @@ def discover_modules():
 modules/agents/
 ├── deep_agent.py     # 工厂函数，组装所有组件
 ├── llm.py            # 8 家 LLM 服务商注册表
-├── tools/            # 50 个 @tool 服务器管理工具（11 个子模块）
+├── tools/            # 49 个 @tool 服务器管理工具（14 个子模块）
 ├── subagents/        # 6 个 SubAgent 定义（各自独立文件）
 ├── safety.py         # 审批规则 + Shell 黑名单
 ├── sandbox.py        # SafeLocalShellBackend
 ├── prompts.py        # 系统提示词（支持自定义覆盖）
 ├── patrol.py         # 8 个内置巡检任务 + 调度器
-├── routes.py         # SSE 对话流 + 所有 API
+├── routes/           # 9 个 HTTP 端点子模块
+├── teams/            # Agent Teams 多拓扑编排引擎
+│   ├── engine.py     # 图构建 + Supervisor/Swarm/Pipeline 拓扑
+│   └── safety.py     # 团队工具安全层（Shell 黑名单 + 权限过滤）
 └── terminal.py       # WebTerminal (pty.fork)
 ```
 
@@ -385,9 +388,16 @@ server-hub/
 │
 ├── serverhub-agent/           # 远程 Agent 守护进程（独立部署包）
 ├── docs/                      # 项目文档
+├── scripts/                   # 运维辅助脚本
+│   ├── smoke-test.sh          # Smoke Test 集成验证
+│   └── add-server.sh          # 一键添加远程服务器
+│
+├── tests/                     # 测试套件（Auth/Teams/安全专项）
 ├── CLAUDE.md                  # 开发者指引
 ├── AGENTS.md                  # 仓库协作说明
+├── CHANGELOG.md               # 变更日志
 ├── server-hub.service         # systemd 服务文件
+├── .env.example               # 环境变量模板
 └── requirements.txt           # Python 依赖
 ```
 
@@ -429,3 +439,85 @@ ServerHub 采用 Hub-Agent 架构管理多台服务器：
 - **凭据管理**: `playbook_credentials` 表使用 Fernet 加密存储敏感参数
 - **触发方式**: 手动触发 / 定时触发（通过 `trigger_config` JSON 配置）
 - **AI 工具集成**: Agent 通过 5 个剧本工具（`playbook_create/execute/list/search` + `ssh_execute_command`）操作剧本
+
+---
+
+## 9. RoboRev 自动评审管道
+
+ServerHub 集成了基于 Claude Code 的自动代码评审系统（RoboRev），实现 commit 级质量把关：
+
+```
+开发者 push commit
+  └── Claude Code hook 触发 roborev commit 评审
+       ├── 代码静态分析 + 安全扫描
+       ├── 评审发现 → 自动创建 GitHub Issue
+       │    └── Claude Code 后台修复（worktree 隔离）
+       │         └── 生成修复 PR
+       │              └── gh-cleanup.sh 自动合并 + 清理分支
+       └── 无发现 → pass
+```
+
+- **Worktree 隔离**: 自动修复在独立 worktree 中运行，不影响开发者工作目录
+- **无限循环防护**: roborev 自身的 commit 不再触发评审（防止修复→评审→修复死循环）
+- **自动清理**: `gh-cleanup.sh` 每小时运行，合并/关闭过期 PR 并清理远程分支
+
+---
+
+## 10. Smoke Test 集成验证
+
+`scripts/smoke-test.sh` 提供关键端点的集成验证：
+
+```bash
+bash scripts/smoke-test.sh              # 测试 localhost:9900
+bash scripts/smoke-test.sh 192.168.1.1  # 测试指定地址
+```
+
+测试覆盖：健康检查端点、认证流程（登录/Token 续期）、各模块 API 端点可达性。退出码 0 表示全部通过，1 表示有失败。
+
+---
+
+## 11. 前端 UX 优化
+
+### 聊天体验增强
+
+- **智能滚动**: 用户阅读历史消息时不自动滚到底部，新消息到达时用 `requestAnimationFrame` 合并滚动请求，`isNearBottom` 阈值检测判断是否自动滚动
+- **草稿保存**: 输入框内容通过 Zustand 持久化，切换对话不丢失未发送内容
+- **删除确认**: 删除消息和对话时弹出确认对话框，防止误操作
+- **React.memo 优化**: `MessageBubble` 组件 memo 化，减少不必要的重渲染
+
+### Agent Studio 增强
+
+- **Skills 详情面板**: 查看技能版本历史、安装状态、与 Agent 的绑定关系
+- **SubAgents 编辑**: 在线编辑 SubAgent 配置（工具集、模型、提示词），保存后热加载
+
+### 快捷指令分组
+
+`SlashCommandMenu` 支持指令按分类分组显示，模糊搜索和键盘导航。
+
+### 工具卡片改进
+
+`tool_call` 和 `tool_result` 事件渲染为可折叠卡片，显示工具名称、风险级别标签和执行耗时。
+
+---
+
+## 12. Agent Teams 安全加固
+
+### 权限隔离
+
+`user_role` 参数贯穿团队图构建的全链路（`execute()` → `build_team_graph()` → `_build_member_agent()` → `resolve_tools()`），确保非 admin 用户的团队成员只能使用 safe 级别工具。不同角色的图实例分别缓存（`cache_key = f"{team_id}:{user_role}"`）。
+
+### Swarm Handoff 循环检测
+
+使用 `collections.deque(maxlen=8)` 作为滑动窗口记录 agent 切换历史。当窗口内只有 2 个不同的 agent 交替出现时，触发循环检测，终止执行并返回错误。
+
+### 异步执行超时保护
+
+团队执行使用 `time.time() + timeout` deadline 机制，超过配置的 `timeout_seconds`（默认 300s）后触发 `TimeoutError`，返回超时错误事件，避免无限执行。
+
+### 团队工具安全层
+
+`teams/safety.py` 为团队成员工具提供独立安全层（不经过 Deep Agents 的 SafeLocalShellBackend）：
+
+1. **Shell 黑名单检查**: execute 类工具调用前检查命令合法性
+2. **DANGER 工具阻止**: supervised 模式下 DANGER 级别工具返回审批提示而非执行
+3. **环境变量剥离**: 所有工具调用时剥离敏感环境变量（`*API_KEY*`/`*SECRET*`/`*TOKEN*`）
