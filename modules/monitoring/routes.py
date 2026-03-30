@@ -171,7 +171,7 @@ async def get_top_processes(
         return data
 
     # 远程服务器暂不支持进程列表（Agent 端无专用端点）
-    return {"cpu": [], "memory": [], "gpu": [], "_remote": True, "_message": "远程服务器暂不支持进程排行"}
+    return {"by_cpu": [], "by_mem": [], "by_gpu": [], "_remote": True, "_message": "远程服务器暂不支持进程排行"}
 
 
 @router.get("/inode")

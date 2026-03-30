@@ -3,9 +3,8 @@
 import asyncio
 import os
 import re
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from pathlib import Path
-from typing import AsyncGenerator
 
 from config import settings
 
@@ -39,9 +38,7 @@ def _validate_log_path(path: str) -> str:
             break
 
     if not allowed:
-        raise ValueError(
-            f"Access denied: path '{path}' is outside allowed log directories"
-        )
+        raise ValueError(f"Access denied: path '{path}' is outside allowed log directories")
 
     return resolved
 
@@ -50,7 +47,7 @@ def list_log_files() -> list[dict]:
     """Scan configured log directories for .log files.
 
     Returns:
-        List of dicts with path, name, size_bytes, modified.
+        List of dicts with path, name, size, modified.
         Sorted by modification time descending.
     """
     log_files = []
@@ -68,14 +65,14 @@ def list_log_files() -> list[dict]:
                 filepath = os.path.join(root, filename)
                 try:
                     stat = os.stat(filepath)
-                    log_files.append({
-                        "path": filepath,
-                        "name": filename,
-                        "size_bytes": stat.st_size,
-                        "modified": datetime.fromtimestamp(
-                            stat.st_mtime
-                        ).isoformat(),
-                    })
+                    log_files.append(
+                        {
+                            "path": filepath,
+                            "name": filename,
+                            "size": stat.st_size,
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        }
+                    )
                 except OSError:
                     continue
 
@@ -97,7 +94,10 @@ async def tail_log(path: str, lines: int = 200) -> str:
     lines = min(max(1, lines), 10000)
 
     proc = await asyncio.create_subprocess_exec(
-        "tail", "-n", str(lines), resolved,
+        "tail",
+        "-n",
+        str(lines),
+        resolved,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -109,9 +109,7 @@ async def tail_log(path: str, lines: int = 200) -> str:
     return stdout.decode()
 
 
-async def search_log(
-    path: str, pattern: str, max_results: int = 100
-) -> list[dict]:
+async def search_log(path: str, pattern: str, max_results: int = 100) -> list[dict]:
     """Search a log file for lines matching a pattern.
 
     Args:
@@ -132,7 +130,11 @@ async def search_log(
 
     # Use grep with fixed-string mode (-F) to avoid regex injection
     proc = await asyncio.create_subprocess_exec(
-        "grep", "-n", "-F", pattern, resolved,
+        "grep",
+        "-n",
+        "-F",
+        pattern,
+        resolved,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -148,10 +150,12 @@ async def search_log(
             break
         match = re.match(r"^(\d+):(.*)", line)
         if match:
-            results.append({
-                "line_number": int(match.group(1)),
-                "content": match.group(2),
-            })
+            results.append(
+                {
+                    "line_number": int(match.group(1)),
+                    "content": match.group(2),
+                }
+            )
 
     return results
 
@@ -168,7 +172,11 @@ async def stream_log(path: str) -> AsyncGenerator[str, None]:
     resolved = _validate_log_path(path)
 
     proc = await asyncio.create_subprocess_exec(
-        "tail", "-f", "-n", "0", resolved,
+        "tail",
+        "-f",
+        "-n",
+        "0",
+        resolved,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -180,5 +188,5 @@ async def stream_log(path: str) -> AsyncGenerator[str, None]:
         proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()

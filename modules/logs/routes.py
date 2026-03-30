@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth.dependencies import require_role
-from modules.logs.services import list_log_files, tail_log, search_log, stream_log
+from modules.logs.services import list_log_files, search_log, stream_log, tail_log
 
 router = APIRouter(prefix="/api/logs", tags=["日志查看"])
 
@@ -16,16 +16,34 @@ async def get_log_files(
     """List all discoverable log files in configured directories."""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         client = await get_agent_client(server_id)
         result = await client.log_files()
         if not result.get("ok"):
             raise HTTPException(status_code=502, detail=result.get("error", "远程请求失败"))
         raw_files = result["data"].get("files", [])
-        files = [
-            {"path": f.strip(), "name": f.strip().split("/")[-1]}
-            for f in raw_files
-            if f.strip()
-        ]
+        files = []
+        for f in raw_files:
+            if isinstance(f, dict):
+                # Agent 已返回结构化数据
+                files.append(
+                    {
+                        "path": f.get("path", ""),
+                        "name": f.get("name", f.get("path", "").split("/")[-1]),
+                        "size": f.get("size", f.get("size_bytes", 0)),
+                        "modified": f.get("modified", ""),
+                    }
+                )
+            elif isinstance(f, str) and f.strip():
+                # Agent 仅返回路径字符串
+                files.append(
+                    {
+                        "path": f.strip(),
+                        "name": f.strip().split("/")[-1],
+                        "size": 0,
+                        "modified": "",
+                    }
+                )
         return {"files": files, "count": len(files)}
     files = list_log_files()
     return {"files": files, "count": len(files)}
@@ -41,6 +59,7 @@ async def get_log_tail(
     """Read the last N lines of a log file."""
     if server_id != "local":
         from modules.servers.agent_client import get_agent_client
+
         # Hub 端也做基本检查，agent 端会做 realpath 校验
         if not path.startswith("/var/log/"):
             raise HTTPException(status_code=403, detail="远程日志仅允许读取 /var/log 下的文件")
@@ -90,6 +109,7 @@ async def stream_log_sse(
     try:
         # Validate path before starting stream
         from modules.logs.services import _validate_log_path
+
         _validate_log_path(path)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

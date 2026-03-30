@@ -1,6 +1,7 @@
 """WebSocket 终端路由"""
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -49,7 +50,17 @@ async def terminal_ws(websocket: WebSocket):
             """接收 WebSocket 输入并写入终端"""
             while True:
                 data = await websocket.receive_text()
-                # 支持 resize 消息
+                # 支持 resize 消息: JSON {"type":"resize","cols":N,"rows":N}
+                # 或旧格式 \x1b[resize:cols,rows]
+                try:
+                    msg = json.loads(data)
+                    if isinstance(msg, dict) and msg.get("type") == "resize":
+                        cols = int(msg.get("cols", 80))
+                        rows = int(msg.get("rows", 24))
+                        terminal.resize(cols, rows)
+                        continue
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    pass
                 if data.startswith("\x1b[resize:"):
                     try:
                         parts = data.split(":")[1].rstrip("]").split(",")
