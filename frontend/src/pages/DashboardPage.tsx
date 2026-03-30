@@ -1341,15 +1341,16 @@ export default function DashboardPage() {
   const [activeCard, setActiveCard] = useState<CardId | null>(null)
   const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('1')
 
-  // Fallback: fetch snapshot if WS not connected
+  // Fallback: fetch snapshot via API until WS delivers real-time data.
+  // For remote servers, WS updates arrive every 60s, so this fills the gap.
   const { data: fallbackMetrics } = useQuery({
     queryKey: ['metrics-fallback', serverId],
     queryFn: async () => {
       const res = await client.get('/api/monitoring/realtime', { params: { server_id: serverId } })
       return normalizeMetricsSnapshot(res.data)
     },
-    enabled: !connected && !metrics,
-    refetchInterval: 5000,
+    enabled: !metrics,
+    refetchInterval: metrics ? false : 5000,
   })
 
   // Alert summary

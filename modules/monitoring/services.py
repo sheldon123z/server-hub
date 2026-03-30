@@ -129,7 +129,7 @@ async def get_history_data(metric: str, hours: int, server_id: str) -> list:
         # 长期查询: 取全量数据，应用层降采样
         cursor = await db.execute(
             "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
-            "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? "
+            "AND server_id = ? AND timestamp >= ? "
             "ORDER BY timestamp ASC",
             (server_id, cutoff),
         )
@@ -137,7 +137,7 @@ async def get_history_data(metric: str, hours: int, server_id: str) -> list:
         # 短期查询: LIMIT 限制即可
         cursor = await db.execute(
             "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' "
-            "AND (server_id = ? OR server_id IS NULL) AND timestamp >= ? "
+            "AND server_id = ? AND timestamp >= ? "
             "ORDER BY timestamp ASC LIMIT ?",
             (server_id, cutoff, max_rows),
         )
@@ -178,8 +178,7 @@ async def get_alerts_summary_data(server_id: str) -> dict:
     # 最近24h各级别告警数（按 server_id 过滤）
     cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
     cursor = await db.execute(
-        "SELECT severity, COUNT(*) FROM alert_history "
-        "WHERE created_at >= ? AND (server_id = ? OR server_id IS NULL) GROUP BY severity",
+        "SELECT severity, COUNT(*) FROM alert_history WHERE created_at >= ? AND server_id = ? GROUP BY severity",
         (cutoff, server_id),
     )
     rows = await cursor.fetchall()
@@ -199,7 +198,7 @@ async def get_alerts_recent_data(limit: int, severity: str | None, server_id: st
     """获取最近的告警历史记录"""
     db = await get_db()
 
-    base_where = "WHERE (server_id = ? OR server_id IS NULL)"
+    base_where = "WHERE server_id = ?"
     params: list = [server_id]
     if severity:
         base_where += " AND severity = ?"

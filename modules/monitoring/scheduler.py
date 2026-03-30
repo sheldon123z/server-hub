@@ -25,8 +25,8 @@ async def _collect_and_store():
         db = await get_db()
         snapshot_json = json.dumps(snapshot, ensure_ascii=False)
         await db.execute(
-            "INSERT INTO metrics (metric_type, value_json) VALUES (?, ?)",
-            ("all", snapshot_json),
+            "INSERT INTO metrics (server_id, metric_type, value_json) VALUES (?, ?, ?)",
+            ("local", "all", snapshot_json),
         )
         # UPSERT metrics_latest — 避免 query_fleet_latest 自联结
         now_iso = datetime.now().isoformat()
@@ -104,18 +104,78 @@ async def _scheduler_loop():
 
 
 async def _ws_broadcast_loop():
-    """5秒快速采集并广播到 WebSocket 客户端"""
+    """5秒快速采集并广播到 WebSocket 客户端（本地 + 订阅中的远程服务器）"""
     from modules.monitoring.ws_manager import ws_manager
 
     logger.info("WebSocket 广播循环已启动 (间隔: %ss)", settings.ws_metrics_interval)
     while True:
         if ws_manager.connection_count:
+            # 本地快速指标
             try:
                 snapshot = await asyncio.to_thread(collect_realtime_fast)
                 await ws_manager.broadcast({"type": "metrics", "server_id": "local", "data": snapshot})
             except Exception as e:
                 logger.error("WS广播失败: %s", e)
+
+            # 远程快速指标 — 仅采集有 WS 订阅者的远程服务器
+            await _broadcast_remote_fast(ws_manager)
+
         await asyncio.sleep(settings.ws_metrics_interval)
+
+
+async def _broadcast_remote_fast(ws_manager):
+    """为有活跃 WS 订阅的远程服务器采集快速指标并广播"""
+    # 收集所有订阅中的非 local 服务器 ID
+    subscribed_remote: set[str] = set()
+    for subs in ws_manager._connections.values():
+        if "*" in subs:
+            subscribed_remote = {"*"}  # 有 wildcard 订阅，需要所有远程
+            break
+        subscribed_remote.update(sid for sid in subs if sid != "local")
+
+    if not subscribed_remote:
+        return
+
+    try:
+        db = await get_db()
+        if "*" in subscribed_remote:
+            rows = await (await db.execute("SELECT * FROM servers WHERE is_local = 0 AND status = 'online'")).fetchall()
+        else:
+            placeholders = ",".join("?" * len(subscribed_remote))
+            rows = await (
+                await db.execute(
+                    f"SELECT * FROM servers WHERE is_local = 0 AND status = 'online' AND id IN ({placeholders})",  # noqa: S608
+                    tuple(subscribed_remote),
+                )
+            ).fetchall()
+
+        if not rows:
+            return
+
+        from modules.servers.agent_client import AgentClient
+        from modules.servers.services import _row_to_dict, decrypt_agent_token
+
+        sem = asyncio.Semaphore(5)
+
+        async def collect_fast_one(server_dict):
+            async with sem:
+                server_dict["_decrypted_token"] = decrypt_agent_token(
+                    server_dict.get("agent_token_encrypted") or server_dict.get("agent_token_hash", "")
+                )
+                client = AgentClient(server_dict)
+                try:
+                    result = await asyncio.wait_for(client.get_fast_metrics(), timeout=8)
+                    if result.get("ok"):
+                        await ws_manager.broadcast(
+                            {"type": "metrics", "server_id": server_dict["id"], "data": result["data"]}
+                        )
+                except Exception:  # noqa: S110 — 快速指标失败静默跳过，避免 5s 刷屏
+                    pass
+
+        server_dicts = [_row_to_dict(r) for r in rows]
+        await asyncio.gather(*[collect_fast_one(s) for s in server_dicts], return_exceptions=True)
+    except Exception as e:
+        logger.debug("远程快速指标采集跳过: %s", e)
 
 
 async def start_scheduler():
@@ -187,10 +247,10 @@ async def _collect_remote_metrics():
             try:
                 getter = getattr(client, "get_metrics_full", None) or client.get_metrics
                 result = await asyncio.wait_for(getter(), timeout=15)
-                if result.get("ok"):
-                    snapshot = result["data"]
-                else:
-                    snapshot = result
+                if not result.get("ok"):
+                    logger.debug("远程指标采集失败 [%s]: %s", server_dict["name"], result.get("error"))
+                    return
+                snapshot = result["data"]
             except Exception as e:
                 logger.debug("远程指标采集异常 [%s]: %s", server_dict["name"], e)
                 return
