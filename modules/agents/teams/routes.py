@@ -460,6 +460,7 @@ async def execute_team(
                 team_id=team_id,
                 instruction=body.instruction,
                 username=user["username"],
+                user_role=user.get("role", "user"),
             ):
                 event_type = event.get("event", "message")
                 event_data = event.get("data", {})

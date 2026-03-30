@@ -103,11 +103,12 @@ class TeamEngine:
 
     # ─── 图构建 ───
 
-    async def build_team_graph(self, team_id: str):
+    async def build_team_graph(self, team_id: str, user_role: str = "admin"):
         """构建团队图，带缓存（团队配置变更时自动 invalidate）
 
         Args:
             team_id: 团队 ID
+            user_role: 当前用户角色，用于过滤工具权限
 
         Returns:
             CompiledStateGraph 实例
@@ -123,24 +124,24 @@ class TeamEngine:
         if not members:
             raise ValueError(f"团队 {team_id} 无成员")
 
-        # 缓存检查: team.updated_at 变化时重建
-        cache_key = team_id
+        # 缓存检查: team.updated_at 变化时重建；不同 user_role 分别缓存
+        cache_key = f"{team_id}:{user_role}"
         if cache_key in self._graph_cache:
             cached_graph, cached_time_str = self._graph_cache[cache_key]
             team_updated = team.get("updated_at", "")
             if cached_time_str and cached_time_str >= team_updated:
-                logger.debug("使用缓存的团队图: %s", team_id)
+                logger.debug("使用缓存的团队图: %s (role=%s)", team_id, user_role)
                 return cached_graph
 
         topology = team["topology"]
-        logger.info("构建团队图: %s (拓扑=%s, 成员=%d)", team["name"], topology, len(members))
+        logger.info("构建团队图: %s (拓扑=%s, 成员=%d, role=%s)", team["name"], topology, len(members), user_role)
 
         if topology == "supervisor":
-            graph = self._build_supervisor(team, members)
+            graph = self._build_supervisor(team, members, user_role)
         elif topology == "swarm":
-            graph = self._build_swarm(team, members)
+            graph = self._build_swarm(team, members, user_role)
         elif topology == "pipeline":
-            graph = self._build_pipeline(team, members)
+            graph = self._build_pipeline(team, members, user_role)
         else:
             raise ValueError(f"未知拓扑类型: {topology}")
 
@@ -148,23 +149,24 @@ class TeamEngine:
         self._graph_cache[cache_key] = (graph, team.get("updated_at", ""))
         return graph
 
-    def _build_member_agent(self, member: dict, team: dict):
+    def _build_member_agent(self, member: dict, team: dict, user_role: str = "admin"):
         """为单个团队成员构建 react agent
 
         Args:
             member: 成员配置字典
             team: 团队配置字典
+            user_role: 当前用户角色，用于过滤工具权限
 
         Returns:
             CompiledStateGraph (react agent)
         """
         from langgraph.prebuilt import create_react_agent
 
-        # 1. 解析工具列表
+        # 1. 解析工具列表 — 传入 user_role 确保权限隔离
         tools_json = member.get("tools_json", "[]")
         tool_names = json.loads(tools_json) if isinstance(tools_json, str) else tools_json
 
-        raw_tools = _resolve_tools_safe(tool_names)
+        raw_tools = _resolve_tools_safe(tool_names, user_role)
         safe_tools = _wrap_tools_safe(raw_tools, team.get("safety_mode", "supervised"), member["name"])
 
         # 2. 选择模型 (成员 > 团队 > 全局默认)
@@ -181,12 +183,13 @@ class TeamEngine:
 
         return agent
 
-    def _build_supervisor(self, team: dict, members: list[dict]):
+    def _build_supervisor(self, team: dict, members: list[dict], user_role: str = "admin"):
         """Supervisor 拓扑: leader 通过 handoff tools 调度 workers
 
         Args:
             team: 团队配置
             members: 成员列表
+            user_role: 当前用户角色，用于过滤工具权限
 
         Returns:
             CompiledStateGraph
@@ -203,7 +206,7 @@ class TeamEngine:
         # 构建 worker agents
         worker_agents = []
         for w in workers:
-            agent = self._build_member_agent(w, team)
+            agent = self._build_member_agent(w, team, user_role)
             worker_agents.append(agent)
 
         # Supervisor 模型
@@ -223,12 +226,13 @@ class TeamEngine:
         )
         return workflow.compile()
 
-    def _build_swarm(self, team: dict, members: list[dict]):
+    def _build_swarm(self, team: dict, members: list[dict], user_role: str = "admin"):
         """Swarm 拓扑: 成员间自主 handoff 协作
 
         Args:
             team: 团队配置
             members: 成员列表
+            user_role: 当前用户角色，用于过滤工具权限
 
         Returns:
             CompiledStateGraph
@@ -254,10 +258,10 @@ class TeamEngine:
                 for t in targets
             ]
 
-            # 解析工具
+            # 解析工具 — 传入 user_role 确保权限隔离
             tools_json = m.get("tools_json", "[]")
             tool_names = json.loads(tools_json) if isinstance(tools_json, str) else tools_json
-            raw_tools = _resolve_tools_safe(tool_names)
+            raw_tools = _resolve_tools_safe(tool_names, user_role)
             safe_tools = _wrap_tools_safe(raw_tools, team.get("safety_mode", "supervised"), m["name"])
 
             # 选择模型
@@ -277,12 +281,13 @@ class TeamEngine:
         workflow = create_swarm(agents, default_active_agent=default_active)
         return workflow.compile()
 
-    def _build_pipeline(self, team: dict, members: list[dict]):
+    def _build_pipeline(self, team: dict, members: list[dict], user_role: str = "admin"):
         """Pipeline 拓扑: 按 position 顺序依次执行，上游输出注入下游上下文
 
         Args:
             team: 团队配置
             members: 成员列表
+            user_role: 当前用户角色，用于过滤工具权限
 
         Returns:
             CompiledStateGraph
@@ -294,7 +299,7 @@ class TeamEngine:
         graph = StateGraph(TeamState)
 
         for i, member in enumerate(sorted_members):
-            agent = self._build_member_agent(member, team)
+            agent = self._build_member_agent(member, team, user_role)
             node_name = member["name"]
 
             # 用闭包捕获当前 agent 和位置，避免 late-binding 问题
@@ -346,13 +351,16 @@ class TeamEngine:
 
     # ─── 执行管理 ───
 
-    async def execute(self, team_id: str, instruction: str, username: str) -> AsyncGenerator[dict, None]:
+    async def execute(
+        self, team_id: str, instruction: str, username: str, user_role: str = "admin"
+    ) -> AsyncGenerator[dict, None]:
         """执行团队任务，yield SSE 事件字典
 
         Args:
             team_id: 团队 ID
             instruction: 用户指令
             username: 执行用户
+            user_role: 用户角色，用于工具权限过滤
 
         Yields:
             SSE 事件字典 {"event": str, "data": dict}
@@ -367,7 +375,7 @@ class TeamEngine:
             return
 
         try:
-            graph = await self.build_team_graph(team_id)
+            graph = await self.build_team_graph(team_id, user_role)
         except ValueError as e:
             yield {"event": "team_error", "data": {"error": str(e)}}
             return
@@ -467,6 +475,9 @@ class TeamEngine:
         step = 0
         current_agent = ""
         seen_agents = set()
+        # Swarm handoff 循环检测：记录 agent 切换历史
+        handoff_history: list[str] = []
+        _MAX_HANDOFF_LOOP_WINDOW = 8
 
         async for event in graph.astream_events(
             {"messages": [HumanMessage(content=instruction)]},
@@ -482,6 +493,22 @@ class TeamEngine:
                 if name.startswith("_") or name in ("tools", "RunnableSequence", "ChannelWrite"):
                     pass
                 else:
+                    # Swarm handoff 循环检测
+                    handoff_history.append(name)
+                    if len(handoff_history) >= _MAX_HANDOFF_LOOP_WINDOW:
+                        recent = handoff_history[-_MAX_HANDOFF_LOOP_WINDOW:]
+                        if len(set(recent)) <= 2:
+                            logger.warning(
+                                "[Team] Swarm handoff 循环检测触发，最近 %d 步: %s",
+                                _MAX_HANDOFF_LOOP_WINDOW,
+                                recent,
+                            )
+                            yield {
+                                "event": "team_error",
+                                "data": {"error": "检测到 Swarm handoff 循环，已终止执行"},
+                            }
+                            return
+
                     if current_agent and current_agent in seen_agents:
                         yield {
                             "event": "agent_complete",
@@ -602,14 +629,16 @@ class TeamEngine:
         self._active_executions.pop(exec_id, None)
 
     def invalidate_cache(self, team_id: str):
-        """团队配置更新后清除缓存
+        """团队配置更新后清除缓存（清除该团队所有 role 的缓存条目）
 
         Args:
             team_id: 团队 ID
         """
-        removed = self._graph_cache.pop(team_id, None)
-        if removed:
-            logger.info("已清除团队图缓存: %s", team_id)
+        keys_to_remove = [k for k in self._graph_cache if k.startswith(f"{team_id}:")]
+        for k in keys_to_remove:
+            del self._graph_cache[k]
+        if keys_to_remove:
+            logger.info("已清除团队图缓存: %s (%d 条)", team_id, len(keys_to_remove))
 
     def invalidate_all_cache(self):
         """清除所有团队图缓存"""
