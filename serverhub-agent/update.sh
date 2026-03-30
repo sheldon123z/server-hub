@@ -29,21 +29,32 @@ echo "=== ServerHub Agent 更新 ==="
 echo "Hub: $HUB_URL"
 echo "Agent 目录: $AGENT_DIR"
 
-# 下载所有 .py 文件
+# 阶段 1: 下载所有文件到临时目录
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
 for f in $PY_FILES; do
     echo "下载 $f ..."
-    if curl -sSL -o "${AGENT_DIR}/${f}.new" "${HUB_URL}/static/agent/${f}" 2>/dev/null; then
-        # 备份并替换
-        if [ -f "${AGENT_DIR}/${f}" ]; then
-            cp "${AGENT_DIR}/${f}" "${AGENT_DIR}/${f}.bak"
-        fi
-        mv "${AGENT_DIR}/${f}.new" "${AGENT_DIR}/${f}"
-        echo "  ✓ $f 已更新"
-    else
-        echo "  ✗ $f 下载失败，跳过"
-        rm -f "${AGENT_DIR}/${f}.new"
+    if ! curl -fsSL -o "${TMPDIR}/${f}" "${HUB_URL}/static/agent/${f}"; then
+        echo "  ✗ $f 下载失败，中止更新"
+        exit 1
     fi
+    # 基本校验: 文件非空且是合法 Python
+    if [ ! -s "${TMPDIR}/${f}" ]; then
+        echo "  ✗ $f 为空文件，中止更新"
+        exit 1
+    fi
+    echo "  ✓ $f 下载成功"
 done
+
+# 阶段 2: 全部下载成功后，备份并替换
+for f in $PY_FILES; do
+    if [ -f "${AGENT_DIR}/${f}" ]; then
+        cp "${AGENT_DIR}/${f}" "${AGENT_DIR}/${f}.bak"
+    fi
+    mv "${TMPDIR}/${f}" "${AGENT_DIR}/${f}"
+done
+echo "所有文件已替换"
 
 # 重启服务
 echo "重启 serverhub-agent 服务..."

@@ -13,21 +13,20 @@ import logging
 import os
 import platform
 import re
-import subprocess
 import time
 from contextlib import asynccontextmanager
 
 import psutil
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-
 from collectors import (
     collect_all,
     collect_docker_containers,
     collect_fast,
     collect_services,
 )
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
 from config import AGENT_PORT, AGENT_TOKEN
 
 # 是否允许原始命令执行（默认禁用，仅调试用）
@@ -76,6 +75,7 @@ app = FastAPI(
 # 认证
 # ---------------------------------------------------------------------------
 
+
 async def verify_token(authorization: str = Header(None)) -> None:
     """验证 Bearer Token"""
     if not authorization:
@@ -90,11 +90,11 @@ async def verify_token(authorization: str = Header(None)) -> None:
 # ---------------------------------------------------------------------------
 
 # 合法的服务名: 字母数字 + _@.- (匹配 systemd unit 命名规范)
-_RE_SERVICE_NAME = re.compile(r'^[a-zA-Z0-9_@.\-]+$')
+_RE_SERVICE_NAME = re.compile(r"^[a-zA-Z0-9_@.\-]+$")
 # 合法的容器名/ID: 字母数字 + _.- (Docker 规范)
-_RE_CONTAINER_NAME = re.compile(r'^[a-zA-Z0-9_.\-]+$')
+_RE_CONTAINER_NAME = re.compile(r"^[a-zA-Z0-9_.\-]+$")
 # 合法的用户名
-_RE_USERNAME = re.compile(r'^[a-zA-Z0-9_\-]+$')
+_RE_USERNAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 
 def _validate_name(value: str, pattern: re.Pattern, label: str) -> None:
@@ -106,6 +106,7 @@ def _validate_name(value: str, pattern: re.Pattern, label: str) -> None:
 # ---------------------------------------------------------------------------
 # 请求/响应模型
 # ---------------------------------------------------------------------------
+
 
 class ExecuteRequest(BaseModel):
     command: str = Field(..., min_length=1, max_length=4096, description="要执行的 shell 命令")
@@ -136,12 +137,10 @@ class DockerActionRequest(BaseModel):
 
 class DockerImagesRequest(BaseModel):
     """Docker 镜像列表请求（无需 shell）"""
-    pass
 
 
 class DockerStacksRequest(BaseModel):
     """Docker Compose 堆栈列表请求"""
-    pass
 
 
 class KillProcessRequest(BaseModel):
@@ -151,6 +150,7 @@ class KillProcessRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # 端点
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health")
 async def health_check():
@@ -194,7 +194,7 @@ async def execute_command(req: ExecuteRequest):
         raise HTTPException(
             status_code=403,
             detail="原始命令执行已禁用。请使用结构化 action 端点，"
-                   "或设置 AGENT_ALLOW_EXECUTE=true 启用（仅建议调试用）。",
+            "或设置 AGENT_ALLOW_EXECUTE=true 启用（仅建议调试用）。",
         )
 
     # 安全：拒绝一些极端危险的命令模式
@@ -217,7 +217,7 @@ async def execute_command(req: ExecuteRequest):
             stderr=stderr.decode("utf-8", errors="replace"),
             exit_code=proc.returncode or 0,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         try:
             proc.kill()
             await proc.communicate()
@@ -225,12 +225,13 @@ async def execute_command(req: ExecuteRequest):
             pass
         raise HTTPException(status_code=408, detail=f"命令执行超时 ({req.timeout}s)")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"命令执行失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"命令执行失败: {e!s}")
 
 
 # ---------------------------------------------------------------------------
 # 辅助: 安全执行子进程 (create_subprocess_exec, 无 shell 注入风险)
 # ---------------------------------------------------------------------------
+
 
 async def _safe_exec(
     args: list[str],
@@ -253,7 +254,7 @@ async def _safe_exec(
             "stderr": stderr.decode("utf-8", errors="replace"),
             "exit_code": proc.returncode or 0,
         }
-    except asyncio.TimeoutError:
+    except TimeoutError:
         try:
             proc.kill()
             await proc.communicate()
@@ -269,6 +270,7 @@ async def _safe_exec(
 # ---------------------------------------------------------------------------
 # 结构化 action 端点 — 使用 create_subprocess_exec，无 shell 注入
 # ---------------------------------------------------------------------------
+
 
 @app.post("/actions/service", dependencies=[Depends(verify_token)])
 async def service_action(body: ServiceActionRequest):
@@ -349,8 +351,10 @@ async def docker_images():
     """列出 Docker 镜像 — 无 shell 注入风险"""
     result = await _safe_exec(
         [
-            "docker", "images",
-            "--format", '{"repository":"{{.Repository}}","tag":"{{.Tag}}","id":"{{.ID}}","size":"{{.Size}}","created":"{{.CreatedSince}}"}',
+            "docker",
+            "images",
+            "--format",
+            '{"repository":"{{.Repository}}","tag":"{{.Tag}}","id":"{{.ID}}","size":"{{.Size}}","created":"{{.CreatedSince}}"}',
         ],
         timeout=15,
         label="docker images",
@@ -374,9 +378,22 @@ async def log_files():
     """列出 /var/log 下的日志文件 — 无 shell 注入风险"""
     result = await _safe_exec(
         [
-            "find", "/var/log",
-            "-maxdepth", "3", "-type", "f",
-            "(", "-name", "*.log", "-o", "-name", "syslog", "-o", "-name", "auth.log", ")",
+            "find",
+            "/var/log",
+            "-maxdepth",
+            "3",
+            "-type",
+            "f",
+            "(",
+            "-name",
+            "*.log",
+            "-o",
+            "-name",
+            "syslog",
+            "-o",
+            "-name",
+            "auth.log",
+            ")",
         ],
         timeout=10,
         label="find /var/log",
@@ -443,7 +460,9 @@ async def user_stats():
     """获取用户资源使用统计 — 无 shell 注入风险"""
     result = await _safe_exec(
         [
-            "ps", "aux", "--sort=-%mem",
+            "ps",
+            "aux",
+            "--sort=-%mem",
         ],
         timeout=15,
         label="ps aux",
@@ -485,6 +504,7 @@ async def user_kill(body: KillProcessRequest):
 # 已有的数据采集端点（无 shell 注入风险，使用 psutil/docker SDK）
 # ---------------------------------------------------------------------------
 
+
 @app.get("/docker/containers", dependencies=[Depends(verify_token)])
 async def get_docker_containers():
     """列出 Docker 容器"""
@@ -510,6 +530,7 @@ class FileUpdateRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=128, description="目标文件名 (仅 .py)")
     content: str = Field(..., min_length=1, description="文件内容")
     restart: bool = Field(default=False, description="更新后是否自动重启 agent 服务")
+    stage_only: bool = Field(default=False, description="仅暂存到 .pending 文件，不替换原文件")
 
 
 @app.post("/admin/update-file", dependencies=[Depends(verify_token)])
@@ -533,10 +554,18 @@ async def admin_update_file(body: FileUpdateRequest):
         raise HTTPException(status_code=400, detail="路径穿越检测")
 
     try:
-        # 备份原文件
+        if body.stage_only:
+            # 阶段 1: 仅写入 .pending 暂存文件
+            pending = target + ".pending"
+            with open(pending, "w", encoding="utf-8") as f:
+                f.write(body.content)
+            logger.info("文件已暂存: %s.pending (%d bytes)", body.filename, len(body.content))
+            return {"ok": True, "file": body.filename, "size": len(body.content), "staged": True}
+
+        # 直接更新模式 (向后兼容)
         if os.path.exists(target):
             backup = target + ".bak"
-            with open(target, "r", encoding="utf-8") as f:
+            with open(target, encoding="utf-8") as f:
                 old_content = f.read()
             with open(backup, "w", encoding="utf-8") as f:
                 f.write(old_content)
@@ -549,7 +578,7 @@ async def admin_update_file(body: FileUpdateRequest):
         result = {"ok": True, "file": body.filename, "size": len(body.content)}
 
         if body.restart:
-            # 延迟 1 秒后重启自身
+
             async def _delayed_restart():
                 await asyncio.sleep(1)
                 logger.info("Agent 重启中...")
@@ -566,9 +595,71 @@ async def admin_update_file(body: FileUpdateRequest):
         raise HTTPException(status_code=500, detail=f"文件写入失败: {e}")
 
 
+class UpdateCommitRequest(BaseModel):
+    action: str = Field(..., pattern="^(commit|rollback)$", description="commit 提交暂存文件 / rollback 清理暂存")
+
+
+@app.post("/admin/update-commit", dependencies=[Depends(verify_token)])
+async def admin_update_commit(body: UpdateCommitRequest):
+    """两阶段提交: 将所有 .pending 暂存文件原子替换为正式文件，或回滚清理"""
+    agent_dir = os.path.dirname(os.path.abspath(__file__))
+    pending_files = [f for f in os.listdir(agent_dir) if f.endswith(".pending")]
+
+    if body.action == "rollback":
+        for pf in pending_files:
+            os.remove(os.path.join(agent_dir, pf))
+        logger.info("回滚: 已清理 %d 个暂存文件", len(pending_files))
+        return {"ok": True, "action": "rollback", "cleaned": len(pending_files)}
+
+    # action == "commit"
+    if not pending_files:
+        return {"ok": True, "action": "commit", "committed": 0, "message": "无暂存文件"}
+
+    committed = []
+    try:
+        for pf in pending_files:
+            target_name = pf.removesuffix(".pending")
+            target = os.path.join(agent_dir, target_name)
+            pending = os.path.join(agent_dir, pf)
+
+            # 备份原文件
+            if os.path.exists(target):
+                with open(target, encoding="utf-8") as f:
+                    old_content = f.read()
+                with open(target + ".bak", "w", encoding="utf-8") as f:
+                    f.write(old_content)
+
+            os.replace(pending, target)
+            committed.append(target_name)
+
+        logger.info("提交: 已替换 %d 个文件: %s", len(committed), ", ".join(committed))
+
+        # 提交成功后延迟重启
+        async def _delayed_restart():
+            await asyncio.sleep(1)
+            logger.info("Agent 重启中...")
+            os.execv("/usr/bin/sudo", ["sudo", "systemctl", "restart", "serverhub-agent"])
+
+        asyncio.create_task(_delayed_restart())
+        return {"ok": True, "action": "commit", "committed": len(committed), "files": committed, "restarting": True}
+    except Exception as e:
+        # 提交过程失败，用 .bak 回滚已替换的文件
+        for name in committed:
+            bak = os.path.join(agent_dir, name + ".bak")
+            if os.path.exists(bak):
+                os.replace(bak, os.path.join(agent_dir, name))
+        # 清理剩余 .pending
+        for pf in pending_files:
+            p = os.path.join(agent_dir, pf)
+            if os.path.exists(p):
+                os.remove(p)
+        raise HTTPException(status_code=500, detail=f"提交失败并已回滚: {e}")
+
+
 # ---------------------------------------------------------------------------
 # 异常处理
 # ---------------------------------------------------------------------------
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
