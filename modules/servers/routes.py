@@ -1,20 +1,26 @@
 """多服务器管理 API 路由"""
 
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+import os
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from auth.dependencies import require_role
 from modules.servers.schemas import (
     ServerCreateRequest,
+    ServerDeployRequest,
     ServerGroupCreateRequest,
     ServerUpdateRequest,
 )
 from modules.servers.services import (
+    _sanitize_deploy_log,
     add_server_to_group,
     create_group,
     create_server_with_token,
     delete_group,
     delete_server,
+    deploy_agent_to_server,
     get_fleet_overview,
     get_group_members,
     get_server,
@@ -25,6 +31,8 @@ from modules.servers.services import (
     test_connectivity,
     update_server,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/servers", tags=["服务器管理"])
 
@@ -114,6 +122,70 @@ async def api_remove_group_member(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"ok": True}
+
+
+# ─── 一键部署 ───
+
+
+@router.post("/deploy")
+async def api_deploy_server(
+    body: ServerDeployRequest,
+    request: Request,
+    user=Depends(require_role("admin")),
+):
+    """一键部署远程服务器: 注册 → SSH 安装 Agent → 验证连通"""
+    import asyncio
+
+    # 1. 注册服务器
+    server_data = body.model_dump(exclude={"ssh_password"})
+    server_data["ssh_user"] = body.ssh_user
+    try:
+        server_id, agent_token = await create_server_with_token(server_data, created_by=user["username"])
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(status_code=409, detail=f"服务器名称 '{body.name}' 已存在")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 2. 检测 Hub URL
+    hub_url = os.getenv(
+        "SERVERHUB_HUB_URL",
+        f"http://{request.headers.get('host', 'localhost:9900')}",
+    )
+
+    # 3. SSH 安装 Agent
+    deploy_log = ""
+    deploy_ok = False
+    try:
+        deploy_log = await deploy_agent_to_server(
+            ip=body.ip_address,
+            ssh_user=body.ssh_user,
+            ssh_port=body.ssh_port,
+            ssh_password=body.ssh_password,
+            agent_token=agent_token,
+            agent_port=body.agent_port,
+            hub_url=hub_url,
+        )
+        deploy_ok = True
+    except ValueError as e:
+        deploy_log = str(e)
+        logger.warning("部署服务器 %s (%s) 失败: %s", body.name, server_id, e)
+
+    # 4. 等待 Agent 启动后测试连通性
+    connectivity = {}
+    if deploy_ok:
+        await asyncio.sleep(3)
+        try:
+            connectivity = await test_connectivity(server_id)
+        except Exception as e:
+            logger.warning("部署后连通性测试失败 (%s): %s", server_id, e)
+
+    return {
+        "ok": True,
+        "id": server_id,
+        "deploy_ok": deploy_ok,
+        "deploy_log": _sanitize_deploy_log(deploy_log, agent_token),
+        "connectivity": connectivity,
+    }
 
 
 # ─── 服务器 CRUD ───

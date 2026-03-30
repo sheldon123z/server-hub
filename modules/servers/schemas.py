@@ -58,6 +58,32 @@ class ServerUpdateRequest(BaseModel):
         return _normalize_tags(v)
 
 
+class ServerDeployRequest(BaseModel):
+    """一键部署远程服务器请求 — 注册 + SSH 安装 Agent + 验证连通"""
+
+    name: str = Field(..., min_length=1, max_length=64)
+    ip_address: str = Field(..., min_length=1, max_length=45)
+    agent_port: int = Field(default=9901, ge=1, le=65535)
+    ssh_user: str = Field(default="root")
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    ssh_password: str = Field(..., min_length=1)
+    hostname: str = Field(default="", max_length=255)
+    tags: Union[str, list[str]] = Field(default_factory=list)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def parse_tags(cls, v):
+        return _normalize_tags(v)
+
+    @field_validator("hostname", mode="before")
+    @classmethod
+    def default_hostname(cls, v, info):
+        """hostname 为空时回退到 name"""
+        if not v and info.data.get("name"):
+            return info.data["name"]
+        return v or ""
+
+
 class ServerGroupCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     description: str | None = None
