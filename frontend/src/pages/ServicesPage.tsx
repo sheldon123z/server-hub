@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import React, { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, ensureArray, ensureRecord } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface Service {
@@ -47,10 +47,6 @@ function stateBadge(state: string) {
   if (state === 'active') return 'bg-green/20 text-green'
   if (state === 'inactive' || state === 'dead') return 'bg-red/20 text-red'
   return 'bg-yellow/20 text-yellow'
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
 }
 
 function normalizeServices(value: unknown): Service[] {

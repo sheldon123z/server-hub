@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, ensureArray, ensureRecord } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, toNumber, toString } from '@/lib/utils'
 import mermaid from 'mermaid'
 
 /* ── Types ────────────────────────────────────────── */
@@ -39,19 +39,6 @@ function typeBadge(type: string) {
   return TYPE_COLORS[type] || 'bg-text3/20 text-text3'
 }
 
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
-}
-
 function normalizeAssets(value: unknown): Asset[] {
   const items = Array.isArray(value) ? value : ensureRecord(value).assets
   return ensureArray<Record<string, unknown>>(items).map((item, index) => {
@@ -62,7 +49,7 @@ function normalizeAssets(value: unknown): Asset[] {
       type: toString(item.type, 'manual'),
       description: toString(item.description ?? properties.description),
       ip: toString(item.ip ?? properties.ip ?? properties.local_addr),
-      port: item.port == null ? null : toNumber(item.port, null as never),
+      port: item.port == null ? null : (Number.isFinite(Number(item.port)) ? Number(item.port) : null),
       status: toString(item.status, 'unknown'),
       source: toString(item.source, Boolean(item.is_manual) ? 'manual' : 'auto'),
       created_at: toString(item.created_at ?? item.last_seen),

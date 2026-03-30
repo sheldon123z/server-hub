@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
-import { cn, ensureArray, ensureRecord, formatBytes, formatDate } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatBytes, formatDate, toNumber, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface LogFile {
@@ -12,19 +12,6 @@ interface LogFile {
 }
 
 type LogLevel = 'ALL' | 'ERROR' | 'WARN' | 'INFO'
-
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
-}
 
 function normalizeLogFiles(value: unknown): { files: LogFile[]; count: number } {
   const record = ensureRecord(value)

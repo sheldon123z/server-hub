@@ -389,7 +389,7 @@ if FRONTEND_DIR.exists():
             return FileResponse(str(_favicon_path), media_type="image/svg+xml")
         raise HTTPException(status_code=404)
 
-    pass  # SPA catch-all 在 lifespan 中的 _register_spa_fallback() 注册
+    # SPA catch-all 在 lifespan 中的 _register_spa_fallback() 注册
 else:
     logger.warning(
         "[ServerHub] frontend/dist/ 不存在。请运行 cd frontend && npm run build 构建前端。当前只能通过 API 端点访问。"

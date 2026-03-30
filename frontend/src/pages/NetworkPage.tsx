@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
-import { cn, ensureArray, ensureRecord } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, toNumber, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface PortInfo {
@@ -15,19 +15,6 @@ interface ProxyInfo {
   running: boolean
   port?: number
   http_proxy?: string
-}
-
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
 }
 
 function normalizePorts(value: unknown): { ports: PortInfo[]; count: number } {

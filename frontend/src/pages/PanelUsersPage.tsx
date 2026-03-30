@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { ensureArray, ensureRecord, formatDate } from '@/lib/utils'
+import { ensureArray, ensureRecord, formatDate, toNumber, toString } from '@/lib/utils'
 
 interface PanelUser {
   id: number
@@ -20,19 +20,6 @@ interface UserForm {
 }
 
 const emptyForm: UserForm = { username: '', password: '', display_name: '', role: 'user' }
-
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
-}
 
 function normalizePanelUsersResponse(value: unknown): { users: PanelUser[]; count: number } {
   const record = ensureRecord(value)

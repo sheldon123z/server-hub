@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, ensureArray, ensureRecord, formatDate } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatDate, toNumber, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 /* ---------- types ---------- */
@@ -82,19 +82,6 @@ interface QuotaStatus {
   mem_gb: number
   quota_mem_gb: number
   over_quota: boolean
-}
-
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
 }
 
 function normalizeUserStats(value: unknown): UserStat[] {

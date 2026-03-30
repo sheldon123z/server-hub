@@ -1,20 +1,7 @@
 import type { AlertData, GpuProcess, MetricsData } from '@/hooks/useWebSocket'
-import { ensureArray, ensureRecord } from '@/lib/utils'
+import { ensureArray, ensureRecord, toNumber, toString } from '@/lib/utils'
 
 const MB = 1024 * 1024
-
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
-}
-
-function toString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback
-}
 
 export function normalizeTimestamp(value: unknown): string {
   if (typeof value === 'string') {
@@ -52,6 +39,7 @@ export function normalizeGpuProcesses(value: unknown): GpuProcess[] {
   return ensureArray<Record<string, unknown>>(value).map((item) => ({
     pid: toNumber(item.pid),
     name: toString(item.name, 'unknown'),
+    // Backend `gpu_mem_mb` is in megabytes (number). String values like "1024 MiB" are kept as-is for display.
     gpu_memory_usage:
       typeof item.gpu_memory_usage === 'string'
         ? item.gpu_memory_usage
