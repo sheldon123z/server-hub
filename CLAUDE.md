@@ -210,13 +210,18 @@ Hub-Agent 架构：中心 Hub (本项目) + 每台被管理服务器部署 `serv
 
 ### Ruff (lint + format)
 
-配置在 `pyproject.toml`，替代 flake8 + black + isort。
+配置在 `pyproject.toml`，替代 flake8 + black + isort。**所有 Python 代码修改后必须通过 ruff check + format**。
 
 ```bash
-make check          # ruff check + format --check
-make lint-fix       # 自动修复
-make format         # 格式化
+make check          # ruff check + format --check（CI 使用此命令）
+make lint-fix       # 自动修复 lint 问题
+make format         # 格式化所有文件
 ```
+
+**自动化保障**（三层防护）：
+1. **Claude Code hook**: 每次 Edit/Write .py 文件后自动执行 `ruff format` + `ruff check --fix`
+2. **Pre-commit hook**: `git commit` 前自动执行 ruff check + format（需先 `make setup`）
+3. **CI 门禁**: GitHub Actions 中 ruff check + format --check 必须通过
 
 ### RoboRev (AI 代码评审)
 

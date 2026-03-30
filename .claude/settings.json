@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r '.file_path // .path // empty' 2>/dev/null); [ -n \"$FILE\" ] && [[ \"$FILE\" == *.py ]] && python3 -m py_compile \"$FILE\" 2>&1 || true"
+            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | jq -r '.file_path // .path // empty' 2>/dev/null); [ -n \"$FILE\" ] && [[ \"$FILE\" == *.py ]] && { python3 -m py_compile \"$FILE\" 2>&1; conda run -n serverhub ruff format \"$FILE\" 2>/dev/null; conda run -n serverhub ruff check --fix \"$FILE\" 2>/dev/null; } || true"
           }
         ]
       }

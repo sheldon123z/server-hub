@@ -36,6 +36,9 @@
 - 每行最大长度 120 字符
 - 文件头部注释使用三引号说明模块功能
 - 导入顺序：标准库 → 第三方库 → 本地模块，各组之间空一行
+- **代码格式化**: 使用 Ruff (`pyproject.toml` 配置)，提交前运行 `make format` 或依赖 pre-commit hook 自动格式化
+- **Lint 检查**: `make check` 必须通过后才能提交（CI 会强制检查）
+- **日志格式**: 使用 `%s` lazy 格式化（`logger.warning("msg: %s", e)`），禁止 f-string 日志
 - 每个模块在文件顶层定义 logger：
 
 ```python
