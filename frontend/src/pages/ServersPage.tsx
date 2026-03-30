@@ -530,9 +530,9 @@ function ServerDetail({
               detail={testResult.ping_ok ? `${testResult.ping_ms}ms` : '不可达'}
             />
             <TestResultCard
-              label="SSH"
-              ok={testResult.ssh_ok}
-              detail={testResult.ssh_ok ? '连接正常' : testResult.ssh_error || '连接失败'}
+              label="SSH (可选)"
+              ok={testResult.ssh_ok === true ? true : null}
+              detail={testResult.ssh_ok ? '密钥认证正常' : '未配置密钥（不影响功能）'}
             />
             <TestResultCard
               label="Agent"
@@ -616,14 +616,17 @@ function InfoCard({ label, value }: { label: string; value: string }) {
 
 /* ─── 测试结果卡片 ─── */
 
-function TestResultCard({ label, ok, detail }: { label: string; ok: boolean; detail: string }) {
+function TestResultCard({ label, ok, detail }: { label: string; ok: boolean | null; detail: string }) {
+  const borderCls = ok === true ? 'border-green/30 bg-green/5' : ok === false ? 'border-red/30 bg-red/5' : 'border-border bg-bg2'
+  const iconCls = ok === true ? 'ti-circle-check text-green' : ok === false ? 'ti-circle-x text-red' : 'ti-minus text-text3'
+  const textCls = ok === true ? 'text-green' : ok === false ? 'text-red' : 'text-text3'
   return (
-    <div className={cn('border rounded-lg p-3', ok ? 'border-green/30 bg-green/5' : 'border-red/30 bg-red/5')}>
+    <div className={cn('border rounded-lg p-3', borderCls)}>
       <div className="flex items-center gap-2 mb-1">
-        <i className={cn('ti text-sm', ok ? 'ti-circle-check text-green' : 'ti-circle-x text-red')} />
+        <i className={cn('ti text-sm', iconCls)} />
         <span className="text-xs font-medium text-text">{label}</span>
       </div>
-      <div className={cn('text-xs', ok ? 'text-green' : 'text-red')}>{detail}</div>
+      <div className={cn('text-xs', textCls)}>{detail}</div>
     </div>
   )
 }
