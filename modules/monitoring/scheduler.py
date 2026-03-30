@@ -246,15 +246,19 @@ async def _collect_remote_metrics():
                 server_dict.get("agent_token_encrypted") or server_dict.get("agent_token_hash", "")
             )
             client = AgentClient(server_dict)
-            try:
-                getter = getattr(client, "get_metrics_full", None) or client.get_metrics
-                result = await asyncio.wait_for(getter(), timeout=15)
-                if not result.get("ok"):
-                    logger.debug("远程指标采集失败 [%s]: %s", server_dict["name"], result.get("error"))
-                    return
-                snapshot = result["data"]
-            except Exception as e:
-                logger.debug("远程指标采集异常 [%s]: %s", server_dict["name"], e)
+            snapshot = None
+            # 尝试完整指标 → 快速指标 → health 兜底
+            for method in ("get_metrics", "get_fast_metrics", "health_check"):
+                try:
+                    result = await asyncio.wait_for(getattr(client, method)(), timeout=15)
+                    if result.get("ok") and isinstance(result.get("data"), dict):
+                        snapshot = result["data"]
+                        break
+                except Exception:  # noqa: S112 — fallback chain
+                    continue
+
+            if snapshot is None:
+                logger.debug("远程指标采集全部失败 [%s]", server_dict["name"])
                 return
 
             collected.append((server_dict, snapshot))

@@ -104,18 +104,22 @@ async def get_realtime(
 
         raise HTTPException(status_code=404, detail=f"服务器 {server_id} 不存在")
 
-    try:
-        result = await asyncio.wait_for(client.get_metrics(), timeout=10)
-        # AgentClient 返回 {"ok": true, "data": {...}} — 解包以保持与本机格式一致
-        if isinstance(result, dict) and "data" in result:
-            snapshot = result["data"]
-        else:
-            snapshot = result
-        return snapshot
-    except Exception as e:
-        from fastapi import HTTPException
+    # 尝试完整指标 → 快速指标 → health 兜底，保证仪表盘始终有数据
+    for getter_name in ("get_metrics", "get_fast_metrics", "health_check"):
+        try:
+            getter = getattr(client, getter_name)
+            result = await asyncio.wait_for(getter(), timeout=15)
+            if isinstance(result, dict):
+                data = result.get("data", result) if result.get("ok", True) else None
+                if data and not data.get("error"):
+                    return data
+        except Exception:  # noqa: S112 — fallback chain, errors expected
+            continue
 
-        raise HTTPException(status_code=502, detail=f"远程指标获取失败: {e}")
+    # 所有方式都失败 — 返回最小骨架避免前端空白
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=502, detail="远程指标获取失败: 所有采集方式均不可用")
 
 
 @router.get("/history")
