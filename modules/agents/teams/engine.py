@@ -498,16 +498,16 @@ class TeamEngine:
                     # Swarm handoff 循环检测
                     handoff_history.append(name)
                     if len(handoff_history) == _MAX_HANDOFF_LOOP_WINDOW and len(set(handoff_history)) == 2:
-                            logger.warning(
-                                "[Team] Swarm handoff 循环检测触发，最近 %d 步: %s",
-                                _MAX_HANDOFF_LOOP_WINDOW,
-                                list(handoff_history),
-                            )
-                            yield {
-                                "event": "team_error",
-                                "data": {"error": "检测到 Swarm handoff 循环，已终止执行"},
-                            }
-                            return
+                        logger.warning(
+                            "[Team] Swarm handoff 循环检测触发，最近 %d 步: %s",
+                            _MAX_HANDOFF_LOOP_WINDOW,
+                            list(handoff_history),
+                        )
+                        yield {
+                            "event": "team_error",
+                            "data": {"error": "检测到 Swarm handoff 循环，已终止执行"},
+                        }
+                        return
 
                     if current_agent and current_agent in seen_agents:
                         yield {
