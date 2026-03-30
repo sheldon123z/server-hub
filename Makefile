@@ -34,6 +34,11 @@ build:
 frontend-dev:
 	cd frontend && npm run dev
 
+# ─── 集成验证 ───
+
+smoke-test:
+	bash scripts/smoke-test.sh
+
 # ─── 组合 ───
 
 ci: check test build

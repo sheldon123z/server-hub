@@ -97,10 +97,11 @@ if echo "$ISSUE_URL" | grep -q "https://"; then
                 '修复 GitHub Issue #$ISSUE_NUM 的 roborev 代码评审问题。
                  1. 用 gh issue view $ISSUE_NUM 查看评审内容
                  2. 逐项修复每个 Finding
-                 3. 确保 ruff check . 通过
-                 4. git add 修改的文件并 commit (message 必须以 [roborev] 开头，包含 Closes #$ISSUE_NUM)
-                 5. git push origin $BRANCH 并用 gh pr create 创建 PR
-                 6. 运行 roborev close $JOB_ID' \
+                 3. 确保 ruff check . 和 ruff format --check . 通过
+                 4. 如果服务在运行，执行 bash scripts/smoke-test.sh 确认不破坏现有功能
+                 5. git add 修改的文件并 commit (message 必须以 [roborev] 开头，包含 Closes #$ISSUE_NUM)
+                 6. git push origin $BRANCH 并用 gh pr create 创建 PR
+                 7. 运行 roborev close $JOB_ID' \
                 >>'$LOG_FILE' 2>&1
 
             # 清理 worktree

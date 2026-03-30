@@ -232,6 +232,22 @@ make format         # 格式化所有文件
 - **手动修复**: `/roborev-fix <job_id>`
 - **注意**: `roborev config set` 会重写 toml 文件，修改后需检查 `[[hooks]]` 是否被清空
 
+### Smoke Test (集成验证)
+
+修改后端代码后**必须**运行 smoke test 确认不破坏现有功能：
+
+```bash
+make smoke-test     # 测试所有关键 API 端点 (需要服务运行中)
+```
+
+验证内容：认证流程、侧边栏、监控、Docker、服务、用户、服务器、日志、Cron、Agent 对话(SSE)、剧本、SPA 路由隔离。
+
+**何时必须运行**：
+- 修改 `main.py`（尤其是路由注册、中间件、lifespan）
+- 修改任何 `modules/*/routes.py`
+- 修改 `server-hub.service`（systemd 权限变更）
+- 修改前端 API 调用路径
+
 ## 已知陷阱
 
 - **LangChain content 格式**: `AIMessage.content` 可能是 `string` 或 `[{type:"text", text:"..."}]` 数组。前端必须用 `extractContent()` 统一处理，不能 `as string` 强转
@@ -242,6 +258,9 @@ make format         # 格式化所有文件
 - **Fernet vs SHA256**: `agent_token_encrypted` 是 Fernet 可逆加密（需解密传给 Agent），不是 hash
 - **WebSocket 订阅**: Fleet 页面订阅 `["*"]`，Dashboard 只订阅 `[selectedServerId]`，默认 `{"local"}`
 - **`groups` 字段类型**: 后端返回 `string`（逗号分隔），前端需 `Array.isArray(x) ? x : x.split(',')` 兼容
+- **SPA catch-all 路由注册顺序**: `_register_spa_fallback()` **必须在 lifespan 中所有 `app.include_router()` 之后调用**。如果在模块级别注册 `/{full_path:path}`，会拦截所有 `/api/*` 请求导致全站 API 失效。这是已发生过的 P0 事故
+- **Trailing slash**: 前端请求 `/api/servers` 但后端路由是 `/api/servers/`。需要在路由上同时注册 `@router.get("")` 和 `@router.get("/")` 两种形式
+- **systemd ProtectSystem**: 设为 `full` 而非 `strict`，否则无法读 `/var/log` 和 `/var/spool/cron`。API keys 通过 `ExecStartPre` source 加载
 
 ## 开发原则
 
