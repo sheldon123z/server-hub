@@ -100,28 +100,44 @@ export function normalizeMetricsSnapshot(value: unknown): MetricsData | null {
   const diskItems = Array.isArray(rawDisk) ? rawDisk : ensureRecord(rawDisk).partitions
   const network = ensureRecord(record.network)
   const networkTotals = ensureRecord(network.totals)
-  const load = ensureRecord(cpu.load_avg ?? record.load)
+
+  // load_avg: agent fast returns array [1min, 5min, 15min], hub returns {1min, 5min, 15min}
+  const rawLoadAvg = cpu.load_avg ?? record.load_avg ?? record.load
+  const load = Array.isArray(rawLoadAvg)
+    ? { '1min': toNumber(rawLoadAvg[0]), '5min': toNumber(rawLoadAvg[1]), '15min': toNumber(rawLoadAvg[2]) }
+    : ensureRecord(rawLoadAvg)
+
   const gpu = ensureRecord(record.gpu)
   const gpuProcesses = normalizeGpuProcesses(gpu.processes)
 
-  const utilization = toNumber(gpu.utilization ?? gpu.util)
-  const memoryUsed = toNumber(gpu.memory_used ?? gpu.mem_used) * MB
-  const memoryTotal = toNumber(gpu.memory_total ?? gpu.mem_total) * MB
+  // GPU: support both nested (gpu.util) and flat (record.gpu_util) formats
+  const utilization = toNumber(gpu.utilization ?? gpu.util ?? record.gpu_util)
+  const memoryUsed = toNumber(gpu.memory_used ?? gpu.mem_used ?? record.gpu_mem_used) * MB
+  const memoryTotal = toNumber(gpu.memory_total ?? gpu.mem_total ?? record.gpu_mem_total) * MB
   const temperature = toNumber(gpu.temperature ?? gpu.temp)
   const hasGpu = Boolean(gpu.available) || utilization > 0 || memoryTotal > 0 || gpuProcesses.length > 0
 
+  // CPU: support flat format (record.cpu_percent) from agent fast metrics
+  const cpuPercent = toNumber(cpu.overall_percent || record.cpu_percent)
+
+  // Memory: support flat format (record.memory_percent/memory_total/memory_used)
+  const memTotal = toNumber(ram.total || record.memory_total)
+  const memUsed = toNumber(ram.used || record.memory_used)
+  const memAvail = toNumber(ram.available || (memTotal > 0 ? memTotal - memUsed : 0))
+  const memPercent = toNumber(ram.percent || record.memory_percent)
+
   return {
     cpu: {
-      overall_percent: toNumber(cpu.overall_percent),
+      overall_percent: cpuPercent,
       count: toNumber(cpu.count),
       per_cpu: ensureArray<number>(cpu.per_cpu ?? cpu.per_cpu_percent).map((item) => toNumber(item)),
       model: toString(cpu.model, toString(systemInfo.cpu_model)),
     },
     memory: {
-      total: toNumber(ram.total),
-      used: toNumber(ram.used),
-      available: toNumber(ram.available),
-      percent: toNumber(ram.percent),
+      total: memTotal,
+      used: memUsed,
+      available: memAvail,
+      percent: memPercent,
     },
     swap: {
       total: toNumber(swap.total),
