@@ -50,6 +50,9 @@ setup:
 	pre-commit install
 	@echo "✓ 开发环境就绪"
 
+add-server:
+	@bash scripts/add-server.sh $(ARGS)
+
 backup:
 	bash scripts/backup-db.sh
 
