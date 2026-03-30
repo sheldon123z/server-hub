@@ -18,7 +18,9 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 
 应用启动时由 `database.py:init_tables()` 自动创建所有表（`CREATE TABLE IF NOT EXISTS`）。
 
-共 35 个表 + 1 个 FTS5 虚拟表（共 36 个）。
+共 36 个表 + 1 个 FTS5 虚拟表（共 37 个）。
+
+> 注：`metrics_latest` 表在 `init_tables()` 中出现两次（初始创建 + 兼容性重建），属于同一张表。
 
 ---
 
@@ -67,6 +69,18 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
   "disk": [{"mountpoint": "/", "device": "sdb2", "total": 3758096384, "used": 1435893760, "percent": 38.2}]
 }
 ```
+
+---
+
+### metrics_latest — 最新指标快照
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| server_id | TEXT PK | 服务器 ID（`local` 表示本机）|
+| data | TEXT NOT NULL | JSON 格式的最新指标数据 |
+| collected_at | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | 采集时间 |
+
+**用途**：存储每台服务器的最新一条指标快照，用于 Fleet Dashboard 概览页和 WebSocket 快速推送，避免每次从 metrics 表全量查询。
 
 ---
 

@@ -57,9 +57,10 @@ ServerHub 专为以下场景设计：
 | **Vite** | ^8.0 构建工具，开发服务 :5173 代理到后端 :9900 |
 | **TanStack Query** | ^5.95 API 数据缓存和状态管理 |
 | **Zustand** | ^5.0 客户端状态管理 |
-| **echarts-for-react** | 监控图表 + 暗色主题 |
+| **echarts-for-react** | ^3.0 监控图表 + 暗色主题 |
 | **@xterm/xterm** | ^6.0 浏览器内 WebTerminal（WebSocket + pty） |
-| **Lucide React** | UI 图标库 |
+| **Lucide React** | ^1.6 UI 图标库 |
+| **Vitest** | ^3.2 前端单元测试框架 |
 
 ### AI 智能体
 
@@ -99,25 +100,30 @@ ServerHub 专为以下场景设计：
 
 ### 3.2 AI 智能体能力
 
-**自定义工具（50 个）**
+**自定义工具（49 个，分布在 14 个子模块）**
 
 按安全级别分为三类：
 
-| 级别 | 工具 | 说明 |
+| 级别 | 数量 | 说明 |
 |------|------|------|
-| 只读（safe） | `get_system_overview`, `get_disk_info`, `get_user_resources`, `get_user_quotas`, `list_docker_containers`, `get_container_logs`, `list_systemd_services`, `get_service_logs`, `list_running_processes`, `get_network_connections`, `get_listening_ports`, `check_compliance`, `analyze_resource_trend` | 查询类，不修改系统状态 |
-| 操作（action） | `restart_docker_container`, `restart_systemd_service`, `send_notification`, `execute_ops_script` | 会改变系统状态，supervised 模式需审批 |
-| 危险（danger） | `kill_process` | 高风险操作，always 需审批 |
+| safe | 25 | 只读查询（系统状态、Docker、服务、用户、资产、知识库、服务器列表等） |
+| moderate | 12 | 可逆操作（容器/服务启停、配额修改、cron 管理、容器 exec 等），supervised 模式需审批 |
+| danger | 7 | 高风险不可逆操作（kill 进程、合规修复、脚本执行、Docker 清理、用户管理、cron 删除），always 需审批 |
+
+工具子模块：system(3) / docker(7) / services(5) / users(10) / cron(6) / assets(4) / knowledge(2) / security(2) / notifications(1) / scripts(1) / playbook(5) / servers(2) / page_context(1)
 
 框架注入工具（9 个）：`execute`, `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`, `write_todos`, `task`
 
-**SubAgent（3 个）**
+**SubAgent（6 个）**
 
 | SubAgent | 功能 | 工具 |
 |----------|------|------|
 | `researcher` | 联网搜索和研究 | `web_search`, `think` |
 | `log-analyzer` | 日志分析 | `get_container_logs`, `get_service_logs` |
-| `security-auditor` | 安全审计 | `get_system_overview` |
+| `security-auditor` | 安全审计 | `get_system_overview`, `check_compliance` |
+| `correlation-analyzer` | 多源关联分析 | 11 个工具 |
+| `ops-scheduler` | 定时任务管理 | 6 个 cron 工具 |
+| `knowledge-retriever` | RAG 知识检索 | `retrieve_knowledge`, `search_fault_cases`, `web_search`, `think` |
 
 ### 3.3 巡检任务（8 个）
 
@@ -147,7 +153,32 @@ ServerHub 专为以下场景设计：
 
 模型 ID 格式：`provider:model_name`，例如 `openrouter:deepseek/deepseek-chat`
 
-### 3.5 Middleware 栈（12 个）
+### 3.5 新增功能
+
+#### 一键部署远程服务器
+
+通过 `POST /api/servers/deploy` 端点，提供 SSH 密码即可自动完成远程服务器的注册、Agent 安装和连通性验证。前端提供完整的部署向导 UI，实时显示部署日志。
+
+#### Smoke Test 集成验证
+
+`scripts/smoke-test.sh` 脚本用于验证 ServerHub 关键端点的健康状态。支持指定地址测试，退出码 0 表示全部通过。可通过 `make smoke-test` 快捷运行。
+
+#### RoboRev 自动评审
+
+基于 Claude Code 的 commit 级自动代码评审系统。评审发现自动创建 Issue，触发 Claude Code 后台修复，生成 PR 后合并。支持 worktree 隔离运行，避免与用户工作冲突。配合 `gh-cleanup.sh` 每小时自动合并/关闭 roborev PR 和清理分支。
+
+#### Agent Studio 增强
+
+- Skills 详情面板：查看技能版本、安装状态、绑定关系
+- SubAgents 编辑：在线编辑 SubAgent 配置（工具集、模型、提示词）
+
+#### Agent Teams 安全加固
+
+- 成员工具权限隔离：`user_role` 参数贯穿图构建，非 admin 用户只能使用 safe 级别工具
+- Swarm handoff 循环检测：使用 `deque` 滑动窗口检测 2-agent 死循环
+- 异步执行超时保护：`asyncio.wait_for` 实现 deadline 超时
+
+### 3.6 Middleware 栈（12 个）
 
 | 来源 | Middleware | 说明 |
 |------|-----------|------|
@@ -188,6 +219,8 @@ ServerHub 专为以下场景设计：
 | `data/agent-store.db` | Agent 结构化存储 |
 | `data/custom_prompt.txt` | 自定义系统提示词（存在时覆盖默认值） |
 | `data/custom_subagents.json` | 自定义 SubAgent 配置 |
+| `data/serverhub-secret.key` | 自动生成的 JWT 签名密钥（未设置环境变量时） |
+| `data/bootstrap-admin-password.txt` | 自动生成的初始管理员密码（未设置环境变量时） |
 
 ### 相关文档
 

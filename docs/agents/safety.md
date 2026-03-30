@@ -116,6 +116,62 @@ rm|sudo|kill|shutdown|reboot|mkfs|dd|chmod|chown|systemctl.*(stop|disable)|iptab
 
 ---
 
+## Agent Teams 安全层
+
+Teams 模块（`modules/agents/teams/`）的成员通过 `create_react_agent` 直接执行，不经过 Deep Agents 的 `SafeLocalShellBackend`，因此有独立的安全机制。
+
+### 权限隔离
+
+`user_role` 参数贯穿团队图构建全链路：
+
+```
+execute(user_role) → build_team_graph(user_role) → _build_member_agent(user_role)
+  → resolve_tools(tool_names, user_role) → get_server_tools(user_role)
+```
+
+- **admin 角色**: 获取全部工具
+- **user 角色**: 仅获取 SAFE 级别的只读工具
+- 不同角色的图实例分别缓存：`cache_key = f"{team_id}:{user_role}"`
+
+### Swarm Handoff 循环检测
+
+使用 `collections.deque(maxlen=8)` 作为滑动窗口记录 agent 切换历史：
+
+```python
+handoff_history: deque[str] = deque(maxlen=_MAX_HANDOFF_LOOP_WINDOW)
+
+# 每次 agent 切换时追加
+handoff_history.append(name)
+
+# 检测：窗口满且只有 2 个不同的 agent → 死循环
+if len(handoff_history) == _MAX_HANDOFF_LOOP_WINDOW and len(set(handoff_history)) == 2:
+    # 终止执行
+```
+
+相比旧版 list 实现，deque 有固定大小上限、O(1) 追加、且不会触发单 agent 场景的误报。
+
+### 异步执行超时保护
+
+团队执行使用 deadline 机制（`time.time() + timeout`），超过 `timeout_seconds`（默认 300s）后触发 `TimeoutError`：
+
+```python
+deadline = time.time() + timeout
+async for event in _consume_with_timeout():
+    if time.time() > deadline:
+        raise TimeoutError()
+    yield event
+```
+
+### 工具安全包装（`teams/safety.py`）
+
+`wrap_tools_for_team()` 为团队成员工具添加三层安全检查：
+
+1. **Shell 黑名单**: execute 类工具（`execute`, `execute_ops_script`, `ssh_execute_command`, `docker_container_exec`）调用前检查 `check_shell_command()`
+2. **DANGER 阻止**: supervised 模式下 DANGER 级别工具返回审批提示而非执行
+3. **环境变量剥离**: 所有包装工具调用时临时替换 `os.environ`，剥离匹配 `*API_KEY*`/`*SECRET*`/`*TOKEN*`/`*PASSWORD*` 及各服务商前缀的敏感变量
+
+---
+
 ## TOOL_RISK_MAP — 工具风险标签
 
 `TOOL_RISK_MAP` 是一个字典，将工具名映射到风险级别，**仅用于前端 UI 展示**，不影响实际安全控制。
