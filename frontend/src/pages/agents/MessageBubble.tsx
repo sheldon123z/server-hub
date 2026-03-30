@@ -3,7 +3,7 @@
  * and hover action bar (copy / delete / resend).
  */
 
-import { useState, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import type { ChatMessage } from '@/types/agent'
@@ -59,6 +59,15 @@ function ActionBar({
 
 /* ── Tool call / result card ────────────────────────── */
 
+function formatContent(content: string): string {
+  try {
+    const parsed = JSON.parse(content)
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return content
+  }
+}
+
 function ToolCard({
   icon,
   label,
@@ -73,38 +82,83 @@ function ToolCard({
   bgColor: string
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showFullscreen, setShowFullscreen] = useState(false)
+  const formatted = formatContent(content)
+  const lines = formatted.split('\n')
+  const preview = lines.slice(0, 3).join('\n')
+  const hasMore = lines.length > 3
 
   return (
-    <div
-      className={cn(
-        'max-w-[90%] rounded-lg border px-3 py-2 text-sm',
-        borderColor,
-        bgColor,
-      )}
-    >
-      <div
-        className="flex items-center gap-1.5 font-medium text-text cursor-pointer select-none"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span>{icon}</span>
-        <span>{label}</span>
-        <span className="ml-auto text-text3 text-xs">{expanded ? '收起' : '展开'}</span>
-      </div>
+    <>
       <div
         className={cn(
-          'mt-1.5 font-mono text-xs text-text2 whitespace-pre-wrap break-all overflow-hidden transition-all duration-200',
-          expanded ? 'max-h-[600px] overflow-y-auto' : 'max-h-[80px]',
+          'max-w-[90%] rounded-lg border px-3 py-2 text-sm',
+          borderColor,
+          bgColor,
         )}
       >
-        {content}
+        <div
+          className="flex items-center gap-1.5 font-medium text-text cursor-pointer select-none"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span>{icon}</span>
+          <span>{label}</span>
+          <div className="ml-auto flex items-center gap-2">
+            {hasMore && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowFullscreen(true) }}
+                className="text-text3 text-xs hover:text-accent transition-colors"
+              >
+                全屏
+              </button>
+            )}
+            <span className="text-text3 text-xs">{expanded ? '收起' : '展开'}</span>
+          </div>
+        </div>
+        <div
+          className={cn(
+            'mt-1.5 font-mono text-xs text-text2 whitespace-pre-wrap break-all overflow-hidden transition-all duration-200',
+            expanded ? 'max-h-[600px] overflow-y-auto' : '',
+          )}
+        >
+          {expanded ? formatted : preview}
+          {!expanded && hasMore && <span className="text-text3"> ...</span>}
+        </div>
       </div>
-    </div>
+      {showFullscreen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setShowFullscreen(false)}
+        >
+          <div
+            className="relative mx-4 max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-border bg-card p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-medium text-text text-sm">
+                <span>{icon}</span>
+                <span>{label}</span>
+              </div>
+              <button
+                onClick={() => setShowFullscreen(false)}
+                className="text-text3 hover:text-text text-sm px-2 py-1 rounded hover:bg-bg2 transition-colors"
+              >
+                关闭
+              </button>
+            </div>
+            <pre className="font-mono text-xs text-text2 whitespace-pre-wrap break-all">
+              {formatted}
+            </pre>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
 /* ── Main component ─────────────────────────────────── */
 
-export function MessageBubble({ message, onDelete, onResend, onApprove, onReject }: MessageBubbleProps) {
+export const MessageBubble = React.memo(function MessageBubble({ message, onDelete, onResend, onApprove, onReject }: MessageBubbleProps) {
   const { role, content, _id } = message
 
   const handleCopy = useCallback(() => {
@@ -241,4 +295,4 @@ export function MessageBubble({ message, onDelete, onResend, onApprove, onReject
       </div>
     </div>
   )
-}
+})

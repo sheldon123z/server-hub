@@ -12,37 +12,46 @@ interface SlashCommand {
   cmd: string
   desc: string
   prompt: string
+  category: string
   hasArg?: boolean
   argHint?: string
 }
 
+const COMMAND_CATEGORIES = ['系统监控', 'AI 分析', '运维操作', '帮助'] as const
+
 const SLASH_COMMANDS: SlashCommand[] = [
-  { cmd: '/status', desc: '系统概况', prompt: '请给出当前系统状态概要' },
-  { cmd: '/docker', desc: 'Docker 状态', prompt: '检查所有 Docker 容器状态' },
-  { cmd: '/services', desc: '服务状态', prompt: '检查所有 systemd 服务状态' },
-  { cmd: '/users', desc: '用户资源', prompt: '检查所有用户资源使用情况' },
-  { cmd: '/disk', desc: '磁盘使用', prompt: '检查磁盘使用情况' },
-  { cmd: '/gpu', desc: 'GPU 状态', prompt: '检查 GPU 使用状态' },
-  { cmd: '/logs', desc: '查看日志', prompt: '查看系统关键日志' },
-  { cmd: '/search', desc: '搜索日志', prompt: '搜索日志: ', hasArg: true, argHint: '关键词' },
-  { cmd: '/health', desc: '健康检查', prompt: '执行完整的系统健康检查' },
-  { cmd: '/security', desc: '安全审计', prompt: '执行安全审计检查' },
-  { cmd: '/deep-research', desc: '深度调研 (异步)', prompt: '深度调研: ', hasArg: true, argHint: '调研主题' },
-  { cmd: '/deep-audit', desc: '深度审计 (异步)', prompt: '深度安全审计: ', hasArg: true, argHint: '审计范围' },
-  { cmd: '/deep-analysis', desc: '深度分析 (异步)', prompt: '深度关联分析: ', hasArg: true, argHint: '分析目标' },
-  { cmd: '/tasks', desc: '异步任务列表', prompt: '显示当前所有异步任务的状态' },
-  { cmd: '/help', desc: '帮助', prompt: '__HELP__' },
+  { cmd: '/status', desc: '系统概况', prompt: '请给出当前系统状态概要', category: '系统监控' },
+  { cmd: '/docker', desc: 'Docker 状态', prompt: '检查所有 Docker 容器状态', category: '系统监控' },
+  { cmd: '/services', desc: '服务状态', prompt: '检查所有 systemd 服务状态', category: '系统监控' },
+  { cmd: '/users', desc: '用户资源', prompt: '检查所有用户资源使用情况', category: '系统监控' },
+  { cmd: '/disk', desc: '磁盘使用', prompt: '检查磁盘使用情况', category: '系统监控' },
+  { cmd: '/gpu', desc: 'GPU 状态', prompt: '检查 GPU 使用状态', category: '系统监控' },
+  { cmd: '/logs', desc: '查看日志', prompt: '查看系统关键日志', category: '运维操作' },
+  { cmd: '/search', desc: '搜索日志', prompt: '搜索日志: ', category: '运维操作', hasArg: true, argHint: '关键词' },
+  { cmd: '/health', desc: '健康检查', prompt: '执行完整的系统健康检查', category: '运维操作' },
+  { cmd: '/security', desc: '安全审计', prompt: '执行安全审计检查', category: '运维操作' },
+  { cmd: '/deep-research', desc: '深度调研 (异步)', prompt: '深度调研: ', category: 'AI 分析', hasArg: true, argHint: '调研主题' },
+  { cmd: '/deep-audit', desc: '深度审计 (异步)', prompt: '深度安全审计: ', category: 'AI 分析', hasArg: true, argHint: '审计范围' },
+  { cmd: '/deep-analysis', desc: '深度分析 (异步)', prompt: '深度关联分析: ', category: 'AI 分析', hasArg: true, argHint: '分析目标' },
+  { cmd: '/tasks', desc: '异步任务列表', prompt: '显示当前所有异步任务的状态', category: 'AI 分析' },
+  { cmd: '/help', desc: '帮助', prompt: '__HELP__', category: '帮助' },
 ]
 
 /** Generate a formatted help text listing all slash commands. */
 export function generateHelpText(): string {
   const lines = ['**可用快捷指令：**\n']
-  for (const c of SLASH_COMMANDS) {
-    if (c.cmd === '/help') continue
-    const argPart = c.hasArg ? ` <${c.argHint ?? '参数'}>` : ''
-    lines.push(`\`${c.cmd}${argPart}\` — ${c.desc}`)
+  for (const cat of COMMAND_CATEGORIES) {
+    if (cat === '帮助') continue
+    const cmds = SLASH_COMMANDS.filter((c) => c.category === cat && c.cmd !== '/help')
+    if (cmds.length === 0) continue
+    lines.push(`**${cat}**`)
+    for (const c of cmds) {
+      const argPart = c.hasArg ? ` <${c.argHint ?? '参数'}>` : ''
+      lines.push(`\`${c.cmd}${argPart}\` — ${c.desc}`)
+    }
+    lines.push('')
   }
-  lines.push('\n输入 `/` 后可模糊搜索指令。')
+  lines.push('输入 `/` 后可模糊搜索指令。')
   return lines.join('\n')
 }
 
@@ -118,39 +127,63 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
 
     if (!visible || filtered.length === 0) return null
 
+    // Build grouped items with category headers for rendering; track flat index for keyboard nav
+    const groupedItems: { type: 'header'; label: string }[] | { type: 'cmd'; cmd: SlashCommand; flatIndex: number }[] = []
+    const renderItems: Array<{ type: 'header'; label: string } | { type: 'cmd'; cmd: SlashCommand; flatIndex: number }> = []
+    let flatIdx = 0
+    for (const cat of COMMAND_CATEGORIES) {
+      const cmds = filtered.filter((c) => c.category === cat)
+      if (cmds.length === 0) continue
+      renderItems.push({ type: 'header', label: cat })
+      for (const cmd of cmds) {
+        renderItems.push({ type: 'cmd', cmd, flatIndex: flatIdx })
+        flatIdx++
+      }
+    }
+
     return (
       <div
         className="absolute bottom-full left-0 right-0 mb-1 bg-card border border-border rounded-lg shadow-xl overflow-hidden z-50"
         ref={listRef}
       >
         <div className="slash-list max-h-60 overflow-y-auto py-1">
-          {filtered.map((cmd, idx) => (
-            <button
-              key={cmd.cmd}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
-                idx === activeIndex
-                  ? 'bg-accent-dim text-accent'
-                  : 'text-text hover:bg-bg2',
-              )}
-              onMouseEnter={() => setActiveIndex(idx)}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                onSelect(cmd.prompt)
-                onClose()
-              }}
-            >
-              <code className="font-mono text-xs text-accent shrink-0 w-20">
-                {cmd.cmd}
-              </code>
-              <span className="text-text2 text-xs truncate">{cmd.desc}</span>
-              {cmd.hasArg && (
-                <span className="ml-auto text-text3 text-xs italic">
-                  {cmd.argHint}
-                </span>
-              )}
-            </button>
-          ))}
+          {renderItems.map((item, i) => {
+            if (item.type === 'header') {
+              return (
+                <div key={'hdr-' + item.label} className="px-3 pt-2 pb-1 text-[11px] font-medium text-text3 uppercase tracking-wider select-none">
+                  {item.label}
+                </div>
+              )
+            }
+            const { cmd, flatIndex } = item
+            return (
+              <button
+                key={cmd.cmd}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
+                  flatIndex === activeIndex
+                    ? 'bg-accent-dim text-accent'
+                    : 'text-text hover:bg-bg2',
+                )}
+                onMouseEnter={() => setActiveIndex(flatIndex)}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onSelect(cmd.prompt)
+                  onClose()
+                }}
+              >
+                <code className="font-mono text-xs text-accent shrink-0 w-20">
+                  {cmd.cmd}
+                </code>
+                <span className="text-text2 text-xs truncate">{cmd.desc}</span>
+                {cmd.hasArg && (
+                  <span className="ml-auto text-text3 text-xs italic">
+                    {cmd.argHint}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
     )
