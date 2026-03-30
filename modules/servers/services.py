@@ -454,6 +454,53 @@ async def get_group_members(group_id: str) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+# ─── 一键部署 ───
+
+
+async def deploy_agent_to_server(
+    ip: str,
+    ssh_user: str,
+    ssh_port: int,
+    ssh_password: str,
+    agent_token: str,
+    agent_port: int,
+    hub_url: str,
+) -> str:
+    """SSH 到远程服务器安装 Agent，返回安装日志。
+
+    通过 curl 拉取 Hub 提供的安装脚本并执行，自动完成 Agent 部署。
+    SSH 密码仅在此次连接中使用，不会被存储。
+    """
+    import asyncssh
+
+    install_cmd = (
+        f"curl -sSL {hub_url}/static/agent/install.sh | "
+        f"bash -s -- --token '{agent_token}' --port {agent_port} --hub-url '{hub_url}'"
+    )
+    try:
+        async with asyncssh.connect(
+            ip,
+            port=ssh_port,
+            username=ssh_user,
+            password=ssh_password,
+            known_hosts=None,  # TODO: TOFU 模型主机密钥验证
+        ) as conn:
+            result = await asyncio.wait_for(
+                conn.run(install_cmd),
+                timeout=120,  # 安装最多 2 分钟
+            )
+            return result.stdout + (result.stderr or "")
+    except asyncssh.Error as e:
+        raise ValueError(f"SSH 连接失败: {e}") from e
+    except TimeoutError as e:
+        raise ValueError("安装超时 (120s)") from e
+
+
+def _sanitize_deploy_log(log: str, token: str) -> str:
+    """从安装日志中脱敏 agent token"""
+    return log.replace(token, "***TOKEN***")
+
+
 async def get_server_groups(server_id: str) -> list[dict]:
     """获取服务器所属的所有分组"""
     db = await get_db()
