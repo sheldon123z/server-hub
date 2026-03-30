@@ -154,7 +154,7 @@ class AgentClient:
 
     async def get_docker_containers(self) -> dict:
         """列出远程服务器上的 Docker 容器"""
-        return await self._request("GET", "/docker/containers", timeout=15.0)
+        return await self._request("GET", "/docker/containers", timeout=30.0)
 
     async def get_services(self) -> dict:
         """列出远程服务器上的 systemd 服务"""
