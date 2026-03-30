@@ -24,11 +24,61 @@ mkdir -p "$(dirname "$LOG")"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
-cd /home/zhengxiaodong/scripts/server-hub || exit 1
+MAIN_REPO="/home/zhengxiaodong/scripts/server-hub"
+cd "$MAIN_REPO" || exit 1
+
+# ── 冲突解决函数 ──
+_resolve_conflict() {
+    local pr_num="$1" branch="$2"
+    local wt_dir="${MAIN_REPO}/.claude/worktrees/conflict-${pr_num}"
+
+    # 在 worktree 中尝试 rebase
+    git fetch origin main "$branch" 2>/dev/null
+    git worktree add "$wt_dir" "$branch" 2>>"$LOG" || {
+        log "CONFLICT-SKIP: PR #$pr_num — 无法创建 worktree"
+        return
+    }
+
+    cd "$wt_dir" || return
+
+    if git rebase origin/main 2>/dev/null; then
+        # rebase 成功（简单冲突自动解决了）
+        git push origin "$branch" --force-with-lease 2>>"$LOG" && \
+            log "CONFLICT-RESOLVED: PR #$pr_num — rebase 成功，已推送" || \
+            log "CONFLICT-PUSH-FAILED: PR #$pr_num"
+    else
+        # rebase 失败，用 Claude Code 解决冲突
+        git rebase --abort 2>/dev/null
+
+        if command -v claude &>/dev/null; then
+            log "CONFLICT-CLAUDE: PR #$pr_num — 调用 Claude Code 解决冲突"
+            timeout 300 claude --dangerously-skip-permissions -p \
+                "你在 worktree 中处理 PR #$pr_num 的 git 冲突。
+                 1. 运行 git rebase origin/main
+                 2. 如果有冲突，读取冲突文件，理解两边意图，手动解决
+                 3. 解决后 git add 并 git rebase --continue
+                 4. 确保 ruff check . 通过
+                 5. git push origin $branch --force-with-lease
+                 不要修改任何与冲突无关的代码。" \
+                >>"$LOG" 2>&1
+
+            if [ $? -eq 0 ]; then
+                log "CONFLICT-RESOLVED: PR #$pr_num — Claude Code 解决冲突成功"
+            else
+                log "CONFLICT-FAILED: PR #$pr_num — Claude Code 无法解决，保留 PR 等待人工处理"
+            fi
+        else
+            log "CONFLICT-MANUAL: PR #$pr_num — 无 Claude CLI，需人工解决"
+        fi
+    fi
+
+    # 清理 worktree
+    cd "$MAIN_REPO"
+    git worktree remove "$wt_dir" --force 2>/dev/null
+}
 
 # ── 1. 处理 open PRs (仅 roborev) ──
-# 注意：不自动合并！PR 需要人工审批后才能合并。
-# 只关闭有冲突的 PR（修复内容已过时）。
+# 不自动合并！冲突 PR 尝试用 Claude Code 自动解决冲突后保留给人工审批。
 OPEN_PRS=$(gh pr list --repo "$REPO" --state open --json number,title,mergeable,headRefName \
     --jq '.[] | select(.title | contains("[roborev]")) | [.number, .title, .mergeable, .headRefName] | @tsv' 2>/dev/null)
 
