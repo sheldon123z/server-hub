@@ -15,7 +15,7 @@ job_timeout_minutes = 0
 # Branches that should be skipped for automatic review in this repo.
 excluded_branches = []
 # Commit message substrings that should skip review for this repo.
-excluded_commit_patterns = []
+excluded_commit_patterns = ['[roborev]', 'roborev close', 'Closes #', 'style: ruff', 'chore:']
 # Display name shown for this repo in the TUI and output.
 display_name = 'ServerHub'
 # Reasoning level for reviews in this repo: fast, standard, medium, thorough, or maximum.

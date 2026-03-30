@@ -98,7 +98,7 @@ if echo "$ISSUE_URL" | grep -q "https://"; then
                  1. 用 gh issue view $ISSUE_NUM 查看评审内容
                  2. 逐项修复每个 Finding
                  3. 确保 ruff check . 通过
-                 4. git add 修改的文件并 commit (message 包含 Closes #$ISSUE_NUM)
+                 4. git add 修改的文件并 commit (message 必须以 [roborev] 开头，包含 Closes #$ISSUE_NUM)
                  5. git push origin $BRANCH 并用 gh pr create 创建 PR
                  6. 运行 roborev close $JOB_ID' \
                 >>'$LOG_FILE' 2>&1
