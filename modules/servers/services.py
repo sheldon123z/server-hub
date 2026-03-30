@@ -473,10 +473,19 @@ async def deploy_agent_to_server(
     """
     import asyncssh
 
-    install_cmd = (
-        f"curl -sSL {hub_url}/static/agent/install.sh | "
-        f"bash -s -- --token '{agent_token}' --port {agent_port} --hub-url '{hub_url}'"
-    )
+    # 安装脚本中有 sudo 命令。通过 echo password | sudo -S 方式传递密码。
+    # 整个安装脚本以 sudo 运行，避免内部每次 sudo 都要密码。
+    if ssh_password:
+        install_cmd = (
+            f"echo {quote(ssh_password)} | sudo -S bash -c "
+            f"'curl -sSL {hub_url}/static/agent/install.sh | "
+            f"bash -s -- --token {quote(agent_token)} --port {agent_port} --hub-url {quote(hub_url)}'"
+        )
+    else:
+        install_cmd = (
+            f"curl -sSL {hub_url}/static/agent/install.sh | "
+            f"bash -s -- --token '{agent_token}' --port {agent_port} --hub-url '{hub_url}'"
+        )
     try:
         connect_kw: dict = {
             "host": ip,
@@ -491,7 +500,7 @@ async def deploy_agent_to_server(
         async with asyncssh.connect(**connect_kw) as conn:
             result = await asyncio.wait_for(
                 conn.run(install_cmd),
-                timeout=120,  # 安装最多 2 分钟
+                timeout=300,  # 安装最多 5 分钟（pip 安装可能较慢）
             )
             return result.stdout + (result.stderr or "")
     except asyncssh.Error as e:
