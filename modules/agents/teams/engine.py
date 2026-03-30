@@ -476,8 +476,10 @@ class TeamEngine:
         current_agent = ""
         seen_agents = set()
         # Swarm handoff 循环检测：记录 agent 切换历史
-        handoff_history: list[str] = []
+        from collections import deque
+
         _MAX_HANDOFF_LOOP_WINDOW = 8
+        handoff_history: deque[str] = deque(maxlen=_MAX_HANDOFF_LOOP_WINDOW)
 
         async for event in graph.astream_events(
             {"messages": [HumanMessage(content=instruction)]},
@@ -495,13 +497,11 @@ class TeamEngine:
                 else:
                     # Swarm handoff 循环检测
                     handoff_history.append(name)
-                    if len(handoff_history) >= _MAX_HANDOFF_LOOP_WINDOW:
-                        recent = handoff_history[-_MAX_HANDOFF_LOOP_WINDOW:]
-                        if len(set(recent)) <= 2:
+                    if len(handoff_history) == _MAX_HANDOFF_LOOP_WINDOW and len(set(handoff_history)) == 2:
                             logger.warning(
                                 "[Team] Swarm handoff 循环检测触发，最近 %d 步: %s",
                                 _MAX_HANDOFF_LOOP_WINDOW,
-                                recent,
+                                list(handoff_history),
                             )
                             yield {
                                 "event": "team_error",
