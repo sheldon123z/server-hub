@@ -17,6 +17,12 @@
 
 set -euo pipefail
 
+# 前置依赖检查
+if ! command -v jq &>/dev/null; then
+    echo "❌ 需要 jq 工具来安全构建 JSON。请安装: sudo apt-get install -y jq"
+    exit 1
+fi
+
 NAME=""
 IP=""
 SSH_USER=""
@@ -49,7 +55,8 @@ done
 [ -z "$SSH_USER" ] && SSH_USER="root"
 HUB_URL="http://$(hostname -I | awk '{print $1}'):9900"
 HUB_LOCAL="http://127.0.0.1:9900"
-COOKIE_JAR="/tmp/.serverhub-add-server-cookies"
+COOKIE_JAR=$(mktemp /tmp/serverhub-cookies.XXXXXX)
+trap 'rm -f "$COOKIE_JAR"' EXIT
 
 if [ -z "$NAME" ] || [ -z "$IP" ]; then
     echo "用法:"
@@ -89,7 +96,7 @@ fi
 
 LOGIN=$(curl -s -c "$COOKIE_JAR" -X POST "$HUB_LOCAL/api/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASS\"}" 2>/dev/null)
+    -d "$(jq -n --arg u "admin" --arg p "$ADMIN_PASS" '{username:$u,password:$p}')" 2>/dev/null)
 
 if ! echo "$LOGIN" | grep -q '"ok".*true'; then
     echo "❌ Hub 登录失败: $LOGIN"
@@ -101,7 +108,8 @@ echo "  ✓ Hub 登录成功"
 echo "[2/4] 注册服务器..."
 REGISTER=$(curl -s -b "$COOKIE_JAR" -X POST "$HUB_LOCAL/api/servers/" \
     -H "Content-Type: application/json" \
-    -d "{\"name\":\"$NAME\",\"ip_address\":\"$IP\",\"agent_port\":$AGENT_PORT,\"ssh_user\":\"$SSH_USER\"}" 2>/dev/null)
+    -d "$(jq -n --arg n "$NAME" --arg ip "$IP" --argjson port "$AGENT_PORT" --arg u "$SSH_USER" \
+        '{name:$n,ip_address:$ip,agent_port:$port,ssh_user:$u}')" 2>/dev/null)
 
 if echo "$REGISTER" | grep -q '"ok".*true'; then
     AGENT_TOKEN=$(echo "$REGISTER" | python3 -c "import sys,json; print(json.load(sys.stdin)['agent_token'])")
@@ -119,7 +127,9 @@ fi
 if [ -n "$AGENT_TOKEN" ]; then
     echo "[3/4] SSH 安装 Agent 到 $SSH_USER@$IP..."
 
-    REMOTE_CMD="curl -sSL $HUB_URL/static/agent/install.sh | bash -s -- --token '$AGENT_TOKEN' --port $AGENT_PORT --hub-url '$HUB_URL'"
+    # 安全提醒: HUB_URL 使用 HTTP，请确保网络环境可信（内网）
+    ESCAPED_TOKEN=$(printf '%q' "$AGENT_TOKEN")
+    REMOTE_CMD="curl -sSL $HUB_URL/static/agent/install.sh | bash -s -- --token $ESCAPED_TOKEN --port $AGENT_PORT --hub-url $(printf '%q' "$HUB_URL")"
 
     if [ -n "$SSH_PASS" ]; then
         # 密码方式（需要 sshpass）
@@ -131,12 +141,20 @@ if [ -n "$AGENT_TOKEN" ]; then
                 exit 1
             }
         fi
-        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-            "$SSH_USER@$IP" "$REMOTE_CMD" 2>&1 | sed 's/^/  │ /'
+        export SSHPASS="$SSH_PASS"
+        if ! sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$SSH_USER@$IP" "$REMOTE_CMD" 2>&1 | sed 's/^/  │ /'; then
+            echo "  ❌ SSH 连接或 Agent 安装失败"
+            exit 1
+        fi
+        unset SSHPASS
     else
         # 密钥方式
-        ssh -o ConnectTimeout=10 -o BatchMode=yes \
-            "$SSH_USER@$IP" "$REMOTE_CMD" 2>&1 | sed 's/^/  │ /'
+        if ! ssh -o ConnectTimeout=10 -o BatchMode=yes \
+            "$SSH_USER@$IP" "$REMOTE_CMD" 2>&1 | sed 's/^/  │ /'; then
+            echo "  ❌ SSH 连接或 Agent 安装失败"
+            exit 1
+        fi
     fi
 
     echo "  ✓ Agent 安装完成"
@@ -145,22 +163,26 @@ else
 fi
 
 # ── 4. 验证连接 ──
-echo "[4/4] 验证连接..."
-sleep 3
-
-SERVER_ID=$(echo "$REGISTER" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
-if [ -n "$SERVER_ID" ]; then
-    TEST=$(curl -s -b "$COOKIE_JAR" -X POST "$HUB_LOCAL/api/servers/$SERVER_ID/test" 2>/dev/null)
-    if echo "$TEST" | grep -q '"ok".*true\|"reachable".*true'; then
-        echo "  ✓ 连接验证成功！"
+if [ -z "$AGENT_TOKEN" ]; then
+    echo "[4/4] ⚠ 跳过验证（服务器已存在，未获取新 token）"
+else
+    SERVER_ID=$(echo "$REGISTER" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+    if [ -n "$SERVER_ID" ]; then
+        echo "[4/4] 验证连接..."
+        sleep 3
+        TEST=$(curl -s -b "$COOKIE_JAR" -X POST "$HUB_LOCAL/api/servers/$SERVER_ID/test" 2>/dev/null)
+        if echo "$TEST" | grep -q '"ok".*true\|"reachable".*true'; then
+            echo "  ✓ 连接验证成功！"
+        else
+            echo "  ⚠ 连接测试: $TEST"
+            echo "  Agent 可能还在启动中，稍后在 Web 界面查看状态"
+        fi
     else
-        echo "  ⚠ 连接测试: $TEST"
-        echo "  Agent 可能还在启动中，稍后在 Web 界面查看状态"
+        echo "[4/4] ⚠ 跳过验证（未获取到服务器 ID）"
     fi
 fi
 
-# 清理
-rm -f "$COOKIE_JAR"
+# cookie 文件由 trap EXIT 自动清理
 
 echo ""
 echo "══════════════════════════════════════════"

@@ -50,7 +50,7 @@ setup:
 	pre-commit install
 	@echo "✓ 开发环境就绪"
 
-add-server:
+add-server: ## 添加远程服务器 (参数不能含空格): make add-server ARGS="名称 IP 用户 密码"
 	@bash scripts/add-server.sh $(ARGS)
 
 backup:
