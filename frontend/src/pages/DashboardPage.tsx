@@ -295,7 +295,7 @@ interface HistoryPoint {
     swap?: { percent: number }
     gpu?: { utilization: number }
     network?: { bytes_recv: number; bytes_sent: number }
-    disk?: { partitions: Array<{ mountpoint: string; total: number; used: number; percent: number }> }
+    disk?: { partitions: Array<{ mountpoint: string; total?: number; used?: number; percent: number }> }
   }
 }
 
@@ -725,7 +725,7 @@ function getCardSub(id: CardId, m: MetricsData | null): string {
       case 'swap': return (m.swap?.total ?? 0) > 0 ? `${formatBytes(m.swap?.used ?? 0)} / ${formatBytes(m.swap?.total ?? 0)}` : '未启用'
       case 'disk': {
         const root = m.disk?.partitions?.find((p) => p.mountpoint === '/') ?? m.disk?.partitions?.[0]
-        return root ? `${formatBytes(root.used)} / ${formatBytes(root.total)}` : ''
+        return root ? (root.total != null ? `${formatBytes(root.used ?? 0)} / ${formatBytes(root.total)}` : `${root.percent.toFixed(1)}%`) : ''
       }
       case 'network': return `发 ${formatBytes(m.network?.bytes_sent ?? 0)}`
       case 'diskio': return '暂无数据'
@@ -939,8 +939,8 @@ function DiskDetail({ metrics, history }: { metrics: MetricsData; history: Metri
             {(metrics.disk?.partitions ?? []).map((p) => (
               <tr key={p.mountpoint} className="border-b border-border/50 hover:bg-card-hover transition-colors">
                 <td className="p-3 font-mono text-xs">{p.mountpoint}</td>
-                <td className="p-3 text-right">{formatBytes(p.used)}</td>
-                <td className="p-3 text-right text-text3">{formatBytes(p.total)}</td>
+                <td className="p-3 text-right">{p.used != null ? formatBytes(p.used) : '--'}</td>
+                <td className="p-3 text-right text-text3">{p.total != null ? formatBytes(p.total) : '--'}</td>
                 <td className={cn('p-3 text-right font-medium', statusColor(p.percent))}>{formatPercent(p.percent)}</td>
                 <td className="p-3">
                   <div className="h-1.5 rounded-full bg-border overflow-hidden">
