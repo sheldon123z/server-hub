@@ -104,9 +104,17 @@ function MetricCard({ title, value, subtitle }: { title: string; value: number; 
 
 function SkillsTab() {
   const qc = useQueryClient()
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
+
   const { data: skills = [] } = useQuery({
     queryKey: ['studio-skills'],
     queryFn: () => client.get('/api/agents/admin/skills').then((r) => ensureArray<InstalledSkill>(ensureRecord(r.data).skills)),
+  })
+
+  const { data: skillDetail } = useQuery({
+    queryKey: ['skill-detail', selectedSkillId],
+    queryFn: () => client.get(`/api/agents/skills/${selectedSkillId}`).then((r) => r.data),
+    enabled: !!selectedSkillId,
   })
 
   const toggleMut = useMutation({
@@ -123,37 +131,136 @@ function SkillsTab() {
   })
 
   return (
-    <div className="space-y-3">
-      {skills.map((skill) => (
-        <div key={skill.id} className="rounded-xl border border-border bg-bg p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-text">{skill.name}</div>
-              <div className="mt-1 text-xs text-text3">{skill.summary}</div>
-              <div className="mt-2 text-xs text-text3">
-                {skill.id} · v{skill.version} · {skill.source_type}
+    <div className="relative flex gap-4">
+      <div className="flex-1 space-y-3">
+        {skills.map((skill) => (
+          <div
+            key={skill.id}
+            className={`rounded-xl border bg-bg p-4 transition-colors ${selectedSkillId === skill.id ? 'border-accent/50' : 'border-border'}`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-text">{skill.name}</div>
+                <div className="mt-1 text-xs text-text3">{skill.summary}</div>
+                <div className="mt-2 text-xs text-text3">
+                  {skill.id} · v{skill.version} · {skill.source_type}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSkillId(selectedSkillId === skill.id ? null : skill.id)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/40"
+                >
+                  {selectedSkillId === skill.id ? '收起' : '详情'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleMut.mutate(skill)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/40"
+                >
+                  {skill.enabled ? '禁用' : '启用'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteMut.mutate(skill.id)}
+                  className="rounded-lg border border-red/30 px-3 py-1.5 text-xs text-red transition-colors hover:bg-red/10"
+                >
+                  卸载
+                </button>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => toggleMut.mutate(skill)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/40"
-              >
-                {skill.enabled ? '禁用' : '启用'}
-              </button>
-              <button
-                type="button"
-                onClick={() => deleteMut.mutate(skill.id)}
-                className="rounded-lg border border-red/30 px-3 py-1.5 text-xs text-red transition-colors hover:bg-red/10"
-              >
-                卸载
-              </button>
+          </div>
+        ))}
+        {skills.length === 0 && <EmptyState text="暂无已安装技能。到 Install 标签页扫描或上传 skill 包。" />}
+      </div>
+
+      {selectedSkillId && skillDetail && (
+        <div className="w-[420px] shrink-0 rounded-xl border border-border bg-bg p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text">{skillDetail.name}</h3>
+            <button
+              type="button"
+              onClick={() => setSelectedSkillId(null)}
+              className="text-text3 transition-colors hover:text-text"
+            >
+              &times;
+            </button>
+          </div>
+
+          {skillDetail.summary && (
+            <div className="mb-3 text-xs text-text2">{skillDetail.summary}</div>
+          )}
+
+          <div className="mb-3 flex flex-wrap gap-2 text-xs text-text3">
+            <span>v{skillDetail.version}</span>
+            <span>&middot;</span>
+            <span>{skillDetail.source_type}</span>
+            {skillDetail.enabled ? (
+              <span className="rounded bg-green/10 px-1.5 py-0.5 text-green">已启用</span>
+            ) : (
+              <span className="rounded bg-red/10 px-1.5 py-0.5 text-red">已禁用</span>
+            )}
+          </div>
+
+          {skillDetail.manifest?.required_tools?.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-1 text-xs font-medium text-text3">工具</div>
+              <div className="flex flex-wrap gap-1">
+                {(skillDetail.manifest.required_tools as string[]).map((t: string) => (
+                  <span key={t} className="rounded bg-bg2 px-2 py-0.5 text-xs text-text3">
+                    {t}
+                  </span>
+                ))}
+              </div>
             </div>
+          )}
+
+          {skillDetail.manifest?.triggers && Object.keys(skillDetail.manifest.triggers).length > 0 && (
+            <div className="mb-3">
+              <div className="mb-1 text-xs font-medium text-text3">触发条件</div>
+              <pre className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-bg2 p-2 text-xs text-text2">
+                {JSON.stringify(skillDetail.manifest.triggers, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {skillDetail.manifest?.capabilities?.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-1 text-xs font-medium text-text3">能力</div>
+              <div className="flex flex-wrap gap-1">
+                {(skillDetail.manifest.capabilities as string[]).map((c: string) => (
+                  <span key={c} className="rounded bg-accent-dim px-2 py-0.5 text-xs text-accent">
+                    {c}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {skillDetail.manifest?.entrypoints && (
+            <div className="mb-3">
+              <div className="mb-1 text-xs font-medium text-text3">入口</div>
+              <div className="text-xs text-text2">
+                类型: {(skillDetail.manifest.entrypoints as Record<string, string>).type ?? '未知'}
+              </div>
+            </div>
+          )}
+
+          {skillDetail.skill_markdown && (
+            <div className="mb-3">
+              <div className="mb-1 text-xs font-medium text-text3">SKILL.md</div>
+              <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg bg-bg2 p-3 text-xs text-text2">
+                {skillDetail.skill_markdown}
+              </pre>
+            </div>
+          )}
+
+          <div className="text-xs text-text3">
+            安装路径: <code className="text-text2">{skillDetail.install_path}</code>
           </div>
         </div>
-      ))}
-      {skills.length === 0 && <EmptyState text="暂无已安装技能。到 Install 标签页扫描或上传 skill 包。" />}
+      )}
     </div>
   )
 }
@@ -289,25 +396,215 @@ function InstallTab() {
   )
 }
 
+const MW_PROFILE_STYLES: Record<string, { label: string; cls: string }> = {
+  light: { label: 'Light', cls: 'bg-green/10 text-green' },
+  heavy: { label: 'Heavy', cls: 'bg-orange/10 text-orange' },
+  ops: { label: 'Ops', cls: 'bg-accent-dim text-accent' },
+}
+
 function SubagentsTab() {
+  const qc = useQueryClient()
+  const [editingSubagent, setEditingSubagent] = useState<string | null>(null)
+  const [expandedPrompt, setExpandedPrompt] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({
+    description: '',
+    system_prompt: '',
+    tools: [] as string[],
+    model_purpose: 'chat',
+    middleware_profile: 'light',
+  })
+
   const { data } = useQuery({
     queryKey: ['admin-subagents'],
-    queryFn: () => client.get('/api/agents/admin/subagents').then((r) => {
-      const raw = ensureRecord(r.data)
-      return { ...raw, subagents: ensureArray(raw.subagents) }
-    }),
+    queryFn: () =>
+      client.get('/api/agents/admin/subagents').then((r) => {
+        const raw = ensureRecord(r.data)
+        return { ...raw, subagents: ensureArray(raw.subagents), available_tools: ensureArray(raw.available_tools) }
+      }),
   })
+
+  const availableToolNames = useMemo(
+    () => (data?.available_tools ?? []).map((t: Record<string, unknown>) => String(t.name ?? '')).filter(Boolean),
+    [data?.available_tools],
+  )
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const currentSubagents = data?.subagents ?? []
+      const updated = (currentSubagents as Record<string, unknown>[]).map((s) =>
+        s.name === editingSubagent ? { ...s, ...editForm } : s,
+      )
+      await client.put('/api/agents/admin/subagents', { subagents: updated })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-subagents'] })
+      setEditingSubagent(null)
+    },
+  })
+
+  const startEditing = (item: Record<string, unknown>) => {
+    const name = String(item.name ?? '')
+    setEditForm({
+      description: String(item.description ?? ''),
+      system_prompt: String(item.system_prompt ?? ''),
+      tools: Array.isArray(item.tools) ? (item.tools as string[]) : [],
+      model_purpose: String(item.model_purpose ?? 'chat'),
+      middleware_profile: String(item.middleware_profile ?? 'light'),
+    })
+    setEditingSubagent(name)
+  }
 
   return (
     <div className="space-y-3">
-      {(data?.subagents ?? []).map((item: any) => (
-        <div key={item.name} className="rounded-xl border border-border bg-bg p-4">
-          <div className="text-sm font-medium text-text">{item.name}</div>
-          <div className="mt-1 text-xs text-text3">{item.description}</div>
-          <div className="mt-2 text-xs text-text3">工具: {(item.tools ?? []).join(', ') || '无'}</div>
-          <div className="mt-1 text-xs text-text3">模型: {item.model ?? item.model_purpose ?? '默认'}</div>
-        </div>
-      ))}
+      {(data?.subagents ?? []).map((item: Record<string, unknown>) => {
+        const name = String(item.name ?? '')
+        const tools = Array.isArray(item.tools) ? (item.tools as string[]) : []
+        const mwProfile = String(item.middleware_profile ?? '')
+        const mwStyle = MW_PROFILE_STYLES[mwProfile]
+        const isEditing = editingSubagent === name
+
+        return (
+          <div key={name} className="rounded-xl border border-border bg-bg p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-text">{name}</span>
+                  {mwStyle && (
+                    <span className={`rounded px-1.5 py-0.5 text-xs ${mwStyle.cls}`}>{mwStyle.label}</span>
+                  )}
+                  <span className="text-xs text-text3">
+                    {tools.length} 个工具
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-text3">{String(item.description ?? '')}</div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {tools.slice(0, 6).map((t) => (
+                    <span key={t} className="rounded bg-bg2 px-1.5 py-0.5 text-xs text-text3">{t}</span>
+                  ))}
+                  {tools.length > 6 && (
+                    <span className="text-xs text-text3">+{tools.length - 6}</span>
+                  )}
+                </div>
+                <div className="mt-1 text-xs text-text3">
+                  模型: {String(item.model ?? item.model_purpose ?? '默认')}
+                </div>
+
+                {/* system_prompt preview */}
+                {item.system_prompt && !isEditing && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPrompt(expandedPrompt === name ? null : name)}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      {expandedPrompt === name ? '收起 Prompt' : '展开 Prompt'}
+                    </button>
+                    {expandedPrompt === name && (
+                      <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg bg-bg2 p-2 text-xs text-text2">
+                        {String(item.system_prompt)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => (isEditing ? setEditingSubagent(null) : startEditing(item))}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/40"
+              >
+                {isEditing ? '取消' : '编辑'}
+              </button>
+            </div>
+
+            {isEditing && (
+              <div className="mt-3 space-y-3 border-t border-border pt-3">
+                <div>
+                  <label className="text-xs text-text3">描述</label>
+                  <input
+                    value={editForm.description}
+                    onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-border bg-bg2 px-3 py-2 text-sm text-text"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-text3">系统 Prompt</label>
+                  <textarea
+                    value={editForm.system_prompt}
+                    onChange={(e) => setEditForm((p) => ({ ...p, system_prompt: e.target.value }))}
+                    rows={6}
+                    className="mt-1 h-40 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-text3">模型用途</label>
+                    <select
+                      value={editForm.model_purpose}
+                      onChange={(e) => setEditForm((p) => ({ ...p, model_purpose: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-border bg-bg2 px-3 py-2 text-sm text-text"
+                    >
+                      <option value="chat">Chat (默认模型)</option>
+                      <option value="patrol">Patrol (巡检模型)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-text3">Middleware</label>
+                    <select
+                      value={editForm.middleware_profile}
+                      onChange={(e) => setEditForm((p) => ({ ...p, middleware_profile: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-border bg-bg2 px-3 py-2 text-sm text-text"
+                    >
+                      <option value="light">Light (快速任务)</option>
+                      <option value="heavy">Heavy (复杂分析)</option>
+                      <option value="ops">Ops (运维操作)</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-text3">工具 ({editForm.tools.length} 个已选)</label>
+                  <div className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border bg-bg2 p-2">
+                    {availableToolNames.map((tool: string) => (
+                      <label key={tool} className="flex items-center gap-2 text-xs text-text2">
+                        <input
+                          type="checkbox"
+                          checked={editForm.tools.includes(tool)}
+                          onChange={(e) => {
+                            setEditForm((p) => ({
+                              ...p,
+                              tools: e.target.checked
+                                ? [...p.tools, tool]
+                                : p.tools.filter((t) => t !== tool),
+                            }))
+                          }}
+                          className="accent-accent"
+                        />
+                        {tool}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => saveMut.mutate()}
+                    disabled={saveMut.isPending}
+                    className="rounded-lg bg-accent px-4 py-1.5 text-xs font-medium text-[#0f172a] transition-colors hover:bg-accent/90 disabled:opacity-50"
+                  >
+                    {saveMut.isPending ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSubagent(null)}
+                    className="rounded-lg border border-border px-4 py-1.5 text-xs text-text transition-colors hover:bg-bg2"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
       {!(data?.subagents ?? []).length && <EmptyState text="暂无子智能体配置。" />}
     </div>
   )
