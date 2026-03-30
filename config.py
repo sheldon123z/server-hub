@@ -65,7 +65,7 @@ class Settings:
         self.jwt_algorithm: str = "HS256"
         self.access_token_expire_minutes: int = 60 * 24  # 24 hours
         self.refresh_token_expire_days: int = 30
-        self.cookie_secure_mode: str = os.getenv("SERVERHUB_COOKIE_SECURE", "always").lower()
+        self.cookie_secure_mode: str = os.getenv("SERVERHUB_COOKIE_SECURE", "auto").lower()
         self.cookie_samesite: str = os.getenv("SERVERHUB_COOKIE_SAMESITE", "lax").lower()
 
         # 监控
