@@ -93,10 +93,14 @@ export function ChatPanel() {
     setSelectedSkillId,
   } = useChatStore()
   const { sendMessage, cancel } = useSSEChat()
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(() => {
+    return localStorage.getItem('serverhub-chat-draft') || ''
+  })
   const [showSlashMenu, setShowSlashMenu] = useState(false)
+  const [isNearBottom, setIsNearBottom] = useState(true)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
   const pageContext = pageContextFromPath(location.pathname)
 
@@ -120,9 +124,24 @@ export function ChatPanel() {
     [recommendations, selectedSkillId],
   )
 
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return
+    const { scrollHeight, scrollTop, clientHeight } = containerRef.current
+    setIsNearBottom(scrollHeight - scrollTop - clientHeight < 100)
+  }, [])
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, isStreaming])
+    if (isNearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages.length, isStreaming, isNearBottom])
+
+  // 草稿自动保存（防抖 500ms）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (input) localStorage.setItem('serverhub-chat-draft', input)
+      else localStorage.removeItem('serverhub-chat-draft')
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [input])
 
   useEffect(() => {
     const el = textareaRef.current
@@ -137,6 +156,7 @@ export function ChatPanel() {
       if (!msg || isStreaming) return
       setInput('')
       setShowSlashMenu(false)
+      localStorage.removeItem('serverhub-chat-draft')
       sendMessage(msg, { pageContext, skillId: selectedSkillId })
     },
     [input, isStreaming, pageContext, selectedSkillId, sendMessage],
@@ -222,7 +242,7 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="flex-1 overflow-y-auto py-3">
+      <div className="relative flex-1 overflow-y-auto py-3" ref={containerRef} onScroll={handleScroll}>
         {messages.length === 0 && !isStreaming && (
           <div className="flex h-full items-center justify-center">
             <div className="text-center text-text3">
@@ -235,6 +255,14 @@ export function ChatPanel() {
         <div className="flex flex-col gap-2.5">{messages.map(renderMessage)}</div>
         {isStreaming && <TypingIndicator />}
         <div ref={bottomRef} />
+        {!isNearBottom && messages.length > 0 && (
+          <button
+            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            className="sticky bottom-3 left-1/2 -translate-x-1/2 z-10 bg-accent text-[#0f172a] px-3 py-1 rounded-full text-sm shadow-lg hover:bg-accent/80 transition-colors"
+          >
+            ↓ 新消息
+          </button>
+        )}
       </div>
 
       <TodoPanel />

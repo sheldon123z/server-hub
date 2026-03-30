@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, X, MessageSquare } from 'lucide-react'
+import { Plus, X, Check, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/stores/chatStore'
 import client from '@/api/client'
@@ -25,6 +26,14 @@ export function ConversationSidebar() {
   const queryClient = useQueryClient()
   const { conversationId, setConversationId, setMessages, setTodos, clearChat } =
     useChatStore()
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  // 3 秒后自动取消确认状态
+  useEffect(() => {
+    if (!confirmDeleteId) return
+    const timer = setTimeout(() => setConfirmDeleteId(null), 3000)
+    return () => clearTimeout(timer)
+  }, [confirmDeleteId])
 
   const { data: conversations = [] } = useQuery({
     queryKey: ['conversations'],
@@ -77,7 +86,12 @@ export function ConversationSidebar() {
 
   function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation()
-    deleteMutation.mutate(id)
+    if (confirmDeleteId === id) {
+      setConfirmDeleteId(null)
+      deleteMutation.mutate(id)
+    } else {
+      setConfirmDeleteId(id)
+    }
   }
 
   function formatTime(iso: string) {
@@ -143,12 +157,14 @@ export function ConversationSidebar() {
               <button
                 onClick={(e) => handleDelete(e, conv.id)}
                 className={cn(
-                  'shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100',
-                  'hover:bg-red/20 hover:text-red transition-all cursor-pointer',
+                  'shrink-0 p-0.5 rounded transition-all cursor-pointer',
+                  confirmDeleteId === conv.id
+                    ? 'opacity-100 bg-red/20 text-red'
+                    : 'opacity-0 group-hover:opacity-100 hover:bg-red/20 hover:text-red',
                 )}
-                title="删除对话"
+                title={confirmDeleteId === conv.id ? '确认删除' : '删除对话'}
               >
-                <X size={14} />
+                {confirmDeleteId === conv.id ? <Check size={14} /> : <X size={14} />}
               </button>
             </div>
           )
