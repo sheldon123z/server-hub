@@ -9,7 +9,7 @@ Group=zhengxiaodong
 WorkingDirectory=/home/zhengxiaodong/scripts/server-hub
 Environment=PATH=/home/zhengxiaodong/miniconda3/envs/serverhub/bin:/usr/local/bin:/usr/bin
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/zhengxiaodong/miniconda3/envs/serverhub/bin/uvicorn main:app --host 0.0.0.0 --port 9900 --workers 1
+ExecStart=/bin/bash -c 'source /home/zhengxiaodong/.api_keys 2>/dev/null; exec /home/zhengxiaodong/miniconda3/envs/serverhub/bin/uvicorn main:app --host 0.0.0.0 --port 9900 --workers 1'
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
@@ -19,7 +19,8 @@ StartLimitIntervalSec=60
 # 安全加固
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/home/zhengxiaodong/scripts/server-hub/data
+ReadWritePaths=/home/zhengxiaodong/scripts/server-hub/data /home/zhengxiaodong/scripts/server-hub/logs /tmp/serverhub-sandbox /home/zhengxiaodong/logs
+ReadOnlyPaths=/home/zhengxiaodong/.api_keys /home/zhengxiaodong/scripts/server-hub/.env
 
 [Install]
 WantedBy=multi-user.target
