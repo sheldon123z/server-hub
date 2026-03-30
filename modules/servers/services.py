@@ -478,13 +478,17 @@ async def deploy_agent_to_server(
         f"bash -s -- --token '{agent_token}' --port {agent_port} --hub-url '{hub_url}'"
     )
     try:
-        async with asyncssh.connect(
-            ip,
-            port=ssh_port,
-            username=ssh_user,
-            password=ssh_password,
-            known_hosts=None,  # TODO: TOFU 模型主机密钥验证
-        ) as conn:
+        connect_kw: dict = {
+            "host": ip,
+            "port": ssh_port,
+            "username": ssh_user,
+            "known_hosts": None,
+        }
+        if ssh_password:
+            connect_kw["password"] = ssh_password
+            connect_kw["client_keys"] = []  # 禁用密钥认证，强制密码
+            connect_kw["preferred_auth"] = ["password", "keyboard-interactive"]
+        async with asyncssh.connect(**connect_kw) as conn:
             result = await asyncio.wait_for(
                 conn.run(install_cmd),
                 timeout=120,  # 安装最多 2 分钟
