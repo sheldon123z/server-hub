@@ -27,21 +27,18 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 cd /home/zhengxiaodong/scripts/server-hub || exit 1
 
 # ── 1. 处理 open PRs (仅 roborev) ──
+# 注意：不自动合并！PR 需要人工审批后才能合并。
+# 只关闭有冲突的 PR（修复内容已过时）。
 OPEN_PRS=$(gh pr list --repo "$REPO" --state open --json number,title,mergeable,headRefName \
     --jq '.[] | select(.title | contains("[roborev]")) | [.number, .title, .mergeable, .headRefName] | @tsv' 2>/dev/null)
 
 if [ -n "$OPEN_PRS" ]; then
     while IFS=$'\t' read -r num title mergeable branch; do
-        if [ "$mergeable" = "MERGEABLE" ]; then
-            if gh pr merge "$num" --repo "$REPO" --merge --delete-branch 2>/dev/null; then
-                log "AUTO-MERGED: PR #$num ($title)"
-            else
-                log "MERGE-FAILED: PR #$num ($title)"
-            fi
+        if [ "$mergeable" = "CONFLICTING" ]; then
+            log "CONFLICT: PR #$num ($title) — 尝试自动解决冲突"
+            _resolve_conflict "$num" "$branch"
         else
-            # CONFLICTING 或 UNKNOWN 超过 2 小时 → 关闭
-            gh pr close "$num" --repo "$REPO" --delete-branch --comment "自动关闭：与 main 有冲突或状态未知，修复内容可能已在 main 中" 2>/dev/null
-            log "CLOSED: PR #$num ($mergeable) ($title)"
+            log "PENDING-REVIEW: PR #$num ($mergeable) — 等待人工审批"
         fi
     done <<< "$OPEN_PRS"
 fi
@@ -58,15 +55,15 @@ if [ -n "$OPEN_ISSUES" ]; then
         CREATED_EPOCH=$(date -d "$created_at" +%s 2>/dev/null || echo "")
         if [ -n "$CREATED_EPOCH" ]; then
             AGE=$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
-            if [ "$AGE" -ge 48 ]; then
-                # 检查是否有关联的 open PR（分支名 fix/roborev-<issue_number>）
+            if [ "$AGE" -gt 48 ]; then
+                # 超过 48h 且无关联 open PR 才关闭
                 LINKED_PRS=$(gh pr list --repo "$REPO" --state open --head "fix/roborev-$num" \
                     --json number --jq 'length' 2>/dev/null)
                 if [ "${LINKED_PRS:-0}" = "0" ]; then
-                    gh issue close "$num" --repo "$REPO" --comment "自动关闭：超过 48 小时未处理且无关联的 open PR" 2>/dev/null
+                    gh issue close "$num" --repo "$REPO" --comment "自动关闭：超过 48 小时且无关联 PR" 2>/dev/null
                     log "CLOSED-STALE: Issue #$num ($title, age=${AGE}h)"
                 else
-                    log "SKIPPED: Issue #$num ($title, age=${AGE}h, linked_prs=$LINKED_PRS)"
+                    log "SKIPPED: Issue #$num (has linked PR, age=${AGE}h)"
                 fi
             fi
         fi
