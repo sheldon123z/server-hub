@@ -130,6 +130,8 @@ git branch -r --list 'origin/fix/roborev-*' 2>/dev/null | sed 's|^ *origin/||' |
     fi
 done
 
+# ── 4. 本地 main 同步由 git-sync.sh (每 5 分钟) 处理 ──
+
 # ── 汇总 ──
 REMAINING_ISSUES=$(gh issue list --repo "$REPO" --state open --json number --jq 'length' 2>/dev/null)
 REMAINING_PRS=$(gh pr list --repo "$REPO" --state open --json number --jq 'length' 2>/dev/null)
