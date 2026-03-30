@@ -24,24 +24,71 @@ mkdir -p "$(dirname "$LOG")"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
-cd /home/zhengxiaodong/scripts/server-hub || exit 1
+MAIN_REPO="/home/zhengxiaodong/scripts/server-hub"
+cd "$MAIN_REPO" || exit 1
+
+# ── 冲突解决函数 ──
+_resolve_conflict() {
+    local pr_num="$1" branch="$2"
+    local wt_dir="${MAIN_REPO}/.claude/worktrees/conflict-${pr_num}"
+
+    # 在 worktree 中尝试 rebase
+    git fetch origin main "$branch" 2>/dev/null
+    git worktree add "$wt_dir" "$branch" 2>>"$LOG" || {
+        log "CONFLICT-SKIP: PR #$pr_num — 无法创建 worktree"
+        return
+    }
+
+    cd "$wt_dir" || return
+
+    if git rebase origin/main 2>/dev/null; then
+        # rebase 成功（简单冲突自动解决了）
+        git push origin "$branch" --force-with-lease 2>>"$LOG" && \
+            log "CONFLICT-RESOLVED: PR #$pr_num — rebase 成功，已推送" || \
+            log "CONFLICT-PUSH-FAILED: PR #$pr_num"
+    else
+        # rebase 失败，用 Claude Code 解决冲突
+        git rebase --abort 2>/dev/null
+
+        if command -v claude &>/dev/null; then
+            log "CONFLICT-CLAUDE: PR #$pr_num — 调用 Claude Code 解决冲突"
+            timeout 300 claude --dangerously-skip-permissions -p \
+                "你在 worktree 中处理 PR #$pr_num 的 git 冲突。
+                 1. 运行 git rebase origin/main
+                 2. 如果有冲突，读取冲突文件，理解两边意图，手动解决
+                 3. 解决后 git add 并 git rebase --continue
+                 4. 确保 ruff check . 通过
+                 5. git push origin $branch --force-with-lease
+                 不要修改任何与冲突无关的代码。" \
+                >>"$LOG" 2>&1
+
+            if [ $? -eq 0 ]; then
+                log "CONFLICT-RESOLVED: PR #$pr_num — Claude Code 解决冲突成功"
+            else
+                log "CONFLICT-FAILED: PR #$pr_num — Claude Code 无法解决，保留 PR 等待人工处理"
+            fi
+        else
+            log "CONFLICT-MANUAL: PR #$pr_num — 无 Claude CLI，需人工解决"
+        fi
+    fi
+
+    # 清理 worktree
+    cd "$MAIN_REPO"
+    git worktree remove "$wt_dir" --force 2>/dev/null
+}
 
 # ── 1. 处理 open PRs (仅 roborev) ──
+# 不自动合并！冲突 PR 尝试用 Claude Code 自动解决冲突后保留给人工审批。
 OPEN_PRS=$(gh pr list --repo "$REPO" --state open --json number,title,mergeable,headRefName \
     --jq '.[] | select(.title | contains("[roborev]")) | [.number, .title, .mergeable, .headRefName] | @tsv' 2>/dev/null)
 
 if [ -n "$OPEN_PRS" ]; then
     while IFS=$'\t' read -r num title mergeable branch; do
-        if [ "$mergeable" = "MERGEABLE" ]; then
-            if gh pr merge "$num" --repo "$REPO" --merge --delete-branch 2>/dev/null; then
-                log "AUTO-MERGED: PR #$num ($title)"
-            else
-                log "MERGE-FAILED: PR #$num ($title)"
-            fi
+        if [ "$mergeable" = "CONFLICTING" ]; then
+            log "CONFLICT: PR #$num ($title) — 尝试自动解决冲突"
+            _resolve_conflict "$num" "$branch"
         else
-            # CONFLICTING 或 UNKNOWN 超过 2 小时 → 关闭
-            gh pr close "$num" --repo "$REPO" --delete-branch --comment "自动关闭：与 main 有冲突或状态未知，修复内容可能已在 main 中" 2>/dev/null
-            log "CLOSED: PR #$num ($mergeable) ($title)"
+            log "PENDING-REVIEW: PR #$num ($mergeable) — 等待人工审批"
         fi
     done <<< "$OPEN_PRS"
 fi
@@ -58,15 +105,15 @@ if [ -n "$OPEN_ISSUES" ]; then
         CREATED_EPOCH=$(date -d "$created_at" +%s 2>/dev/null || echo "")
         if [ -n "$CREATED_EPOCH" ]; then
             AGE=$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
-            if [ "$AGE" -ge 48 ]; then
-                # 检查是否有关联的 open PR（分支名 fix/roborev-<issue_number>）
+            if [ "$AGE" -gt 48 ]; then
+                # 超过 48h 且无关联 open PR 才关闭
                 LINKED_PRS=$(gh pr list --repo "$REPO" --state open --head "fix/roborev-$num" \
                     --json number --jq 'length' 2>/dev/null)
                 if [ "${LINKED_PRS:-0}" = "0" ]; then
-                    gh issue close "$num" --repo "$REPO" --comment "自动关闭：超过 48 小时未处理且无关联的 open PR" 2>/dev/null
+                    gh issue close "$num" --repo "$REPO" --comment "自动关闭：超过 48 小时且无关联 PR" 2>/dev/null
                     log "CLOSED-STALE: Issue #$num ($title, age=${AGE}h)"
                 else
-                    log "SKIPPED: Issue #$num ($title, age=${AGE}h, linked_prs=$LINKED_PRS)"
+                    log "SKIPPED: Issue #$num (has linked PR, age=${AGE}h)"
                 fi
             fi
         fi
@@ -82,6 +129,8 @@ git branch -r --list 'origin/fix/roborev-*' 2>/dev/null | sed 's|^ *origin/||' |
         git push origin --delete "$branch" 2>/dev/null && log "DELETED-BRANCH: $branch"
     fi
 done
+
+# ── 4. 本地 main 同步由 git-sync.sh (每 5 分钟) 处理 ──
 
 # ── 汇总 ──
 REMAINING_ISSUES=$(gh issue list --repo "$REPO" --state open --json number --jq 'length' 2>/dev/null)
