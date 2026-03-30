@@ -63,6 +63,7 @@ interface ServerFormData {
   agent_port: number
   ssh_user: string
   ssh_port: number
+  ssh_password: string
   tags: string
 }
 
@@ -119,6 +120,7 @@ const emptyForm: ServerFormData = {
   agent_port: 9901,
   ssh_user: '',
   ssh_port: 22,
+  ssh_password: '',
   tags: '',
 }
 
@@ -132,6 +134,7 @@ export default function ServersPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [testResult, setTestResult] = useState<ConnectivityResult | null>(null)
   const [newToken, setNewToken] = useState<string | null>(null)
+  const [deployLog, setDeployLog] = useState('')
 
   /* ── 数据查询 ── */
 
@@ -306,13 +309,25 @@ export default function ServersPage() {
           initial={emptyForm}
           onClose={() => setShowAddModal(false)}
           onSubmit={async (data) => {
-            const res = await client.post('/api/servers', data)
-            queryClient.invalidateQueries({ queryKey: ['servers'] })
-            toast.success('添加成功')
-            setShowAddModal(false)
-            // 显示一次性 token
-            if (res.data?.agent_token) {
-              setNewToken(res.data.agent_token)
+            if (data.ssh_password) {
+              // 有密码 → 使用一键部署 API
+              const res = await client.post('/api/servers/deploy', data)
+              queryClient.invalidateQueries({ queryKey: ['servers'] })
+              toast.success('服务器添加并部署成功')
+              setShowAddModal(false)
+              // 显示部署日志
+              if (res.data?.deploy_log) {
+                setDeployLog(res.data.deploy_log)
+              }
+            } else {
+              // 无密码 → 仅注册（现有逻辑）
+              const res = await client.post('/api/servers', data)
+              queryClient.invalidateQueries({ queryKey: ['servers'] })
+              toast.success('添加成功')
+              setShowAddModal(false)
+              if (res.data?.agent_token) {
+                setNewToken(res.data.agent_token)
+              }
             }
           }}
         />
@@ -327,6 +342,7 @@ export default function ServersPage() {
             agent_port: selected.agent_port,
             ssh_user: selected.ssh_user,
             ssh_port: selected.ssh_port,
+            ssh_password: '',
             tags: parseTags(selected.tags).join(', '),
           }}
           onClose={() => setShowEditModal(false)}
@@ -340,6 +356,19 @@ export default function ServersPage() {
       )}
       {newToken && (
         <TokenDisplayModal token={newToken} onClose={() => setNewToken(null)} />
+      )}
+      {deployLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDeployLog('')}>
+          <div className="bg-bg border border-border rounded-xl p-6 w-full max-w-lg shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-text mb-3">部署日志</h3>
+            <pre className="bg-bg2 rounded-md p-3 text-xs text-text2 max-h-80 overflow-y-auto whitespace-pre-wrap">
+              {deployLog}
+            </pre>
+            <button onClick={() => setDeployLog('')} className="mt-3 px-4 py-2 text-sm bg-accent text-[#0f172a] rounded-md font-medium">
+              关闭
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -694,6 +723,21 @@ function ServerFormModal({
             />
           </FormField>
 
+          <FormField label="SSH 密码">
+            <input
+              type="password"
+              value={form.ssh_password}
+              onChange={(e) => setForm({ ...form, ssh_password: e.target.value })}
+              className="w-full bg-bg2 border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none focus:border-accent"
+              placeholder="填写后将自动安装 Agent"
+            />
+            <p className="text-xs text-text3 mt-1">
+              {form.ssh_password
+                ? '将自动通过 SSH 安装 Agent 到远程服务器'
+                : '不填密码则仅注册，需手动安装 Agent'}
+            </p>
+          </FormField>
+
           <FormField label="标签 (逗号分隔)">
             <input
               value={form.tags}
@@ -716,7 +760,7 @@ function ServerFormModal({
             disabled={submitting}
             className="px-4 py-2 text-sm bg-accent text-[#0f172a] rounded-md font-medium disabled:opacity-50"
           >
-            {submitting ? '提交中...' : '确认'}
+            {submitting ? '部署中...' : form.ssh_password ? '注册并部署 Agent' : '仅注册'}
           </button>
         </div>
       </div>
