@@ -424,14 +424,14 @@ function SubagentsTab() {
   })
 
   const availableToolNames = useMemo(
-    () => (data?.available_tools ?? []).map((t: Record<string, unknown>) => String(t.name ?? '')).filter(Boolean),
+    () => (data?.available_tools ?? []).map((t: any) => String(t?.name ?? '')).filter(Boolean),
     [data?.available_tools],
   )
 
   const saveMut = useMutation({
     mutationFn: async () => {
       const currentSubagents = data?.subagents ?? []
-      const updated = (currentSubagents as Record<string, unknown>[]).map((s) =>
+      const updated = (currentSubagents as any[]).map((s: any) =>
         s.name === editingSubagent ? { ...s, ...editForm } : s,
       )
       await client.put('/api/agents/admin/subagents', { subagents: updated })
@@ -442,7 +442,7 @@ function SubagentsTab() {
     },
   })
 
-  const startEditing = (item: Record<string, unknown>) => {
+  const startEditing = (item: any) => {
     const name = String(item.name ?? '')
     setEditForm({
       description: String(item.description ?? ''),
@@ -456,7 +456,7 @@ function SubagentsTab() {
 
   return (
     <div className="space-y-3">
-      {(data?.subagents ?? []).map((item: Record<string, unknown>) => {
+      {(data?.subagents ?? []).map((item: any) => {
         const name = String(item.name ?? '')
         const tools = Array.isArray(item.tools) ? (item.tools as string[]) : []
         const mwProfile = String(item.middleware_profile ?? '')
