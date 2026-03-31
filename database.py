@@ -156,6 +156,7 @@ async def _create_monitoring_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "alert_rules", "stddev_multiplier", "REAL DEFAULT 3.0")
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
+    await _ensure_column(db, "assets", "server_id", "TEXT DEFAULT 'local'")
     # server_id 列就绪后才能创建复合索引
     await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
 
@@ -550,6 +551,8 @@ async def _create_other_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_assets_type
             ON assets(type);
+        CREATE INDEX IF NOT EXISTS idx_assets_server
+            ON assets(server_id);
 
         -- 定时任务变更日志
         CREATE TABLE IF NOT EXISTS cron_job_log (

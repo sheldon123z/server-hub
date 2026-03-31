@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { cn, ensureArray, ensureRecord, toNumber, toString } from '@/lib/utils'
+import { useServerStore } from '@/stores/serverStore'
 import mermaid from 'mermaid'
 
 /* ── Types ────────────────────────────────────────── */
@@ -81,13 +82,13 @@ function normalizeAssetSummary(value: unknown): AssetSummary {
 
 mermaid.initialize({ startOnLoad: false, theme: 'dark' })
 
-function TopologyDiagram() {
+function TopologyDiagram({ serverId }: { serverId: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [rendered, setRendered] = useState(false)
 
   const { data, isLoading, error } = useQuery<{ mermaid: string }>({
-    queryKey: ['assets-topology'],
-    queryFn: () => client.get('/api/assets/topology').then((r) => r.data),
+    queryKey: ['assets-topology', serverId],
+    queryFn: () => client.get('/api/assets/topology', { params: { server_id: serverId } }).then((r) => r.data),
   })
 
   const renderDiagram = useCallback(async () => {
@@ -125,6 +126,7 @@ function TopologyDiagram() {
 
 export default function AssetsPage() {
   const queryClient = useQueryClient()
+  const serverId = useServerStore((s) => s.selectedServerId)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editDesc, setEditDesc] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -133,56 +135,59 @@ export default function AssetsPage() {
 
   /* Queries */
   const { data: assetsData, isLoading } = useQuery<Asset[]>({
-    queryKey: ['assets'],
-    queryFn: () => client.get('/api/assets/').then((r) => normalizeAssets(r.data)),
+    queryKey: ['assets', serverId],
+    queryFn: () => client.get('/api/assets/', { params: { server_id: serverId } }).then((r) => normalizeAssets(r.data)),
   })
 
   const { data: summary } = useQuery<AssetSummary>({
-    queryKey: ['assets-summary'],
-    queryFn: () => client.get('/api/assets/summary').then((r) => normalizeAssetSummary(r.data)),
+    queryKey: ['assets-summary', serverId],
+    queryFn: () => client.get('/api/assets/summary', { params: { server_id: serverId } }).then((r) => normalizeAssetSummary(r.data)),
   })
 
   /* Mutations */
+  const invalidateAssets = () => {
+    queryClient.invalidateQueries({ queryKey: ['assets', serverId] })
+    queryClient.invalidateQueries({ queryKey: ['assets-summary', serverId] })
+    queryClient.invalidateQueries({ queryKey: ['assets-topology', serverId] })
+  }
+
   const discoverMut = useMutation({
-    mutationFn: () => client.post('/api/assets/discover').then((r) => r.data),
+    mutationFn: () => client.post(`/api/assets/discover?server_id=${encodeURIComponent(serverId)}`).then((r) => r.data),
     onSuccess: (data) => {
       toast.success(`发现完成: ${data.total} 个资产`)
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['assets-summary'] })
+      invalidateAssets()
     },
     onError: () => toast.error('发现失败'),
   })
 
   const updateDescMut = useMutation({
     mutationFn: ({ id, description }: { id: number; description: string }) =>
-      client.put(`/api/assets/${id}`, { description }).then((r) => r.data),
+      client.put(`/api/assets/${id}?server_id=${encodeURIComponent(serverId)}`, { description }).then((r) => r.data),
     onSuccess: () => {
       toast.success('描述已更新')
       setEditingId(null)
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      invalidateAssets()
     },
     onError: () => toast.error('更新失败'),
   })
 
   const addMut = useMutation({
     mutationFn: (body: { name: string; type: string; description: string; ip: string; port: number | null }) =>
-      client.post('/api/assets/manual', body).then((r) => r.data),
+      client.post(`/api/assets/manual?server_id=${encodeURIComponent(serverId)}`, body).then((r) => r.data),
     onSuccess: () => {
       toast.success('资产已添加')
       setShowAdd(false)
       setNewAsset({ name: '', type: 'manual', description: '', ip: '', port: '' })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['assets-summary'] })
+      invalidateAssets()
     },
     onError: () => toast.error('添加失败'),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: number) => client.delete(`/api/assets/${id}`).then((r) => r.data),
+    mutationFn: (id: number) => client.delete(`/api/assets/${id}?server_id=${encodeURIComponent(serverId)}`).then((r) => r.data),
     onSuccess: () => {
       toast.success('资产已删除')
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['assets-summary'] })
+      invalidateAssets()
     },
     onError: () => toast.error('删除失败'),
   })
@@ -242,7 +247,7 @@ export default function AssetsPage() {
       )}
 
       {/* Topology diagram */}
-      {showTopology && <TopologyDiagram />}
+      {showTopology && <TopologyDiagram serverId={serverId} />}
 
       {/* Add form */}
       {showAdd && (

@@ -181,6 +181,107 @@ async def get_fast_metrics():
     return data
 
 
+@app.get("/assets/discover", dependencies=[Depends(verify_token)])
+async def discover_assets():
+    """资产发现 — 从本机采集 systemd 服务、Docker 容器/堆栈、监听端口、存储挂载"""
+    loop = asyncio.get_event_loop()
+    assets = await loop.run_in_executor(None, _collect_assets)
+    return assets
+
+
+def _collect_assets() -> list[dict]:
+    """同步采集所有资产类型"""
+    import subprocess
+
+    assets: list[dict] = []
+
+    # ─── systemd 服务 ───
+    try:
+        svc_data = collect_services()
+        for s in svc_data:
+            assets.append({
+                "id": f"service:{s['name']}",
+                "type": "service",
+                "name": s["name"],
+                "status": "running" if s.get("active_state") == "active" else "stopped",
+                "properties": {
+                    "enabled": s.get("enabled", False),
+                    "description": s.get("description", ""),
+                },
+            })
+    except Exception as e:
+        logging.debug("服务资产发现失败: %s", e)
+
+    # ─── Docker 容器 ───
+    try:
+        containers = collect_docker_containers()
+        for c in containers:
+            name = c.get("name", "?").lstrip("/")
+            raw_status = c.get("status", "unknown")
+            assets.append({
+                "id": f"container:{name}",
+                "type": "container",
+                "name": name,
+                "status": "running" if c.get("running") else "stopped",
+                "properties": {
+                    "image": c.get("image", ""),
+                    "status_detail": raw_status,
+                },
+            })
+    except Exception as e:
+        logging.debug("容器资产发现失败: %s", e)
+
+    # ─── 监听端口 ───
+    try:
+        import psutil as _ps
+
+        for conn in _ps.net_connections(kind="inet"):
+            if conn.status == "LISTEN" and conn.laddr:
+                port_str = f"{conn.laddr.port}/tcp"
+                proc_name = ""
+                try:
+                    proc_name = _ps.Process(conn.pid).name() if conn.pid else ""
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+                assets.append({
+                    "id": f"port:{port_str}",
+                    "type": "port",
+                    "name": port_str,
+                    "status": "listening",
+                    "properties": {
+                        "local_addr": f"{conn.laddr.ip}:{conn.laddr.port}",
+                        "pid": conn.pid or 0,
+                        "process": proc_name,
+                    },
+                })
+    except Exception as e:
+        logging.debug("端口资产发现失败: %s", e)
+
+    # ─── 存储挂载 ───
+    try:
+        for part in psutil.disk_partitions(all=False):
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+                assets.append({
+                    "id": f"storage:{part.mountpoint}",
+                    "type": "storage",
+                    "name": part.mountpoint,
+                    "status": "warning" if usage.percent > 85 else "ok",
+                    "properties": {
+                        "device": part.device,
+                        "total": usage.total,
+                        "used": usage.used,
+                        "percent": usage.percent,
+                    },
+                })
+            except (PermissionError, OSError, ValueError):
+                continue
+    except Exception as e:
+        logging.debug("存储资产发现失败: %s", e)
+
+    return assets
+
+
 @app.post("/execute", dependencies=[Depends(verify_token)], response_model=ExecuteResponse)
 async def execute_command(req: ExecuteRequest):
     """

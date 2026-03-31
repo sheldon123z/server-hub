@@ -2,7 +2,7 @@
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth.dependencies import require_role
 from database import get_db
@@ -12,33 +12,47 @@ router = APIRouter(prefix="/api/assets", tags=["资产台账"])
 
 
 @router.get("/")
-async def list_assets(type: str = "", user=Depends(require_role("admin"))):
-    """获取资产列表"""
-    return await get_assets(type)
+async def list_assets(
+    type: str = "",
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
+    """获取资产列表（按 server_id 过滤）"""
+    return await get_assets(type, server_id=server_id)
 
 
 @router.post("/discover")
-async def trigger_discover(user=Depends(require_role("admin"))):
+async def trigger_discover(
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
     """触发资产发现"""
-    stats = await discover_all()
+    stats = await discover_all(server_id=server_id)
     total = sum(stats.values())
     return {"ok": True, "stats": stats, "total": total}
 
 
 @router.get("/topology")
-async def get_topology(user=Depends(require_role("admin"))):
+async def get_topology(
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
     """获取 Mermaid 拓扑图"""
-    mermaid = await generate_topology_mermaid()
+    mermaid = await generate_topology_mermaid(server_id=server_id)
     return {"mermaid": mermaid}
 
 
 @router.get("/summary")
-async def get_summary(user=Depends(require_role("admin"))):
+async def get_summary(
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
     """获取资产统计概览"""
     db = await get_db()
     cursor = await db.execute(
         "SELECT type, COUNT(*), SUM(CASE WHEN status IN ('running','ok','listening') THEN 1 ELSE 0 END) "
-        "FROM assets GROUP BY type"
+        "FROM assets WHERE server_id = ? GROUP BY type",
+        (server_id,),
     )
     rows = await cursor.fetchall()
     summary = {}
@@ -48,10 +62,15 @@ async def get_summary(user=Depends(require_role("admin"))):
 
 
 @router.put("/{asset_id:path}")
-async def update_asset(asset_id: str, request: Request, user=Depends(require_role("admin"))):
+async def update_asset(
+    asset_id: str,
+    request: Request,
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
     """更新资产属性/依赖"""
     db = await get_db()
-    existing = await db.execute("SELECT id FROM assets WHERE id = ?", (asset_id,))
+    existing = await db.execute("SELECT id FROM assets WHERE id = ? AND server_id = ?", (asset_id, server_id))
     if not await existing.fetchone():
         raise HTTPException(404, "资产不存在")
     body = await request.json()
@@ -75,14 +94,18 @@ async def update_asset(asset_id: str, request: Request, user=Depends(require_rol
         )
     if not sets:
         raise HTTPException(400, "没有要更新的字段")
-    vals.append(asset_id)
-    await db.execute(f"UPDATE assets SET {', '.join(sets)} WHERE id = ?", vals)  # noqa: S608 — 列名来自代码白名单
+    vals.extend([asset_id, server_id])
+    await db.execute(f"UPDATE assets SET {', '.join(sets)} WHERE id = ? AND server_id = ?", vals)  # noqa: S608
     await db.commit()
     return {"ok": True}
 
 
 @router.post("/manual")
-async def add_manual_asset(request: Request, user=Depends(require_role("admin"))):
+async def add_manual_asset(
+    request: Request,
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
     """手动添加资产"""
     body = await request.json()
     for field in ("type", "name"):
@@ -90,29 +113,34 @@ async def add_manual_asset(request: Request, user=Depends(require_role("admin"))
             raise HTTPException(400, f"缺少必填字段: {field}")
     db = await get_db()
     aid = body.get("id") or f"{body['type']}:{body['name']}"
-    existing = await db.execute("SELECT id FROM assets WHERE id = ?", (aid,))
+    existing = await db.execute("SELECT id FROM assets WHERE id = ? AND server_id = ?", (aid, server_id))
     if await existing.fetchone():
         raise HTTPException(409, f"资产 ID 已存在: {aid}")
     props = json.dumps(body.get("properties", {}), ensure_ascii=False)
     deps = json.dumps(body.get("dependencies", []), ensure_ascii=False)
     await db.execute(
-        "INSERT INTO assets (id, type, name, status, properties, dependencies, is_manual) VALUES (?, ?, ?, ?, ?, ?, 1)",
-        (aid, body["type"], body["name"], body.get("status", "unknown"), props, deps),
+        "INSERT INTO assets (id, type, name, status, properties, dependencies, is_manual, server_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+        (aid, body["type"], body["name"], body.get("status", "unknown"), props, deps, server_id),
     )
     await db.commit()
     return {"ok": True, "id": aid}
 
 
 @router.delete("/{asset_id:path}")
-async def delete_asset(asset_id: str, user=Depends(require_role("admin"))):
+async def delete_asset(
+    asset_id: str,
+    server_id: str = Query(default="local"),
+    user=Depends(require_role("admin")),
+):
     """删除资产（仅手动资产可删除）"""
     db = await get_db()
-    cursor = await db.execute("SELECT is_manual FROM assets WHERE id = ?", (asset_id,))
+    cursor = await db.execute("SELECT is_manual FROM assets WHERE id = ? AND server_id = ?", (asset_id, server_id))
     row = await cursor.fetchone()
     if not row:
         raise HTTPException(404, "资产不存在")
     if not row[0]:
         raise HTTPException(403, "自动发现的资产不能手动删除，下次发现会自动恢复")
-    await db.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+    await db.execute("DELETE FROM assets WHERE id = ? AND server_id = ?", (asset_id, server_id))
     await db.commit()
     return {"ok": True}
