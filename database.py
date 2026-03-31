@@ -45,6 +45,66 @@ async def _ensure_column(
         raise
 
 
+async def _migrate_assets_composite_pk(db: aiosqlite.Connection) -> None:
+    """将 assets 表从单列 PK(id) 迁移为复合 PK(id, server_id)。
+
+    同时清理旧版 server_id 前缀: 'srv1:service:nginx' → 'service:nginx'。
+    如果表已经是复合主键则跳过。
+    """
+    # 检查当前表是否仍为单列 PK — 通过 table_info 检测 pk 列
+    cursor = await db.execute("PRAGMA table_info(assets)")
+    cols = await cursor.fetchall()
+    pk_cols = [c[1] for c in cols if c[5] > 0]  # c[5] = pk flag
+    if set(pk_cols) != {"id"}:
+        # 已经迁移过（复合主键），或表不存在
+        return
+
+    logger.info("数据库迁移: assets 表升级为复合主键 (id, server_id)")
+    try:
+        # 1. 清理旧版 server_id 前缀 (id 形如 "srv1:service:nginx"，server_id="srv1")
+        cursor = await db.execute(
+            "SELECT id, server_id FROM assets WHERE server_id != 'local' AND id LIKE server_id || ':%'"
+        )
+        prefixed_rows = await cursor.fetchall()
+        for old_id, sid in prefixed_rows:
+            new_id = old_id[len(sid) + 1 :]  # 去掉 "srv1:" 前缀
+            await db.execute(
+                "UPDATE assets SET id = ? WHERE id = ? AND server_id = ?",
+                (new_id, old_id, sid),
+            )
+        if prefixed_rows:
+            logger.info("数据库迁移: 清理了 %d 条 server_id 前缀资产 ID", len(prefixed_rows))
+
+        # 2. 重建表为复合主键
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS assets_new (
+                id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT DEFAULT 'unknown',
+                properties TEXT,
+                dependencies TEXT,
+                is_manual INTEGER DEFAULT 0,
+                last_seen TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                server_id TEXT NOT NULL DEFAULT 'local',
+                PRIMARY KEY (id, server_id)
+            );
+            INSERT OR IGNORE INTO assets_new
+                (id, type, name, status, properties, dependencies, is_manual, last_seen, created_at, server_id)
+                SELECT id, type, name, status, properties, dependencies, is_manual, last_seen, created_at, server_id
+                FROM assets;
+            DROP TABLE assets;
+            ALTER TABLE assets_new RENAME TO assets;
+            CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
+            CREATE INDEX IF NOT EXISTS idx_assets_server ON assets(server_id);
+        """)
+        logger.info("数据库迁移: assets 表复合主键升级完成")
+    except Exception:
+        logger.exception("数据库迁移: assets 表复合主键升级失败")
+        raise
+
+
 async def get_db() -> aiosqlite.Connection:
     global _db
     if _db is not None:
@@ -157,6 +217,8 @@ async def _create_monitoring_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "assets", "server_id", "TEXT DEFAULT 'local'")
+    # 迁移: assets 表从单列 PK(id) 升级为复合 PK(id, server_id)
+    await _migrate_assets_composite_pk(db)
     # server_id 列就绪后才能创建复合索引
     await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
 
@@ -537,9 +599,9 @@ async def _create_other_tables(db: aiosqlite.Connection):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- 资产台账
+        -- 资产台账 (复合主键: id + server_id，同名资产可分属不同服务器)
         CREATE TABLE IF NOT EXISTS assets (
-            id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
             type TEXT NOT NULL,
             name TEXT NOT NULL,
             status TEXT DEFAULT 'unknown',
@@ -547,7 +609,9 @@ async def _create_other_tables(db: aiosqlite.Connection):
             dependencies TEXT,
             is_manual INTEGER DEFAULT 0,
             last_seen TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            server_id TEXT NOT NULL DEFAULT 'local',
+            PRIMARY KEY (id, server_id)
         );
         CREATE INDEX IF NOT EXISTS idx_assets_type
             ON assets(type);
