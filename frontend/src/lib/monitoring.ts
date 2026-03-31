@@ -118,13 +118,14 @@ export function normalizeMetricsSnapshot(value: unknown): MetricsData | null {
   const hasGpu = Boolean(gpu.available) || utilization > 0 || memoryTotal > 0 || gpuProcesses.length > 0
 
   // CPU: support flat format (record.cpu_percent) from agent fast metrics
-  const cpuPercent = toNumber(cpu.overall_percent || record.cpu_percent)
+  // Use ?? (not ||) so that a legitimate 0 value is preserved instead of falling through
+  const cpuPercent = toNumber(cpu.overall_percent ?? record.cpu_percent)
 
   // Memory: support flat format (record.memory_percent/memory_total/memory_used)
-  const memTotal = toNumber(ram.total || record.memory_total)
-  const memUsed = toNumber(ram.used || record.memory_used)
-  const memAvail = toNumber(ram.available || (memTotal > 0 ? memTotal - memUsed : 0))
-  const memPercent = toNumber(ram.percent || record.memory_percent)
+  const memTotal = toNumber(ram.total ?? record.memory_total)
+  const memUsed = toNumber(ram.used ?? record.memory_used)
+  const memAvail = toNumber(ram.available ?? (memTotal > 0 ? memTotal - memUsed : 0))
+  const memPercent = toNumber(ram.percent ?? record.memory_percent)
 
   return {
     cpu: {
@@ -147,8 +148,10 @@ export function normalizeMetricsSnapshot(value: unknown): MetricsData | null {
     disk: {
       partitions: ensureArray<Record<string, unknown>>(diskItems).map((item) => ({
         mountpoint: toString(item.mountpoint, '/'),
-        total: toNumber(item.total),
-        used: toNumber(item.used),
+        // Fast metrics only provide mountpoint + percent; keep total/used as undefined
+        // so the UI can distinguish "unknown" from "0 bytes"
+        total: item.total != null ? toNumber(item.total) : undefined,
+        used: item.used != null ? toNumber(item.used) : undefined,
         percent: toNumber(item.percent),
       })),
     },

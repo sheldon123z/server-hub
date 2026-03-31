@@ -17,7 +17,7 @@ export interface MetricsData {
   cpu: { overall_percent: number; count: number; per_cpu?: number[]; model?: string }
   memory: { total: number; used: number; available: number; percent: number }
   swap: { total: number; used: number; percent: number }
-  disk: { partitions: Array<{ mountpoint: string; total: number; used: number; percent: number }> }
+  disk: { partitions: Array<{ mountpoint: string; total?: number; used?: number; percent: number }> }
   network: { bytes_sent: number; bytes_recv: number }
   load: { '1min': number; '5min': number; '15min': number }
   gpu?: { name: string; utilization: number; memory_used: number; memory_total: number; temperature: number; processes?: GpuProcess[] }
