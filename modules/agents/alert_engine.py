@@ -130,15 +130,15 @@ async def _should_alert(rule_id: str, cooldown_minutes: int) -> bool:
     return row[0] == 0
 
 
-async def fire_alert(rule: dict, severity: str, value: float):
+async def fire_alert(rule: dict, severity: str, value: float, server_id: str = "local"):
     """触发告警：先写入历史（确保 cooldown 生效），再异步发送通知"""
     db = await get_db()
     message = f"[{severity.upper()}] {rule['name']}: 当前值 {value} (阈值: {rule.get(f'{severity}_threshold', 'N/A')})"
 
     # 先写入数据库（确保下次评估时 cooldown 能查到这条记录）
     await db.execute(
-        "INSERT INTO alert_history (rule_id, severity, current_value, message, notified) VALUES (?, ?, ?, ?, 0)",
-        (rule["id"], severity, value, message),
+        "INSERT INTO alert_history (rule_id, severity, current_value, message, notified, server_id) VALUES (?, ?, ?, ?, 0, ?)",
+        (rule["id"], severity, value, message, server_id),
     )
     await db.commit()
     logger.warning("告警触发: %s", message)
@@ -161,12 +161,13 @@ async def fire_alert(rule: dict, severity: str, value: float):
             logger.error("告警通知发送失败: %s", e)
 
 
-async def evaluate_rules(metrics: dict) -> list[dict]:
+async def evaluate_rules(metrics: dict, server_id: str = "local") -> list[dict]:
     """
     用指标快照评估所有启用的告警规则。
 
     参数:
         metrics: 扁平化的指标字典，如 {"memory_percent": 87.5, "gpu_temperature": 75}
+        server_id: 产生指标的服务器 ID
 
     返回:
         触发的告警列表
@@ -215,7 +216,7 @@ async def evaluate_rules(metrics: dict) -> list[dict]:
             severity = "warning"
 
         if severity and await _should_alert(rule["id"], rule["cooldown_minutes"]):
-            await fire_alert(rule, severity, value)
+            await fire_alert(rule, severity, value, server_id=server_id)
             fired.append({"rule_id": rule["id"], "name": rule["name"], "severity": severity, "value": value})
 
     return fired
@@ -314,7 +315,7 @@ _deviation_counts: dict[str, int] = {}
 _CONSECUTIVE_THRESHOLD = 3  # 连续 3 次偏离才告警
 
 
-async def check_baseline_deviation(snapshot: dict):
+async def check_baseline_deviation(snapshot: dict, server_id: str = "local"):
     """
     检查当前采集快照中的指标是否偏离基线。
     由 scheduler.py 每 60s 调用一次。连续 N 次偏离触发告警。
@@ -370,7 +371,7 @@ async def check_baseline_deviation(snapshot: dict):
                     "notify": bool(notify),
                     "warning_threshold": f"μ±{multiplier}σ",
                 }
-                await fire_alert(rule, "warning", current)
+                await fire_alert(rule, "warning", current, server_id=server_id)
                 logger.warning(
                     f"基线偏离告警: {name} 当前={current:.1f}, 基线={mean:.1f}±{stddev:.1f}, {direction}, 连续{_deviation_counts[metric_key]}次"
                 )

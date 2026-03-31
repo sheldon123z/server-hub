@@ -100,8 +100,9 @@ export function useWebSocket(serverFilter?: string): UseWebSocketReturn {
       try {
         const msg: WsMessage = JSON.parse(event.data)
         // Skip messages for other servers when a filter is active
+        // '*' means wildcard (fleet page subscribes to all servers) — never filter
         const msgServerId = msg.server_id ?? 'local'
-        if (serverFilter && msgServerId !== serverFilter) {
+        if (serverFilter && serverFilter !== '*' && msgServerId !== serverFilter) {
           return
         }
         if (msg.type === 'metrics' || msg.type === 'metrics_full') {
