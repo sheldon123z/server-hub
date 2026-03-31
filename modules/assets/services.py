@@ -234,12 +234,11 @@ async def _upsert_asset(
     *,
     server_id: str = "local",
 ):
-    """插入或更新资产（不覆盖手动录入的资产）"""
-    # assets.id 是 PRIMARY KEY，不同服务器可能有同名资产 (如 service:nginx)
-    # 对非 local 服务器，id 加 server_id 前缀保证全局唯一
-    unique_id = f"{server_id}:{aid}" if server_id != "local" else aid
+    """插入或更新资产（不覆盖手动录入的资产）
 
-    existing = await db.execute("SELECT is_manual FROM assets WHERE id = ? AND server_id = ?", (unique_id, server_id))
+    唯一性由复合主键 (id, server_id) 保证，无需修改 id 本身。
+    """
+    existing = await db.execute("SELECT is_manual FROM assets WHERE id = ? AND server_id = ?", (aid, server_id))
     row = await existing.fetchone()
     deps_json = json.dumps(dependencies, ensure_ascii=False) if dependencies else None
 
@@ -247,19 +246,19 @@ async def _upsert_asset(
         if row[0]:  # is_manual=1, 只更新 last_seen 和 status
             await db.execute(
                 "UPDATE assets SET status = ?, last_seen = ? WHERE id = ? AND server_id = ?",
-                (status, last_seen, unique_id, server_id),
+                (status, last_seen, aid, server_id),
             )
         else:
             await db.execute(
                 "UPDATE assets SET status = ?, properties = ?, last_seen = ?, dependencies = COALESCE(?, dependencies) "
                 "WHERE id = ? AND server_id = ?",
-                (status, properties, last_seen, deps_json, unique_id, server_id),
+                (status, properties, last_seen, deps_json, aid, server_id),
             )
     else:
         await db.execute(
             "INSERT INTO assets (id, type, name, status, properties, dependencies, last_seen, server_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (unique_id, atype, name, status, properties, deps_json, last_seen, server_id),
+            (aid, atype, name, status, properties, deps_json, last_seen, server_id),
         )
 
 
