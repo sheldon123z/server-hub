@@ -306,21 +306,28 @@ async def api_push_agent_update(server_id: str, user=Depends(require_role("admin
     if not py_files:
         raise HTTPException(status_code=500, detail="未找到 serverhub-agent/*.py 文件")
 
+    # 阶段 1: 暂存所有文件（写到 .pending，不替换原文件）
     results = []
-    for i, filename in enumerate(py_files):
+    for filename in py_files:
         filepath = os.path.join(agent_dir, filename)
         content = await asyncio.to_thread(_read_text_file, filepath)
 
-        is_last = i == len(py_files) - 1
         resp = await client._request(
             "POST",
             "/admin/update-file",
-            json_body={"filename": filename, "content": content, "restart": is_last},
+            json_body={"filename": filename, "content": content, "restart": False, "stage_only": True},
             timeout=30.0,
         )
         results.append({"file": filename, "ok": resp.get("ok", False), "detail": resp.get("error", "")})
 
         if not resp.get("ok"):
-            return {"ok": False, "message": f"推送 {filename} 失败: {resp.get('error')}", "results": results}
+            # 暂存失败，回滚已暂存的文件
+            await client._request("POST", "/admin/update-commit", json_body={"action": "rollback"}, timeout=15.0)
+            return {"ok": False, "message": f"暂存 {filename} 失败: {resp.get('error')}", "results": results}
+
+    # 阶段 2: 全部暂存成功后，原子提交并重启
+    commit_resp = await client._request("POST", "/admin/update-commit", json_body={"action": "commit"}, timeout=30.0)
+    if not commit_resp.get("ok"):
+        return {"ok": False, "message": f"提交失败: {commit_resp.get('error')}", "results": results}
 
     return {"ok": True, "message": f"已推送 {len(py_files)} 个文件并触发重启", "results": results}

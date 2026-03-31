@@ -140,13 +140,13 @@ async def _broadcast_remote_fast(ws_manager):
         db = await get_db()
         if "*" in subscribed_remote:
             rows = await (
-                await db.execute("SELECT * FROM servers WHERE is_local = 0 AND status != 'offline'")
+                await db.execute("SELECT * FROM servers WHERE is_local = 0 AND status IN ('online', 'degraded')")
             ).fetchall()
         else:
             placeholders = ",".join("?" * len(subscribed_remote))
             rows = await (
                 await db.execute(
-                    f"SELECT * FROM servers WHERE is_local = 0 AND status != 'offline' AND id IN ({placeholders})",  # noqa: S608
+                    f"SELECT * FROM servers WHERE is_local = 0 AND status IN ('online', 'degraded') AND id IN ({placeholders})",  # noqa: S608
                     tuple(subscribed_remote),
                 )
             ).fetchall()
@@ -228,7 +228,9 @@ async def _remote_collect_loop():
 async def _collect_remote_metrics():
     """从所有在线远程服务器采集指标并批量存储"""
     db = await get_db()
-    rows = await (await db.execute("SELECT * FROM servers WHERE is_local = 0 AND status != 'offline'")).fetchall()
+    rows = await (
+        await db.execute("SELECT * FROM servers WHERE is_local = 0 AND status IN ('online', 'degraded')")
+    ).fetchall()
 
     if not rows:
         return
