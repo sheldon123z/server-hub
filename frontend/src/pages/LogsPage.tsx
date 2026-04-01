@@ -186,15 +186,12 @@ export default function LogsPage() {
 
   const displayContent = rawContent ? filterLines(rawContent, levelFilter) : ''
 
-  // XSS 防护：先净化原始日志文本，再由受控代码添加高亮 span
-  // 这样保证只有 text-red/text-yellow 两个白名单 class 会被渲染
+  // XSS 防护：先由受控代码转义并添加高亮 span，再用 DOMPurify 白名单放行
+  // 这样只有一层转义，且 DOMPurify 保证最终 HTML 安全
   const sanitizedContent = displayContent
     ? displayContent
         .split('\n')
-        .map((line) => {
-          const clean = DOMPurify.sanitize(line, { ALLOWED_TAGS: [], ALLOW_DATA_ATTR: false })
-          return highlightLine(clean)
-        })
+        .map((line) => DOMPurify.sanitize(highlightLine(line), { ALLOWED_TAGS: ['span'], ALLOWED_ATTR: ['class'] }))
         .join('\n')
     : ''
 
