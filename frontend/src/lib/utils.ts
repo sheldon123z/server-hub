@@ -64,3 +64,13 @@ export function ensureRecord(value: unknown): Record<string, unknown> {
   }
   return {}
 }
+
+/** 从未知错误中提取用户友好的错误消息，兼容 Axios error 格式 */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === 'object' && err !== null) {
+    const e = err as { response?: { data?: { detail?: string } }; message?: string }
+    if (e.response?.data?.detail) return e.response.data.detail
+    if (e.message) return e.message
+  }
+  return fallback
+}

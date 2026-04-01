@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, ensureArray, ensureRecord, formatDate, toNumber, toString } from '@/lib/utils'
+import { cn, ensureArray, ensureRecord, formatDate, toNumber, toString, getErrorMessage } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 /* ---------- types ---------- */
@@ -203,7 +203,7 @@ function StatSummaryCards() {
   const users = ensureArray<UserStat>(stats)
   const sessions = ensureArray<Session>(sessData)
   const quotaArr = ensureArray<QuotaStatus>(quotaStatus)
-  const overQuota = quotaArr.filter((q: any) => q.over_quota).length
+  const overQuota = quotaArr.filter((q: QuotaStatus) => q.over_quota).length
   const totalMem = users.reduce((sum, u) => sum + (u.mem_gb ?? 0), 0)
 
   return (
@@ -428,7 +428,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   const createMut = useMutation({
     mutationFn: () => client.post('/api/users/create', { ...form, groups: form.groups }, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => { toast.success('用户已创建'); qc.invalidateQueries({ queryKey: ['all-users', serverId] }); onDone() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || '创建失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '创建失败')),
   })
 
   return (
@@ -503,7 +503,7 @@ function UserManagementTab() {
   const deleteMut = useMutation({
     mutationFn: (username: string) => client.delete(`/api/users/${username}`, { params: { server_id: serverId } }).then((r) => r.data),
     onSuccess: () => { toast.success('用户已删除'); qc.invalidateQueries({ queryKey: ['all-users', serverId] }) },
-    onError: (e: any) => toast.error(e.response?.data?.detail || '删除失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '删除失败')),
   })
 
   const updateMut = useMutation({

@@ -9,7 +9,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, getErrorMessage } from '@/lib/utils'
 
 /* ─── 类型定义 ─── */
 
@@ -173,7 +173,7 @@ export default function ServersPage() {
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       setSelectedId(null)
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? '删除失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '删除失败')),
   })
 
   const testMut = useMutation({
@@ -182,7 +182,7 @@ export default function ServersPage() {
       setTestResult(res.data)
       toast.success('测试完成')
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? '测试失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '测试失败')),
   })
 
   /* ── 过滤 ── */
@@ -430,8 +430,8 @@ function ServerDetail({
         onTokenRotated(res.data.token)
         toast.success('Token 已轮换')
       }
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? 'Token 轮换失败')
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Token 轮换失败'))
     } finally {
       setRotating(false)
     }
@@ -442,8 +442,8 @@ function ServerDetail({
       await client.post(`/api/servers/groups/${groupId}/members`, { server_id: server.id })
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       toast.success('已添加到分组')
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? '操作失败')
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, '操作失败'))
     }
   }
 
@@ -452,8 +452,8 @@ function ServerDetail({
       await client.delete(`/api/servers/groups/${groupId}/members/${server.id}`)
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       toast.success('已从分组移除')
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? '操作失败')
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, '操作失败'))
     }
   }
 
@@ -655,8 +655,8 @@ function ServerFormModal({
     setSubmitting(true)
     try {
       await onSubmit(form)
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail ?? '操作失败')
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, '操作失败'))
     } finally {
       setSubmitting(false)
     }

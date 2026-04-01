@@ -9,7 +9,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, getErrorMessage } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
 
 /* ─── 类型定义 ─── */
@@ -142,7 +142,7 @@ function PlaybooksTab() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => client.delete(`/api/playbooks/${id}`),
     onSuccess: () => { toast.success('已删除'); queryClient.invalidateQueries({ queryKey: ['playbooks'] }) },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? '删除失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '删除失败')),
   })
 
   const selected = playbooks.find((p) => p.id === selectedId) ?? null
@@ -347,7 +347,7 @@ function RunPlaybookModal({ playbook, onClose }: { playbook: Playbook; onClose: 
       queryClient.invalidateQueries({ queryKey: ['playbook-executions'] })
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? '执行失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '执行失败')),
   })
 
   return (
@@ -461,7 +461,7 @@ function CreatePlaybookModal({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['playbooks'] })
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? '创建失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '创建失败')),
   })
 
   return (
@@ -670,7 +670,7 @@ function CredentialsTab() {
       setShowAdd(false)
       setAddForm({ name: '', value: '', description: '', credential_type: 'generic' })
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? '保存失败'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err, '保存失败')),
   })
 
   const deleteMut = useMutation({

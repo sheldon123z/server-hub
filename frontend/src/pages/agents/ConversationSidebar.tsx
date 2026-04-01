@@ -11,9 +11,20 @@ async function fetchConversations(): Promise<Conversation[]> {
   return ensureArray<Conversation>(data)
 }
 
+interface ServerMessage {
+  id: string
+  role: string
+  content: string | Array<{ type: string; text: string }>
+  tool?: string
+  args?: Record<string, unknown>
+  approval_id?: string
+  description?: string
+  actions?: unknown[]
+}
+
 async function fetchConversation(
   id: string,
-): Promise<{ conversation_id: string; messages: ChatMessage[]; todos: never[] }> {
+): Promise<{ conversation_id: string; messages: ServerMessage[]; todos: never[] }> {
   const { data } = await client.get(`/api/agents/conversations/${id}`)
   return data
 }
@@ -62,11 +73,11 @@ export function ConversationSidebar() {
       const detail = await fetchConversation(id)
 
       // Map server messages to ChatMessage with stable _ids
-      const msgs: ChatMessage[] = ensureArray<any>(detail.messages).map(
-        (m: any, i: number) => ({
+      const msgs: ChatMessage[] = ensureArray<ServerMessage>(detail.messages).map(
+        (m: ServerMessage, i: number) => ({
           _id: 'h_' + i,
           role: (m.role as ChatMessage['role']) ?? 'assistant',
-          content: typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b: any) => b?.text ?? '').join('') : String(m.content ?? ''),
+          content: typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b) => b?.text ?? '').join('') : String(m.content ?? ''),
           tool: m.tool as string | undefined,
           args: m.args as Record<string, unknown> | undefined,
           approval_id: m.approval_id as string | undefined,

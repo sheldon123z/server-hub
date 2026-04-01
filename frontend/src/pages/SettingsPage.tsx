@@ -12,7 +12,12 @@ interface ProviderInfo {
   display_name: string
   base_url: string
   has_key: boolean
-  models: string[]
+  models: string[] | ModelInfo[]
+}
+
+interface ModelInfo {
+  id: string
+  name: string
 }
 
 interface AgentSettings {
@@ -48,7 +53,7 @@ function ModelSelect({
           .filter((p) => p.has_key && p.models.length > 0)
           .map((p) => (
             <optgroup key={p.id} label={p.display_name}>
-              {p.models.map((m: any) => {
+              {p.models.map((m) => {
                 const modelId = typeof m === 'string' ? m : m.id ?? m.name ?? ''
                 const modelName = typeof m === 'string' ? m : m.name ?? m.id ?? ''
                 return (
@@ -166,7 +171,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
       {expanded && provider.models.length > 0 && (
         <div className="mt-2 pt-2 border-t border-border">
           <div className="flex flex-wrap gap-1.5">
-            {provider.models.map((m: any, i: number) => {
+            {provider.models.map((m, i) => {
               const name = typeof m === 'string' ? m : m.name ?? m.id ?? ''
               return (
                 <span key={`${name}-${i}`} className="px-2 py-0.5 rounded text-xs bg-bg text-text2 font-mono">

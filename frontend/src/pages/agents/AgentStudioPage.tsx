@@ -4,6 +4,36 @@ import client from '@/api/client'
 import type { AgentRun, InstalledSkill } from '@/types/agent'
 import { ensureArray, ensureRecord } from '@/lib/utils'
 
+interface DiscoveredSkill {
+  path: string
+  installed: boolean
+  manifest: {
+    name: string
+    summary: string
+  }
+}
+
+interface ToolInfo {
+  name: string
+}
+
+interface SubagentItem {
+  name: string
+  description: string
+  system_prompt: string
+  tools: string[]
+  model: string | null
+  model_purpose: string
+  middleware_profile: string
+}
+
+interface ApprovalItem {
+  id: string
+  description: string
+  tool_name: string
+  created_at: string
+}
+
 type StudioTab = 'overview' | 'skills' | 'install' | 'subagents' | 'memory' | 'runs'
 
 const TABS: Array<{ id: StudioTab; label: string }> = [
@@ -379,7 +409,7 @@ function InstallTab() {
       <section className="rounded-xl border border-border bg-bg p-4">
         <div className="text-sm font-medium text-text">发现结果</div>
         <div className="mt-3 space-y-2">
-          {(discovered ?? []).map((item: any) => (
+          {(discovered ?? []).map((item) => (
             <div key={item.path} className="rounded-lg border border-border bg-bg2 p-3">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -433,14 +463,14 @@ function SubagentsTab() {
   })
 
   const availableToolNames = useMemo(
-    () => (data?.available_tools ?? []).map((t: any) => String(t?.name ?? '')).filter(Boolean),
+    () => (data?.available_tools ?? []).map((t: ToolInfo) => String(t?.name ?? '')).filter(Boolean),
     [data?.available_tools],
   )
 
   const saveMut = useMutation({
     mutationFn: async () => {
       const currentSubagents = data?.subagents ?? []
-      const updated = (currentSubagents as any[]).map((s: any) =>
+      const updated = currentSubagents.map((s: SubagentItem) =>
         s.name === editingSubagent ? { ...s, ...editForm } : s,
       )
       await client.put('/api/agents/admin/subagents', { subagents: updated })
@@ -451,12 +481,12 @@ function SubagentsTab() {
     },
   })
 
-  const startEditing = (item: any) => {
+  const startEditing = (item: SubagentItem) => {
     const name = String(item.name ?? '')
     setEditForm({
       description: String(item.description ?? ''),
       system_prompt: String(item.system_prompt ?? ''),
-      tools: Array.isArray(item.tools) ? (item.tools as string[]) : [],
+      tools: Array.isArray(item.tools) ? item.tools : [],
       model: item.model ? String(item.model) : null,
       model_purpose: String(item.model_purpose ?? 'chat'),
       middleware_profile: String(item.middleware_profile ?? 'light'),
@@ -466,9 +496,9 @@ function SubagentsTab() {
 
   return (
     <div className="space-y-3">
-      {(data?.subagents ?? []).map((item: any) => {
+      {(data?.subagents ?? []).map((item: SubagentItem) => {
         const name = String(item.name ?? '')
-        const tools = Array.isArray(item.tools) ? (item.tools as string[]) : []
+        const tools = Array.isArray(item.tools) ? item.tools : []
         const mwProfile = String(item.middleware_profile ?? '')
         const mwStyle = MW_PROFILE_STYLES[mwProfile]
         const isEditing = editingSubagent === name
@@ -742,7 +772,7 @@ function RunsAndApprovalsTab() {
       <section className="rounded-xl border border-border bg-bg p-4">
         <div className="text-sm font-medium text-text">待处理审批</div>
         <div className="mt-3 space-y-2">
-          {approvals.map((item: any) => (
+          {approvals.map((item: ApprovalItem) => (
             <div key={item.id} className="rounded-lg border border-border bg-bg2 p-3">
               <div className="text-sm text-text">{item.description || item.tool_name}</div>
               <div className="mt-1 text-xs text-text3">{item.created_at}</div>

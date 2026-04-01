@@ -17,6 +17,11 @@ interface ChatMessage {
   approvalResolved?: boolean
 }
 
+interface ContentBlock {
+  type: string
+  text?: string
+}
+
 interface PanelPosition {
   x: number
   y: number
@@ -284,7 +289,7 @@ function ChatWidgetInner() {
           if (type === 'message' || type === 'message.final') {
             const rawContent = obj?.content ?? obj?.text ?? ''
             const content = typeof rawContent === 'string' ? rawContent
-              : Array.isArray(rawContent) ? rawContent.map((b: any) => typeof b === 'string' ? b : b?.text ?? '').join('')
+              : Array.isArray(rawContent) ? rawContent.map((b: ContentBlock | string) => typeof b === 'string' ? b : b?.text ?? '').join('')
               : String(rawContent)
             if (!content) return
             assistantContent += content
