@@ -106,12 +106,12 @@ function OverviewTab() {
   })
   const { data: approvals } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data)),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
   })
 
   const enabledSkills = useMemo(() => skills?.filter((item) => item.enabled).length ?? 0, [skills])
   const failedRuns = useMemo(() => runs?.filter((item) => item.status === 'error').length ?? 0, [runs])
-  const waitingApproval = Array.isArray(approvals) ? approvals.length : 0
+  const waitingApproval = approvals.length
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -315,7 +315,8 @@ function InstallTab() {
 
   const { data: discovered } = useQuery({
     queryKey: ['skill-discovery'],
-    queryFn: () => client.post('/api/agents/admin/skills/discover').then((r) => ensureArray(ensureRecord(r.data).items)),
+    queryFn: () =>
+      client.post('/api/agents/admin/skills/discover').then((r) => ensureArray(ensureRecord(r.data).items) as DiscoveredSkill[]),
   })
 
   const saveSourcesMut = useMutation({
@@ -458,7 +459,11 @@ function SubagentsTab() {
     queryFn: () =>
       client.get('/api/agents/admin/subagents').then((r) => {
         const raw = ensureRecord(r.data)
-        return { ...raw, subagents: ensureArray(raw.subagents), available_tools: ensureArray(raw.available_tools) }
+        return {
+          ...raw,
+          subagents: ensureArray(raw.subagents) as SubagentItem[],
+          available_tools: ensureArray(raw.available_tools) as ToolInfo[],
+        }
       }),
   })
 
@@ -746,7 +751,7 @@ function RunsAndApprovalsTab() {
   })
   const { data: approvals = [] } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data)),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
   })
 
   return (
