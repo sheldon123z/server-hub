@@ -17,23 +17,25 @@
 
 | 模块 | 前缀 | 端点数 | 说明 |
 |------|------|--------|------|
-| [API 总览](api/README.md) | — | 118 | 认证方式、权限模型、端点汇总 |
+| [API 总览](api/README.md) | — | 190+ | 认证方式、权限模型、端点汇总 |
 | [认证](api/auth.md) | `/api/auth` | 5 | 登录、登出、刷新令牌 |
 | [仪表盘](api/dashboard.md) | `/api/dashboard` | 1 | 系统概览数据 |
-| [系统监控](api/monitoring.md) | `/api/monitoring` | 3 | 实时指标、历史数据、GPU |
-| [Docker 管理](api/docker.md) | `/api/docker` | 9 | 容器、镜像、Compose 堆栈 |
-| [服务管理](api/services.md) | `/api/services` | 4 | Systemd 服务状态和控制 |
-| [用户管理](api/users.md) | `/api/users` | 6 | Linux 用户资源、配额 |
-| [定时任务](api/cron.md) | `/api/cron` | 3 | Crontab 查看和编辑 |
+| [系统监控](api/monitoring.md) | `/api/monitoring` | 11 | 实时指标、历史数据、GPU |
+| [Docker 管理](api/docker.md) | `/api/docker` | 15 | 容器、镜像、Compose 堆栈 |
+| [服务管理](api/services.md) | `/api/services` | 9 | Systemd 服务状态和控制 |
+| [用户管理](api/users.md) | `/api/users` | 19 | Linux 用户资源、配额 |
+| [定时任务](api/cron.md) | `/api/cron` | 10 | Crontab 查看和编辑 |
 | [网络管理](api/network.md) | `/api/network` | 4 | 端口、连接、防火墙 |
-| [代理管理](api/proxy.md) | `/api/proxy` | 7 | Clash 代理节点切换 |
+| [代理管理](api/proxy.md) | `/api/proxy` | 16 | Clash 代理节点切换 |
 | [日志查看](api/logs.md) | `/api/logs` | 4 | 日志文件搜索和实时流 |
-| [通知管理](api/notifications.md) | `/api/notifications` | 3 | Telegram 消息发送 |
+| [通知管理](api/notifications.md) | `/api/notifications` | 9 | Telegram 消息发送 |
 | [审计日志](api/audit.md) | `/api/audit` | 1 | 操作审计记录查询 |
 | [面板用户](api/panel-users.md) | `/api/panel-users` | 4 | Web 面板用户 CRUD |
 | [系统设置](api/settings.md) | `/api/settings` | 1 | 非敏感配置查看 |
 | [资产台账](api/assets.md) | `/api/assets` | 7 | 资产发现、拓扑图 |
-| [AI Agent](api/agents.md) | `/api/agents` | 35+WS | 对话、巡检、告警、诊断、案例库 |
+| [服务器管理](api/servers.md) | `/api/servers` | 17 | 服务器注册、分组、心跳 |
+| [运维剧本](api/playbooks.md) | `/api/playbooks` | 5 | 剧本 CRUD、执行、凭证 |
+| [AI Agent](api/agents.md) | `/api/agents` | 59+WS | 对话、巡检、告警、诊断、案例库、Skill |
 
 ## AI 智能体专题
 
@@ -43,8 +45,8 @@ ServerHub 的核心特色 — 基于 Deep Agents 框架的 AI 运维智能体。
 |------|------|
 | [智能体总览](agents/README.md) | 架构、Middleware 栈、组件清单 |
 | [Agent Studio 与 Skill Runtime](agents/studio-runtime.md) | run 生命周期、Skill 安装、Studio 入口 |
-| [Agent 工具](agents/tools.md) | 22 个自定义工具 + 9 个内置工具 |
-| [子智能体](agents/subagents.md) | 4 个 SubAgent 定义和使用 |
+| [Agent 工具](agents/tools.md) | 49 个自定义工具 + 9 个内置工具 |
+| [子智能体](agents/subagents.md) | 6 个 SubAgent 定义和使用 |
 | [巡检系统](agents/patrol.md) | 8 个任务、11 个模板、调度机制 |
 | [告警系统](agents/alerts.md) | 阈值规则 + 基线偏离检测 |
 | [故障诊断](agents/diagnosis.md) | 自动诊断工作流 |
@@ -56,7 +58,7 @@ ServerHub 的核心特色 — 基于 Deep Agents 框架的 AI 运维智能体。
 
 | 文档 | 说明 |
 |------|------|
-| [数据库 Schema](database.md) | 14 个表定义、3 个数据库文件 |
+| [数据库 Schema](database.md) | 37 张表 + 1 FTS5 虚拟表、3 个数据库文件 |
 | [前端架构](frontend.md) | React 18 + TypeScript + Tailwind CSS |
 
 ---

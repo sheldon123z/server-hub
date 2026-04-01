@@ -160,7 +160,7 @@ JWT Cookie 认证 + RBAC。`access_token` 存于 HttpOnly Cookie。角色: `admi
 - `data/agent-checkpoints.db` — LangGraph checkpoint（agent 会话状态持久化）
 - `data/agent-store.db` — AsyncSqliteStore（agent 结构化长期存储）
 
-表结构在 `database.py:init_tables()` 中定义，启动时自动创建 (30 张表)。关键新增: `servers`, `server_groups`, `server_group_members`; metrics 表含 `server_id` 列 (DEFAULT 'local')。
+表结构在 `database.py:init_tables()` 中定义，启动时自动创建 (37 张表 + 1 个 FTS5 虚拟表，共 38 个)。关键新增: `servers`, `server_groups`, `server_group_members`; metrics 表含 `server_id` 列 (DEFAULT 'local')。
 
 **注意**: `_ensure_column` 添加新列后才能创建依赖该列的索引（不能放在同一个 `executescript` 中）。
 
