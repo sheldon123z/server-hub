@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from '@/components/Layout'
-import ErrorBoundary from '@/components/ErrorBoundary'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -51,9 +50,7 @@ export default function App() {
         <Route
           element={
             <ProtectedRoute>
-              <ErrorBoundary>
-                <Layout />
-              </ErrorBoundary>
+              <Layout />
             </ProtectedRoute>
           }
         >

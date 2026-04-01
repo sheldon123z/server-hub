@@ -2,6 +2,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import ChatWidget from './ChatWidget'
+import ErrorBoundary from './ErrorBoundary'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': '仪表盘',
@@ -35,7 +36,9 @@ export default function Layout() {
       <div className="flex-1 ml-sidebar flex flex-col">
         <TopBar title={title} />
         <main className="flex-1 p-5 overflow-auto">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       <ChatWidget />
