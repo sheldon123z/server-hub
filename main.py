@@ -198,7 +198,7 @@ async def _init_monitoring():
 async def _init_rag():
     from modules.agents.rag import build_full_index
 
-    stats = await asyncio.get_event_loop().run_in_executor(None, build_full_index)
+    stats = await asyncio.to_thread(build_full_index)
     logger.info("[ServerHub] RAG 知识库已构建: %s", stats)
 
 
