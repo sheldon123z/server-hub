@@ -531,8 +531,8 @@ function ServerDetail({
             />
             <TestResultCard
               label="SSH (可选)"
-              ok={testResult.ssh_ok === true ? true : null}
-              detail={testResult.ssh_ok ? '密钥认证正常' : '未配置密钥（不影响功能）'}
+              ok={testResult.ssh_ok === true ? true : (testResult.ssh_error ? false : null)}
+              detail={testResult.ssh_ok ? '密钥认证正常' : (testResult.ssh_error || '未配置密钥（不影响功能）')}
             />
             <TestResultCard
               label="Agent"

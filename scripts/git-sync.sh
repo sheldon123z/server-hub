@@ -23,10 +23,15 @@ if [ "$LOCAL" != "$REMOTE" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] SYNCED: +${BEHIND} commits" >> logs/git-sync.log
 
         # 如果有前端变更，自动重建
-        CHANGED=$(git diff --name-only "$LOCAL".."$REMOTE" -- frontend/src/ 2>/dev/null | wc -l)
+        CHANGED=$(git diff --name-only "$LOCAL".."$REMOTE" -- \
+            'frontend/src/' 'frontend/package.json' 'frontend/package-lock.json' \
+            'frontend/vite.config.ts' 'frontend/tsconfig*.json' \
+            'frontend/index.html' 'frontend/public/' 2>/dev/null | wc -l)
         if [ "$CHANGED" -gt 0 ]; then
-            cd frontend && npm run build 2>/dev/null && cd ..
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] REBUILT: frontend ($CHANGED files changed)" >> logs/git-sync.log
+            # 用子 shell 确保构建失败时仍回到原目录
+            (cd frontend && npm run build) >> logs/git-sync.log 2>&1 && \
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] REBUILT: frontend ($CHANGED files changed)" >> logs/git-sync.log || \
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] BUILD-FAILED: frontend ($CHANGED files)" >> logs/git-sync.log
         fi
 
         # 如果有后端变更，重启服务
