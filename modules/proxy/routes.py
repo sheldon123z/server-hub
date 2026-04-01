@@ -189,7 +189,10 @@ async def api_switch_node(req: SwitchNodeReq, user=Depends(require_role("admin")
 
 @router.post("/switch-config")
 async def api_switch_config(req: SwitchConfigReq, user=Depends(require_role("admin"))):
-    result = await switch_config(req.profile_key or req.config)
+    config_key = req.profile_key or req.config
+    if not config_key:
+        raise HTTPException(status_code=422, detail="config or profile_key required")
+    result = await switch_config(config_key)
     if result.get("unsupported"):
         return JSONResponse(result, status_code=400)
     status_code = 200 if result["ok"] else 500

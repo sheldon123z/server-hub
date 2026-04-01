@@ -104,7 +104,7 @@ function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: ()
         />
         <input
           type="text"
-          placeholder="订阅 URL (可选)"
+          placeholder="订阅 URL (必填)"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           className="bg-bg2 border border-border rounded-md px-3 py-2 text-sm text-text focus:border-accent focus:outline-none"
@@ -113,7 +113,7 @@ function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: ()
       <div className="flex gap-2">
         <button
           className="bg-accent text-[#0f172a] px-3 py-1.5 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          disabled={!name || addMut.isPending}
+          disabled={!name || !url || addMut.isPending}
           onClick={() => addMut.mutate()}
         >
           添加
