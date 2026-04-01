@@ -322,13 +322,13 @@ function ProcessList({ username }: { username: string }) {
       ) : (
         <div className="overflow-y-auto max-h-[320px]">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-bg2">
+          <thead>
             <tr className="border-b border-border">
-              <th className="text-text3 text-left py-1">PID</th>
-              <th className="text-text3 text-left py-1">命令</th>
-              <th className="text-text3 text-left py-1">CPU%</th>
-              <th className="text-text3 text-left py-1">MEM%</th>
-              <th className="text-text3 text-left py-1">操作</th>
+              <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-bg2">PID</th>
+              <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-bg2">命令</th>
+              <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-bg2">CPU%</th>
+              <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-bg2">MEM%</th>
+              <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-bg2">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -394,13 +394,13 @@ function ResourceMonitorTab() {
         ) : (
           <div className="overflow-y-auto max-h-[320px]">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-card">
+            <thead>
               <tr className="border-b border-border">
-                <th className="text-text3 text-left text-xs uppercase py-2">用户</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">TTY</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">来源</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">登录时间</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">空闲</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">用户</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">TTY</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">来源</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">登录时间</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">空闲</th>
               </tr>
             </thead>
             <tbody>
@@ -470,11 +470,11 @@ function LoginHistory({ username }: { username: string }) {
   return (
     <div className="overflow-y-auto max-h-[240px] mt-2">
     <table className="w-full text-xs">
-      <thead className="sticky top-0 bg-card">
+      <thead>
         <tr className="border-b border-border">
-          <th className="text-text3 text-left py-1">日期</th>
-          <th className="text-text3 text-left py-1">IP</th>
-          <th className="text-text3 text-left py-1">时长</th>
+          <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-card">日期</th>
+          <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-card">IP</th>
+          <th className="text-text3 text-left py-1 sticky top-0 z-10 bg-card">时长</th>
         </tr>
       </thead>
       <tbody>
@@ -556,14 +556,14 @@ function UserManagementTab() {
         </div>
         <div className="overflow-y-auto max-h-[480px]">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-card">
+          <thead>
             <tr className="border-b border-border">
-              <th className="text-text3 text-left text-xs uppercase py-2">用户名</th>
-              <th className="text-text3 text-left text-xs uppercase py-2">UID</th>
-              <th className="text-text3 text-left text-xs uppercase py-2">用户组</th>
-              <th className="text-text3 text-left text-xs uppercase py-2">Shell</th>
-              <th className="text-text3 text-left text-xs uppercase py-2">最后登录</th>
-              <th className="text-text3 text-left text-xs uppercase py-2">操作</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">用户名</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">UID</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">用户组</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">Shell</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">最后登录</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -799,13 +799,13 @@ function QuotaManagementTab() {
         ) : (
           <div className="overflow-y-auto max-h-[320px]">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-card">
+            <thead>
               <tr className="border-b border-border">
-                <th className="text-text3 text-left text-xs uppercase py-2">时间</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">用户</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">类型</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">详情</th>
-                <th className="text-text3 text-left text-xs uppercase py-2">处置</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">时间</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">用户</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">类型</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">详情</th>
+                <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">处置</th>
               </tr>
             </thead>
             <tbody>
