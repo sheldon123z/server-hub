@@ -91,32 +91,30 @@ async def save_fault_case(
         solution: 解决方案
         tags: 标签（逗号分隔，如 "内存,超限,kill"）
     """
-    import aiosqlite
-
-    from config import settings
+    from database import get_db
 
     try:
-        async with aiosqlite.connect(settings.db_path) as db:
-            cursor = await db.execute(
-                "INSERT INTO fault_cases (title, category, symptoms, root_cause, solution, tags, source) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'manual') RETURNING id",
-                (title, category, symptoms, root_cause, solution, tags),
-            )
-            row = await cursor.fetchone()
-            case_id = row[0] if row else None
+        db = await get_db()
+        cursor = await db.execute(
+            "INSERT INTO fault_cases (title, category, symptoms, root_cause, solution, tags, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'manual') RETURNING id",
+            (title, category, symptoms, root_cause, solution, tags),
+        )
+        row = await cursor.fetchone()
+        case_id = row[0] if row else None
 
-            if case_id:
-                try:
-                    await db.execute(
-                        "INSERT INTO fault_cases_fts(rowid, title, symptoms, root_cause, solution, tags) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
-                        (case_id, title, symptoms, root_cause, solution, tags),
-                    )
-                except Exception as e:
-                    logger.debug("FTS5 索引写入失败: %s", e)
+        if case_id:
+            try:
+                await db.execute(
+                    "INSERT INTO fault_cases_fts(rowid, title, symptoms, root_cause, solution, tags) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (case_id, title, symptoms, root_cause, solution, tags),
+                )
+            except Exception as e:
+                logger.debug("FTS5 索引写入失败: %s", e)
 
-            await db.commit()
-            return f"案例已保存 (ID: {case_id})。标题: {title}"
+        await db.commit()
+        return f"案例已保存 (ID: {case_id})。标题: {title}"
     except Exception as e:
         return f"保存案例失败: {e}"
 
@@ -128,29 +126,27 @@ async def search_fault_cases(query: str) -> str:
     Args:
         query: 搜索关键词（如 "内存超限"、"Docker 重启"、"SSH 连接"）
     """
-    import aiosqlite
-
-    from config import settings
+    from database import get_db
 
     try:
-        async with aiosqlite.connect(settings.db_path) as db:
-            try:
-                cursor = await db.execute(
-                    "SELECT fc.id, fc.title, fc.category, fc.symptoms, fc.root_cause, fc.solution, fc.tags "
-                    "FROM fault_cases_fts fts JOIN fault_cases fc ON fts.rowid = fc.id "
-                    "WHERE fault_cases_fts MATCH ? ORDER BY rank LIMIT 5",
-                    (query,),
-                )
-            except Exception:
-                like = f"%{query}%"
-                cursor = await db.execute(
-                    "SELECT id, title, category, symptoms, root_cause, solution, tags "
-                    "FROM fault_cases WHERE title LIKE ? OR symptoms LIKE ? OR root_cause LIKE ? OR tags LIKE ? "
-                    "ORDER BY created_at DESC LIMIT 5",
-                    (like, like, like, like),
-                )
+        db = await get_db()
+        try:
+            cursor = await db.execute(
+                "SELECT fc.id, fc.title, fc.category, fc.symptoms, fc.root_cause, fc.solution, fc.tags "
+                "FROM fault_cases_fts fts JOIN fault_cases fc ON fts.rowid = fc.id "
+                "WHERE fault_cases_fts MATCH ? ORDER BY rank LIMIT 5",
+                (query,),
+            )
+        except Exception:
+            like = f"%{query}%"
+            cursor = await db.execute(
+                "SELECT id, title, category, symptoms, root_cause, solution, tags "
+                "FROM fault_cases WHERE title LIKE ? OR symptoms LIKE ? OR root_cause LIKE ? OR tags LIKE ? "
+                "ORDER BY created_at DESC LIMIT 5",
+                (like, like, like, like),
+            )
 
-            rows = await cursor.fetchall()
+        rows = await cursor.fetchall()
 
         if not rows:
             return f'没有找到与 "{query}" 相关的故障案例。'

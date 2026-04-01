@@ -4,8 +4,6 @@ import json
 
 from langchain_core.tools import tool
 
-from config import settings
-
 
 @tool
 async def get_system_overview(server_id: str = "local") -> str:
@@ -88,18 +86,17 @@ async def analyze_resource_trend(metric: str = "all", hours: int = 168) -> str:
     """
     from datetime import datetime, timedelta
 
-    import aiosqlite
+    from database import get_db
 
-    db_path = settings.db_path
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
 
     try:
-        async with aiosqlite.connect(db_path) as db:
-            cursor = await db.execute(
-                "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' AND timestamp > ? ORDER BY timestamp",
-                (cutoff,),
-            )
-            rows = await cursor.fetchall()
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT timestamp, value_json FROM metrics WHERE metric_type = 'all' AND timestamp > ? ORDER BY timestamp",
+            (cutoff,),
+        )
+        rows = await cursor.fetchall()
     except Exception as e:
         return f"查询历史数据失败: {e}"
 
