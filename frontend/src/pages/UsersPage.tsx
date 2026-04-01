@@ -320,8 +320,9 @@ function ProcessList({ username }: { username: string }) {
       {procs.length === 0 ? (
         <p className="text-text3 text-xs">无运行进程</p>
       ) : (
+        <div className="overflow-y-auto max-h-[320px]">
         <table className="w-full text-xs">
-          <thead>
+          <thead className="sticky top-0 bg-bg2">
             <tr className="border-b border-border">
               <th className="text-text3 text-left py-1">PID</th>
               <th className="text-text3 text-left py-1">命令</th>
@@ -344,6 +345,7 @@ function ProcessList({ username }: { username: string }) {
             ))}
           </tbody>
         </table>
+      </div>
       )}
     </div>
   )
@@ -390,8 +392,9 @@ function ResourceMonitorTab() {
         {sessions.length === 0 ? (
           <p className="text-text3 text-sm">无活跃会话</p>
         ) : (
+          <div className="overflow-y-auto max-h-[320px]">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-card">
               <tr className="border-b border-border">
                 <th className="text-text3 text-left text-xs uppercase py-2">用户</th>
                 <th className="text-text3 text-left text-xs uppercase py-2">TTY</th>
@@ -412,6 +415,7 @@ function ResourceMonitorTab() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>
@@ -464,8 +468,9 @@ function LoginHistory({ username }: { username: string }) {
   if (entries.length === 0) return <p className="text-text3 text-xs">无登录记录</p>
 
   return (
-    <table className="w-full text-xs mt-2">
-      <thead>
+    <div className="overflow-y-auto max-h-[240px] mt-2">
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 bg-card">
         <tr className="border-b border-border">
           <th className="text-text3 text-left py-1">日期</th>
           <th className="text-text3 text-left py-1">IP</th>
@@ -482,6 +487,7 @@ function LoginHistory({ username }: { username: string }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -545,8 +551,12 @@ function UserManagementTab() {
       )}
 
       <div className="bg-card border border-border rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-text3">{users.length} 个用户</span>
+        </div>
+        <div className="overflow-y-auto max-h-[480px]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 bg-card">
             <tr className="border-b border-border">
               <th className="text-text3 text-left text-xs uppercase py-2">用户名</th>
               <th className="text-text3 text-left text-xs uppercase py-2">UID</th>
@@ -602,6 +612,7 @@ function UserManagementTab() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Login history panel */}
@@ -786,8 +797,9 @@ function QuotaManagementTab() {
         {violationList.length === 0 ? (
           <p className="text-text3 text-sm">暂无记录</p>
         ) : (
+          <div className="overflow-y-auto max-h-[320px]">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-card">
               <tr className="border-b border-border">
                 <th className="text-text3 text-left text-xs uppercase py-2">时间</th>
                 <th className="text-text3 text-left text-xs uppercase py-2">用户</th>
@@ -812,6 +824,7 @@ function QuotaManagementTab() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>
