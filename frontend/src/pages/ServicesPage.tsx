@@ -6,33 +6,54 @@ import { cn, ensureArray, ensureRecord, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
 interface Service {
+  /** systemd 服务名称 */
   name: string
+  /** 前端显示名称 */
   display_name: string
+  /** 服务描述 */
   description: string
+  /** 活跃状态 (active / inactive / activating 等) */
   active_state: string
+  /** 子状态 (running / dead / waiting 等) */
   sub_state: string
+  /** 是否已设置开机自启 */
   enabled: boolean
 }
 
+/** 服务资源使用数据 (CPU/内存/IO) */
 interface ServiceResources {
+  /** CPU 使用百分比 */
   cpu_percent?: string
+  /** 当前内存占用 */
   memory_current?: string
+  /** 内存峰值 */
   memory_peak?: string
+  /** 任务数 */
   tasks?: string
+  /** IO 读取量 */
   io_read?: string
+  /** IO 写入量 */
   io_write?: string
   [key: string]: string | undefined
 }
 
+/** 服务依赖关系 */
 interface ServiceDependencies {
+  /** 该服务依赖的服务列表 */
   requires: string[]
+  /** 依赖该服务的服务列表 */
   required_by: string[]
+  /** Wants 依赖列表 */
   wants: string[]
+  /** WantedBy 依赖列表 */
   wanted_by: string[]
 }
 
+/** 服务日志条目 */
 interface ServiceJournal {
+  /** 服务名称 */
   name: string
+  /** 日志内容 */
   journal: string
 }
 
@@ -49,6 +70,7 @@ function stateBadge(state: string) {
   return 'bg-yellow/20 text-yellow'
 }
 
+/** 将 API 返回的各类服务数据统一规范化为 Service[] */
 function normalizeServices(value: unknown): Service[] {
   const record = ensureRecord(value)
   const items = Array.isArray(value) ? value : record.services
@@ -69,6 +91,7 @@ function normalizeServices(value: unknown): Service[] {
   })
 }
 
+/** 将 API 返回的依赖数据统一规范化为 ServiceDependencies */
 function normalizeDependencies(value: unknown): ServiceDependencies {
   const record = ensureRecord(value)
   const dependencies = ensureArray<string>(record.dependencies)
@@ -80,6 +103,11 @@ function normalizeDependencies(value: unknown): ServiceDependencies {
   }
 }
 
+/**
+ * 服务管理页面
+ * 提供 systemd 服务的启停/重启/重载、enable/disable、资源监控、依赖关系查看和日志浏览
+ * API 前缀: /api/services
+ */
 export default function ServicesPage() {
   const queryClient = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)

@@ -6,42 +6,71 @@ import { cn } from '@/lib/utils'
 
 /* ── Types ────────────────────────────────────────── */
 
+/** 代理实例监听端口 */
 interface ListenPort {
+  /** 端口标签 */
   label: string
+  /** 端口号 */
   port: number
+  /** 端口描述 */
   description: string
 }
 
+/** 代理配置文件 (含订阅信息) */
 interface ConfigProfile {
+  /** 配置唯一标识 */
   key: string
+  /** 配置显示名称 */
   name: string
+  /** 是否有订阅 URL */
   has_subscription: boolean
+  /** 订阅 URL 预览文本 */
   subscription_url_preview: string
 }
 
+/** 代理实例 (如 Clash/SingBox) */
 interface ProxyInstance {
+  /** 实例唯一 ID */
   id: string
+  /** 实例名称 */
   name: string
+  /** 代理类型 (clash/singbox/etc) */
   type: string
+  /** 插件名称 */
   plugin: string
+  /** 是否运行中 */
   running: boolean
+  /** 是否启用 */
   enabled: boolean
+  /** 状态文本 */
   status_text: string
+  /** 监听端口列表 */
   listen_ports: ListenPort[]
+  /** 当前使用的配置 key */
   current_config: string
+  /** 当前配置显示名称 */
   current_config_name: string
+  /** 可用配置文件列表 */
   config_profiles: ConfigProfile[]
+  /** 支持的操作列表 */
   supported_actions: string[]
+  /** 版本号 */
   version: string
 }
 
+/** 代理组 (Clash ProxyGroup) */
 interface ProxyGroup {
+  /** 组名 */
   name: string
+  /** 组类型 (Selector/URLTest/Fallback) */
   type: string
+  /** 当前选中的节点 */
   now: string
+  /** 组内所有节点列表 */
   all: string[]
 }
 
+/** 节点延迟测试结果，节点名 -> 延迟(ms) 或错误信息 */
 interface DelayResult {
   [node: string]: number | string
 }
@@ -70,6 +99,7 @@ function delayText(delay: number | string): string {
 
 /* ── Components ───────────────────────────────────── */
 
+/** 新增代理配置文件表单 (含订阅 URL) */
 function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
@@ -129,6 +159,7 @@ function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: ()
   )
 }
 
+/** Clash 代理扩展面板 — 代理组列表、节点切换、延迟测试 */
 function ClashExtension({ instanceId }: { instanceId: string }) {
   const queryClient = useQueryClient()
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null)
@@ -267,6 +298,11 @@ function ClashExtension({ instanceId }: { instanceId: string }) {
 
 /* ── Page ─────────────────────────────────────────── */
 
+/**
+ * 代理管理页面
+ * 提供代理实例列表、启停/重启、配置切换、订阅更新和 Clash 代理组管理
+ * API 前缀: /api/proxy
+ */
 export default function ProxyPage() {
   const queryClient = useQueryClient()
   const [selectedId, setSelectedId] = useState<string | null>(null)

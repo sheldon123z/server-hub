@@ -11,9 +11,11 @@ interface UserStat {
   name: string
   uid: number
   mem_gb: number
+  /** 内存使用百分比 */
   mem_percent: number
   proc_count: number
   cpu_percent: number
+  /** 所属用户组，可能是逗号分隔字符串或数组 */
   groups: string | string[]
   home_dir: string
 }
@@ -21,6 +23,7 @@ interface UserStat {
 interface UserInfo {
   name: string
   uid: number
+  /** 所属用户组，可能是逗号分隔字符串或数组 */
   groups: string | string[]
   home_dir: string
   shell: string
@@ -30,6 +33,7 @@ interface UserInfo {
 interface Session {
   user: string
   tty: string
+  /** 登录来源地址 */
   from: string
   login_at: string
   idle: string
@@ -50,6 +54,7 @@ interface LoginEntry {
 }
 
 interface QuotaEntry {
+  /** 配额标识：用户名、@组名 或 default */
   key: string
   mem_gb: number
   proc_limit: number
@@ -58,8 +63,11 @@ interface QuotaEntry {
 
 interface EnforcementConfig {
   enabled: boolean
+  /** 一级处置：超配额警告 */
   level1_warning: boolean
+  /** 二级处置：终止新进程 */
   level2_kill_new: boolean
+  /** 三级处置：终止全部进程 */
   level3_kill_all: boolean
   [k: string]: unknown
 }
@@ -67,6 +75,7 @@ interface EnforcementConfig {
 interface Violation {
   id: number
   username: string
+  /** 违规类型：warning / critical */
   type: string
   mem_gb: number
   quota_mem_gb: number
@@ -179,6 +188,14 @@ function normalizeViolations(value: unknown): Violation[] {
   }))
 }
 
+/**
+ * 统计概览卡片组
+ * 显示用户总数、活跃会话数、超配额用户数、总内存占用四项关键指标
+ */
+/**
+ * 统计摘要卡片行
+ * 显示用户总数、活跃会话数、超配额用户数和总内存占用
+ */
 function StatSummaryCards() {
   const serverId = useServerStore((s) => s.selectedServerId)
 
@@ -230,6 +247,13 @@ function StatSummaryCards() {
 
 /* ---------- tab bar ---------- */
 
+/**
+ * 标签栏组件，用于在「资源监控」「用户管理」「配额管理」三个标签之间切换
+ */
+/**
+ * 通用标签栏组件
+ * 渲染一组水平标签按钮，高亮当前激活项
+ */
 function TabBar({ tabs, active, onChange }: { tabs: { key: string; label: string }[]; active: string; onChange: (k: string) => void }) {
   return (
     <div className="flex gap-4 border-b border-border mb-4">
@@ -251,6 +275,13 @@ function TabBar({ tabs, active, onChange }: { tabs: { key: string; label: string
 
 /* ---------- Resource Monitor tab ---------- */
 
+/**
+ * 使用率进度条，颜色随百分比变化（绿→黄→红）
+ */
+/**
+ * 资源使用率进度条
+ * 根据百分比自动着色：<60% 绿色, 60-85% 黄色, >=85% 红色
+ */
 function UsageBar({ percent, label }: { percent: number; label: string }) {
   const color = percent >= 85 ? 'bg-red' : percent >= 60 ? 'bg-yellow' : 'bg-green'
   return (
@@ -266,6 +297,14 @@ function UsageBar({ percent, label }: { percent: number; label: string }) {
   )
 }
 
+/**
+ * 用户资源卡片，展示内存使用条、进程数和 CPU 占用
+ * 点击展开可查看该用户的进程列表
+ */
+/**
+ * 用户资源卡片
+ * 展示单个用户的内存使用进度条、进程数和 CPU 占用，点击可展开进程列表
+ */
 function UserCard({ user, onExpand }: { user: UserStat; onExpand: () => void }) {
   return (
     <div className="bg-card border border-border rounded-lg p-4 cursor-pointer hover:border-accent/50 transition-colors" onClick={onExpand}>
@@ -282,6 +321,17 @@ function UserCard({ user, onExpand }: { user: UserStat; onExpand: () => void }) 
   )
 }
 
+/**
+ * 指定用户的进程列表，支持单个 kill 和全部终止
+ */
+/**
+ * 用户进程列表
+ * 展示指定用户的运行中进程，支持 kill 单个进程或终止全部
+ */
+/**
+ * 用户进程列表
+ * 展示指定用户的运行进程，支持单个 kill 和全部终止操作
+ */
 function ProcessList({ username }: { username: string }) {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -351,6 +401,19 @@ function ProcessList({ username }: { username: string }) {
   )
 }
 
+/**
+ * 「资源监控」标签页
+ * 展示所有用户的资源使用卡片网格和活跃会话表
+ */
+/**
+ * 资源监控标签页
+ * 展示所有用户的资源使用卡片和活跃会话列表
+ */
+/**
+ * 资源监控标签页
+ * 以卡片网格展示所有用户的资源使用情况，点击展开查看进程列表；
+ * 底部表格展示当前活跃会话
+ */
 function ResourceMonitorTab() {
   const [expandedUser, setExpandedUser] = useState<string | null>(null)
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -424,6 +487,18 @@ function ResourceMonitorTab() {
 
 /* ---------- User Management tab ---------- */
 
+/**
+ * 创建用户表单，填写用户名、密码、用户组和 Shell
+ * 创建成功后自动刷新用户列表
+ */
+/**
+ * 创建用户表单
+ * 填写用户名、密码、用户组和 Shell 后创建 Linux 用户
+ */
+/**
+ * 创建用户表单
+ * 提供用户名、密码、用户组和 Shell 输入项
+ */
 function CreateUserForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -454,6 +529,21 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   )
 }
 
+/**
+ * 指定用户的最近 30 条登录历史记录
+ */
+/**
+ * 用户登录历史面板
+ * 展示指定用户最近 30 条登录记录（日期、IP、时长）
+ */
+/**
+ * 登录历史面板
+ * 展示指定用户最近 30 条登录记录
+ */
+/**
+ * 用户登录历史面板
+ * 展示指定用户最近 30 条登录记录（日期、IP、时长）
+ */
 function LoginHistory({ username }: { username: string }) {
   const serverId = useServerStore((s) => s.selectedServerId)
 
@@ -491,6 +581,22 @@ function LoginHistory({ username }: { username: string }) {
   )
 }
 
+/**
+ * 「用户管理」标签页
+ * 提供用户增删改、密码重置、用户组/Shell 编辑以及登录历史查看
+ */
+/**
+ * 用户管理标签页
+ * 提供用户列表（增删改）、密码重置、登录历史查看等操作
+ */
+/**
+ * 用户管理标签页
+ * 提供用户 CRUD、密码重置、用户组/Shell 编辑和登录历史查看功能
+ */
+/**
+ * 用户管理标签页
+ * 提供用户 CRUD（创建/编辑/删除/重置密码）和登录历史查看
+ */
 function UserManagementTab() {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -628,6 +734,22 @@ function UserManagementTab() {
 
 /* ---------- Quota Management tab ---------- */
 
+/**
+ * 「配额管理」标签页
+ * 管理用户/组配额规则、超配额自动处置策略开关、违规记录查看
+ */
+/**
+ * 配额管理标签页
+ * 管理资源配额规则、超配额自动处置策略开关、违规记录历史
+ */
+/**
+ * 配额管理标签页
+ * 管理用户/组配额规则、超配额处置策略开关和违规记录历史
+ */
+/**
+ * 配额管理标签页
+ * 管理资源配额规则（增删改）、超配额自动处置策略开关、违规记录查看
+ */
 function QuotaManagementTab() {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -833,6 +955,26 @@ function QuotaManagementTab() {
 
 /* ---------- main page ---------- */
 
+/**
+ * 用户管理页面
+ *
+ * 提供三大标签页：
+ * - 资源监控：实时展示各用户内存/CPU/进程占用和活跃会话
+ * - 用户管理：用户增删改、密码重置、登录历史
+ * - 配额管理：配额规则 CRUD、超配额处置策略、违规记录
+ */
+/**
+ * 用户管理页面
+ * 提供资源监控、用户管理（增删改）、配额管理三大标签页
+ */
+/**
+ * 用户管理页面
+ *
+ * 提供三大标签页：
+ * - 资源监控：卡片式用户资源概览 + 活跃会话表
+ * - 用户管理：用户增删改、密码重置、登录历史查询
+ * - 配额管理：配额规则 CRUD、超配额处置策略、违规记录
+ */
 export default function UsersPage() {
   const [activeTab, setActiveTab] = useState('monitor')
 

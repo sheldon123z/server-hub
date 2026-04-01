@@ -36,6 +36,12 @@ import {
   HostDetail,
 } from './details'
 
+/**
+ * 系统仪表盘主页面
+ *
+ * 通过 WebSocket 实时展示服务器指标（CPU/内存/磁盘/GPU/网络等），
+ * 支持点击卡片展开详情面板，包含概览图表、告警列表和进程表。
+ */
 export default function DashboardPage() {
   const serverId = useServerStore((s) => s.selectedServerId)
   const { metrics, history, connected, alerts } = useWebSocket(serverId)

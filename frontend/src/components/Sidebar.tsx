@@ -25,6 +25,11 @@ const FALLBACK_ITEMS: SidebarItem[] = [
   { name: 'panel_users', display_name: '面板用户', icon: 'user-cog', category: '系统', required_role: 'admin', order: 42 },
 ]
 
+/**
+ * 侧边栏导航组件
+ * 从 /api/sidebar 动态获取菜单项，按 category 分组渲染；
+ * API 不可用时 fallback 到静态菜单列表，并根据用户角色过滤条目
+ */
 export default function Sidebar() {
   const user = useAuthStore((s) => s.user)
 

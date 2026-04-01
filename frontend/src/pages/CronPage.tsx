@@ -8,28 +8,45 @@ import { useServerStore } from '@/stores/serverStore'
 
 /* ---------- types ---------- */
 
+/** 定时任务条目 */
 interface CronJob {
+  /** Cron 表达式（如 "每5分钟" 的标准格式） */
   schedule: string
+  /** 要执行的命令 */
   command: string
+  /** 是否启用 */
   enabled: boolean
+  /** 备注 */
   comment: string
+  /** 人类可读的调度描述 */
   description?: string
 }
 
+/** Cron 任务列表响应 */
 interface CronListResponse {
+  /** 任务列表 */
   jobs: CronJob[]
+  /** 所属用户 */
   user: string
 }
 
+/** Cron 表达式验证结果 */
 interface ValidateResult {
+  /** 表达式是否有效 */
   valid: boolean
+  /** 人类可读描述 (如 "每5分钟") */
   description: string
+  /** 未来 5 次执行时间 */
   next_runs: string[]
 }
 
+/** Cron 执行历史记录 */
 interface HistoryEntry {
+  /** 执行时间 */
   timestamp: string
+  /** 执行用户 */
   user: string
+  /** 执行的命令 */
   command: string
 }
 
@@ -46,6 +63,7 @@ const SCHEDULE_PRESETS = [
 
 /* ---------- sub-components ---------- */
 
+/** Cron 任务统计概览卡片 */
 function StatCards({ userJobs, rootJobs }: { userJobs: CronJob[]; rootJobs: CronJob[] }) {
   const userCount = userJobs.length
   const rootCount = rootJobs.length
@@ -71,6 +89,7 @@ function StatCards({ userJobs, rootJobs }: { userJobs: CronJob[]; rootJobs: Cron
   )
 }
 
+/** Cron 表达式预设选择下拉菜单 */
 function SchedulePresetsDropdown({ onSelect }: { onSelect: (v: string) => void }) {
   const [open, setOpen] = useState(false)
 
@@ -124,6 +143,7 @@ function TabBar({ tabs, active, onChange }: { tabs: { key: string; label: string
   )
 }
 
+/** Cron 表达式验证器，输入表达式后显示描述和未来执行时间 */
 function ExpressionValidator() {
   const [expr, setExpr] = useState('')
   const mutation = useMutation({
@@ -169,6 +189,7 @@ function ExpressionValidator() {
   )
 }
 
+/** 新增定时任务表单 */
 function AddJobForm({ cronUser }: { cronUser: string }) {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -221,6 +242,7 @@ function AddJobForm({ cronUser }: { cronUser: string }) {
   )
 }
 
+/** 定时任务列表表格，支持编辑调度/启禁/删除 */
 function JobTable({ cronUser }: { cronUser: string }) {
   const qc = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)
@@ -317,6 +339,7 @@ function JobTable({ cronUser }: { cronUser: string }) {
   )
 }
 
+/** Cron 任务执行历史记录 */
 function HistorySection({ cronUser }: { cronUser: string }) {
   const serverId = useServerStore((s) => s.selectedServerId)
 
@@ -354,6 +377,11 @@ function HistorySection({ cronUser }: { cronUser: string }) {
 
 /* ---------- main page ---------- */
 
+/**
+ * 定时任务管理页面
+ * 提供用户/Root 双视图、任务 CRUD、表达式验证、执行历史和备份功能
+ * API 前缀: /api/cron
+ */
 export default function CronPage() {
   const currentUser = useAuthStore((s) => s.user)
   const currentUsername = currentUser?.username ?? 'zhengxiaodong'

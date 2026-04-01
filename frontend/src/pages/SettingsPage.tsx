@@ -6,38 +6,58 @@ import { cn } from '@/lib/utils'
 
 /* ---------- types ---------- */
 
+/** LLM 供应商信息 */
 interface ProviderInfo {
+  /** 供应商标识 (如 openrouter, deepseek) */
   id: string
+  /** 供应商名称 */
   name: string
+  /** 界面显示名称 */
   display_name: string
+  /** API 基础 URL */
   base_url: string
+  /** 是否已配置 API Key */
   has_key: boolean
+  /** 可用模型列表 */
   models: string[] | ModelInfo[]
 }
 
+/** 模型信息 */
 interface ModelInfo {
+  /** 模型 ID */
   id: string
+  /** 模型显示名称 */
   name: string
 }
 
+/** Agent 全局设置 */
 interface AgentSettings {
+  /** 默认对话模型 ID (格式: provider:model) */
   default_model: string
+  /** 巡检模型 ID */
   patrol_model: string
+  /** Shell 命令超时时间 (秒) */
   shell_timeout: number
+  /** 已配置的供应商列表 */
   providers: ProviderInfo[]
 }
 
 /* ---------- sub-components ---------- */
 
+/** AI 模型选择器 — 按供应商分组显示可用模型下拉列表 */
 function ModelSelect({
   value,
   onChange,
   providers,
   label,
 }: {
+  /** 当前选中的模型 ID */
   value: string
+  /** 选中变更回调 */
   onChange: (v: string) => void
+  /** 供应商列表 */
   providers: ProviderInfo[]
+  /** 输入标签文本 */
   label: string
 }) {
   return (
@@ -69,6 +89,7 @@ function ModelSelect({
   )
 }
 
+/** 供应商配置卡片 — 显示状态、设置 API Key、刷新模型列表 */
 function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
@@ -188,6 +209,11 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
 
 /* ---------- main page ---------- */
 
+/**
+ * 系统设置页面
+ * 提供 AI 模型配置 (默认模型/巡检模型/Shell 超时) 和各供应商 API Key 管理
+ * API 前缀: /api/agents/settings
+ */
 export default function SettingsPage() {
   const qc = useQueryClient()
 

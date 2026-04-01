@@ -3,19 +3,31 @@ import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
 import { ensureArray, ensureRecord, formatDate, toNumber, toString } from '@/lib/utils'
 
+/** 审计日志条目 */
 interface AuditItem {
+  /** 操作时间 */
   timestamp: string
+  /** 操作用户 */
   username: string
+  /** HTTP 方法 (GET/POST/PUT/DELETE) */
   action: string
+  /** 请求路径 */
   target: string
+  /** 来源 IP */
   ip: string
+  /** 操作是否成功 */
   success: boolean
 }
 
+/** 审计日志分页响应 */
 interface AuditResponse {
+  /** 总记录数 */
   total: number
+  /** 当前页码 */
   page: number
+  /** 每页条数 */
   limit: number
+  /** 日志条目列表 */
   items: AuditItem[]
 }
 
@@ -26,6 +38,7 @@ const methodColor: Record<string, string> = {
   DELETE: 'text-red',
 }
 
+/** 将 API 返回的审计日志数据统一规范化 */
 function normalizeAuditResponse(value: unknown): AuditResponse {
   const record = ensureRecord(value)
   const items = ensureArray<Record<string, unknown>>(record.items).map((item) => ({
@@ -44,6 +57,11 @@ function normalizeAuditResponse(value: unknown): AuditResponse {
   }
 }
 
+/**
+ * 审计日志页面
+ * 分页展示所有 API 操作的审计记录，支持按用户名筛选
+ * API 前缀: /api/audit
+ */
 export default function AuditPage() {
   const [page, setPage] = useState(1)
   const [limit] = useState(50)

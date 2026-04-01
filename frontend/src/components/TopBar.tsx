@@ -6,7 +6,11 @@ import { authApi } from '@/api/auth'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
+/**
+ * 顶部栏组件属性
+ */
 interface TopBarProps {
+  /** 当前页面的中文标题，由 Layout 根据路由映射生成 */
   title: string
 }
 
@@ -17,6 +21,11 @@ const STATUS_DOT: Record<string, string> = {
   unknown: 'bg-text3',
 }
 
+/**
+ * 顶部栏组件
+ * 显示页面标题、多服务器切换下拉菜单、当前用户信息和退出按钮
+ * 切换服务器后自动 invalidate 所有 TanStack Query 缓存
+ */
 export default function TopBar({ title }: TopBarProps) {
   const { user, setUser } = useAuthStore()
   const { servers, selectedServerId, setSelectedServer, fetchServers } = useServerStore()

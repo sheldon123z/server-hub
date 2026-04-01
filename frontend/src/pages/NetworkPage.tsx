@@ -3,20 +3,31 @@ import client from '@/api/client'
 import { cn, ensureArray, ensureRecord, toNumber, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
+/** 端口监听信息 */
 interface PortInfo {
+  /** 端口号 */
   port: number
+  /** 协议 (tcp/udp) */
   protocol: string
+  /** 监听进程名 */
   process: string
+  /** 进程 PID */
   pid: number
+  /** 绑定地址 */
   address: string
 }
 
+/** 代理运行状态 */
 interface ProxyInfo {
+  /** 代理是否运行中 */
   running: boolean
+  /** 代理监听端口 */
   port?: number
+  /** HTTP 代理地址 */
   http_proxy?: string
 }
 
+/** 将 API 返回的端口列表数据统一规范化 */
 function normalizePorts(value: unknown): { ports: PortInfo[]; count: number } {
   const record = ensureRecord(value)
   const ports = ensureArray<Record<string, unknown>>(record.ports).map((item) => ({
@@ -32,6 +43,7 @@ function normalizePorts(value: unknown): { ports: PortInfo[]; count: number } {
   }
 }
 
+/** 将 API 返回的代理状态数据统一规范化 */
 function normalizeProxy(value: unknown): ProxyInfo {
   const record = ensureRecord(value)
   return {
@@ -63,6 +75,7 @@ function flattenConnectionStats(data: Record<string, unknown>): Record<string, n
   return result
 }
 
+/** 将 API 返回的连接统计数据统一规范化为扁平的 state->count 映射 */
 function normalizeConnections(value: unknown): Record<string, number> {
   const record = ensureRecord(value)
   return flattenConnectionStats(record)
@@ -79,6 +92,11 @@ function tcpStateColor(state: string): string {
   return 'text-text'
 }
 
+/**
+ * 网络状态页面
+ * 展示代理配置状态、TCP 连接统计 (按状态分类) 和监听端口列表
+ * API 前缀: /api/network
+ */
 export default function NetworkPage() {
   const serverId = useServerStore((s) => s.selectedServerId)
 

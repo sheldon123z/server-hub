@@ -5,11 +5,18 @@ import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/authStore'
 import { useQueryClient } from '@tanstack/react-query'
 
+/** 登录表单数据 */
 interface LoginFormData {
+  /** 用户名 */
   username: string
+  /** 密码 */
   password: string
 }
 
+/**
+ * 登录页面
+ * 提供 JWT Cookie 认证登录表单，含粒子网络动画背景和鼠标跟随光效
+ */
 export default function LoginPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()

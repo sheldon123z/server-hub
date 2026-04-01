@@ -5,15 +5,22 @@ import client from '@/api/client'
 import { cn, ensureArray, ensureRecord, formatBytes, formatDate, toNumber, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
 
+/** 日志文件信息 */
 interface LogFile {
+  /** 文件完整路径 */
   path: string
+  /** 文件名 */
   name: string
+  /** 文件大小 (字节) */
   size: number
+  /** 最后修改时间 */
   modified: string
 }
 
+/** 日志级别过滤器 */
 type LogLevel = 'ALL' | 'ERROR' | 'WARN' | 'INFO'
 
+/** 将 API 返回的日志文件列表统一规范化 */
 function normalizeLogFiles(value: unknown): { files: LogFile[]; count: number } {
   const record = ensureRecord(value)
   const files = ensureArray<Record<string, unknown>>(record.files).map((item) => ({
@@ -25,6 +32,7 @@ function normalizeLogFiles(value: unknown): { files: LogFile[]; count: number } 
   return { files, count: toNumber(record.count, files.length) }
 }
 
+/** 将 API 返回的日志搜索结果统一规范化 */
 function normalizeSearchResults(value: unknown): { path: string; pattern: string; results: string; count: number } {
   const record = ensureRecord(value)
   const results = ensureArray<Record<string, unknown>>(record.results)
@@ -72,6 +80,11 @@ function filterLines(content: string, level: LogLevel): string {
     .join('\n')
 }
 
+/**
+ * 日志查看页面
+ * 提供日志文件浏览、内容查看 (Tail)、关键字搜索、级别过滤和 SSE 实时追踪
+ * API 前缀: /api/logs
+ */
 export default function LogsPage() {
   const serverId = useServerStore((s) => s.selectedServerId)
   const [selectedFile, setSelectedFile] = useState<string>('')

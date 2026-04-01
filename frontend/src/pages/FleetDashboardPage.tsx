@@ -51,6 +51,7 @@ try {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+/** 舰队中单台服务器的实时指标 */
 interface FleetServer {
   id: string
   name: string
@@ -63,6 +64,7 @@ interface FleetServer {
   uptime: number
 }
 
+/** 舰队总览数据：服务器列表 + 聚合统计 */
 interface FleetSummary {
   servers: FleetServer[]
   aggregate: {
@@ -76,12 +78,14 @@ interface FleetSummary {
   }
 }
 
+/** 热力图数据：服务器 × 指标矩阵 */
 interface HeatmapData {
   servers: { id: string; name: string }[]
   metrics: string[]
   matrix: number[][]
 }
 
+/** 多服务器对比数据：按服务器 ID 分组的时序指标 */
 interface CompareData {
   server_ids: string[]
   metric: string
@@ -115,6 +119,10 @@ function statusDot(status: string) {
   )
 }
 
+/**
+ * 资源使用率进度条
+ * 根据百分比自动着色：<60% 绿色, 60-85% 黄色, >=85% 红色
+ */
 function ProgressBar({ value, label }: { value: number; label: string }) {
   const color =
     value >= 85 ? 'bg-red' : value >= 60 ? 'bg-yellow' : 'bg-green'
@@ -152,6 +160,20 @@ type TabKey = (typeof TABS)[number]['key']
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
+/**
+ * 舰队总览页面
+ *
+ * 三个标签页：
+ * - 概览网格：服务器卡片（点击跳转到对应仪表盘）
+ * - 对比图表：多服务器指标时间线对比
+ * - 热力图：服务器 × 指标矩阵可视化
+ */
+/**
+ * 舰队总览页面
+ *
+ * 三个标签页：概览网格（服务器卡片 + 聚合统计）、对比图表（多服务器时序对比）、热力图（服务器 × 指标矩阵）。
+ * 标签状态通过 URL searchParams 持久化。
+ */
 export default function FleetDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = (searchParams.get('tab') as TabKey) || 'overview'
@@ -205,6 +227,14 @@ export default function FleetDashboardPage() {
 // ---------------------------------------------------------------------------
 // Tab 1: Overview Grid
 // ---------------------------------------------------------------------------
+/**
+ * 概览网格标签页
+ * 展示聚合统计卡片和服务器资源卡片网格，点击卡片跳转到对应服务器仪表盘
+ */
+/**
+ * 概览网格标签页
+ * 展示舰队聚合统计卡片和每台服务器的资源使用卡片，点击服务器卡片跳转到对应仪表盘
+ */
 function OverviewGrid() {
   const navigate = useNavigate()
   const setSelectedServer = useServerStore((s) => s.setSelectedServer)
@@ -299,6 +329,10 @@ function OverviewGrid() {
   )
 }
 
+/**
+ * 聚合统计卡片
+ * 用于概览网格顶部的汇总指标展示
+ */
 function AggCard({
   label,
   value,
@@ -306,6 +340,7 @@ function AggCard({
 }: {
   label: string
   value: string | number
+  /** Tailwind 文字颜色类名，如 'text-green' */
   color?: string
 }) {
   return (
@@ -329,6 +364,14 @@ const PERIOD_OPTIONS = [
 
 const COMPARE_METRICS = ['cpu', 'memory', 'disk', 'gpu', 'swap', 'network']
 
+/**
+ * 对比图表标签页
+ * 左侧面板选择服务器、指标和时间范围，右侧展示多服务器指标时间线折线图
+ */
+/**
+ * 对比图表标签页
+ * 左侧面板选择服务器、指标和时间范围，右侧 ECharts 折线图对比多服务器时序数据
+ */
 function CompareChart() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [metric, setMetric] = useState('cpu')
@@ -514,6 +557,14 @@ function CompareChart() {
 // ---------------------------------------------------------------------------
 // Tab 3: Heatmap
 // ---------------------------------------------------------------------------
+/**
+ * 热力图标签页
+ * 以服务器 × 指标的矩阵形式展示所有服务器的资源使用率，颜色从绿到红
+ */
+/**
+ * 热力图标签页
+ * 以 ECharts heatmap 展示服务器 × 指标（CPU/内存/磁盘等）的使用率矩阵
+ */
 function HeatmapView() {
   const { data, isLoading } = useQuery<HeatmapData>({
     queryKey: ['fleet-heatmap'],

@@ -1,3 +1,10 @@
+/**
+ * 资产管理页面 — 网络资产发现与管理
+ *
+ * 功能: 资产自动发现 / 手动添加 / 分组管理 / 状态跟踪
+ * API 前缀: /api/assets
+ */
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import client from '@/api/client'
@@ -124,6 +131,7 @@ function TopologyDiagram({ serverId }: { serverId: string }) {
 
 /* ── Page ─────────────────────────────────────────── */
 
+/** 资产管理主页面，含资产列表、发现任务和分组管理 */
 export default function AssetsPage() {
   const queryClient = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)

@@ -6,29 +6,49 @@ import { cn, formatDate } from '@/lib/utils'
 
 /* ---------- types ---------- */
 
+/** 通知渠道类型定义 (如 Telegram/Email) */
 interface ChannelType {
+  /** 类型唯一标识 */
   id: string
+  /** 显示名称 */
   name: string
+  /** 类型描述 */
   description: string
+  /** 配置字段 schema */
   config_schema: Record<string, { type: string; label: string; required?: boolean; placeholder?: string }>
 }
 
+/** 通知渠道实例 */
 interface Channel {
+  /** 渠道 ID */
   id: number
+  /** 渠道名称 */
   name: string
+  /** 渠道类型标识 */
   channel_type: string
+  /** 渠道配置 (如 bot_token, chat_id) */
   config: Record<string, string>
+  /** 是否启用 */
   enabled: boolean
+  /** 创建时间 */
   created_at: string
 }
 
+/** 通知发送历史记录 */
 interface NotificationEntry {
+  /** 记录 ID */
   id: number
+  /** 通知标题 */
   title: string
+  /** 通知内容 */
   message: string
+  /** 级别: info/warning/critical */
   level: string
+  /** 发送渠道名称 */
   channel_name: string
+  /** 发送状态: success/failed */
   status: string
+  /** 创建时间 */
   created_at: string
 }
 
@@ -55,6 +75,7 @@ function TabBar({ tabs, active, onChange }: { tabs: { key: string; label: string
 
 /* ---------- Send Notification tab ---------- */
 
+/** 发送通知标签页 — 选择渠道并发送通知 */
 function SendNotificationTab() {
   const [form, setForm] = useState({ title: '', message: '', level: 'info', channels: [] as number[] })
 
@@ -149,6 +170,7 @@ function SendNotificationTab() {
 
 /* ---------- Channels tab ---------- */
 
+/** 根据渠道类型的 schema 动态渲染配置字段表单 */
 function ChannelConfigForm({
   schema,
   config,
@@ -178,6 +200,7 @@ function ChannelConfigForm({
   )
 }
 
+/** 通知渠道管理标签页 — 渠道 CRUD 和测试 */
 function ChannelsTab() {
   const qc = useQueryClient()
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -340,6 +363,7 @@ function ChannelsTab() {
 
 /* ---------- History tab ---------- */
 
+/** 通知发送历史标签页 — 展示最近 30 条发送记录 */
 function HistoryTab() {
   const { data, isLoading } = useQuery<{ notifications: NotificationEntry[]; count: number }>({
     queryKey: ['notification-history'],
@@ -395,6 +419,11 @@ function HistoryTab() {
 
 /* ---------- main page ---------- */
 
+/**
+ * 通知管理页面
+ * 提供通知发送、通知渠道管理 (CRUD/测试) 和发送历史查看三大标签页
+ * API 前缀: /api/notifications
+ */
 export default function NotificationsPage() {
   const [activeTab, setActiveTab] = useState('send')
 

@@ -1,7 +1,15 @@
 import { Component, type ReactNode } from 'react'
 
+/**
+ * 错误边界组件属性
+ */
 interface Props {
+  /** 被包裹的子组件树 */
   children: ReactNode
+  /**
+   * 渲染错误时的降级 UI；
+   * 传入 null 可完全隐藏出错区域，不传则展示默认错误面板（含重试按钮）
+   */
   fallback?: ReactNode
 }
 
@@ -10,6 +18,11 @@ interface State {
   error: Error | null
 }
 
+/**
+ * React 错误边界
+ * 捕获子组件树的渲染异常，展示降级 UI 或默认错误面板
+ * 通过 'fallback' in props 区分「未传 fallback」和「显式传入 null」
+ */
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, error: null }
 

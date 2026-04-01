@@ -7,6 +7,7 @@ import { useServerStore } from '@/stores/serverStore'
 
 /* ── Types ────────────────────────────────────────── */
 
+/** Docker 容器信息 */
 interface Container {
   name: string
   id: string
@@ -17,6 +18,7 @@ interface Container {
   created: string
 }
 
+/** Docker Compose 堆栈信息 */
 interface Stack {
   name: string
   display_name: string
@@ -25,6 +27,7 @@ interface Stack {
   running: number
 }
 
+/** Docker 镜像信息 */
 interface DockerImage {
   Repository: string
   Tag: string
@@ -125,6 +128,12 @@ function normalizeVolumes(value: unknown): Volume[] {
 
 /* ── Page ─────────────────────────────────────────── */
 
+/**
+ * Docker 管理页面
+ *
+ * 五个标签页：容器（启停/日志/exec）、堆栈（restart/pull/up/down）、
+ * 镜像（pull/删除）、网络、卷，以及资源清理功能。
+ */
 export default function DockerPage() {
   const queryClient = useQueryClient()
   const serverId = useServerStore((s) => s.selectedServerId)

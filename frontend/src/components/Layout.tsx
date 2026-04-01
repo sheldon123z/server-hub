@@ -26,6 +26,11 @@ const PAGE_TITLES: Record<string, string> = {
   '/monitoring': '系统监控',
 }
 
+/**
+ * 全局布局组件
+ * 三栏结构：固定侧边栏 + 顶部标题栏/内容区 + 浮动聊天组件
+ * 每个子区域均被 ErrorBoundary 包裹，单模块渲染错误不影响其他区域
+ */
 export default function Layout() {
   const location = useLocation()
   const title = PAGE_TITLES[location.pathname] || 'ServerHub'

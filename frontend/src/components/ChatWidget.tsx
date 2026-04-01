@@ -7,13 +7,22 @@ import client from '@/api/client'
 
 /* ── Types ────────────────────────────────────────── */
 
+/**
+ * 聊天消息结构
+ */
 interface ChatMessage {
   id: string
+  /** 消息角色：用户、助手、工具调用、工具结果、审批请求 */
   role: 'user' | 'assistant' | 'tool' | 'tool_result' | 'approval'
+  /** 消息文本内容 */
   content: string
+  /** 工具名称（仅 role=tool 时有值） */
   toolName?: string
+  /** SSE 去重用的服务端消息 ID */
   _serverId?: string
+  /** 审批请求 ID（仅 role=approval 时有值） */
   approvalId?: string
+  /** 审批是否已处理（批准或拒绝） */
   approvalResolved?: boolean
 }
 
@@ -69,7 +78,10 @@ function saveConversationId(id: string) {
   }
 }
 
-/** Extract page context from pathname */
+/**
+ * 从 URL 路径提取当前页面上下文标识，作为 page_context 传给 Agent 后端
+ * 例如 "/docker/containers" → "docker"
+ */
 function pageContextFromPath(pathname: string): string {
   const seg = pathname.replace(/^\//, '').split('/')[0]
   return seg || 'dashboard'
@@ -77,6 +89,14 @@ function pageContextFromPath(pathname: string): string {
 
 /* ── SSE Parser ───────────────────────────────────── */
 
+/**
+ * SSE 流式聊天请求
+ * 向 /api/agents/chat 发起 POST 请求，逐行解析 SSE 事件并回调
+ *
+ * @param body - 请求体，包含消息文本、会话 ID、安全模式和页面上下文
+ * @param onEvent - SSE 事件回调，参数为事件类型和解析后的 data（JSON 对象或原始字符串）
+ * @param signal - AbortSignal，用于中断请求
+ */
 async function streamChat(
   body: { message: string; conversation_id: string; safety_mode: string; page_context: string },
   onEvent: (type: string, data: unknown) => void,
@@ -128,6 +148,10 @@ async function streamChat(
 
 /* ── Component ────────────────────────────────────── */
 
+/**
+ * 浮动聊天组件入口
+ * 在 /agents 页面隐藏（该页面有独立的聊天 UI），其余页面显示右下角浮动气泡
+ */
 export default function ChatWidget() {
   const location = useLocation()
 

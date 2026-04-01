@@ -4,23 +4,35 @@ import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { ensureArray, ensureRecord, formatDate, toNumber, toString } from '@/lib/utils'
 
+/** 面板用户信息 */
 interface PanelUser {
+  /** 用户 ID */
   id: number
+  /** 用户名 */
   username: string
+  /** 显示名称 */
   display_name: string
+  /** 角色: admin / user */
   role: string
+  /** 创建时间 */
   created_at: string
 }
 
+/** 新建/编辑面板用户表单数据 */
 interface UserForm {
+  /** 用户名 */
   username: string
+  /** 密码 */
   password: string
+  /** 显示名称 */
   display_name: string
+  /** 角色 */
   role: string
 }
 
 const emptyForm: UserForm = { username: '', password: '', display_name: '', role: 'user' }
 
+/** 将 API 返回的面板用户数据统一规范化 */
 function normalizePanelUsersResponse(value: unknown): { users: PanelUser[]; count: number } {
   const record = ensureRecord(value)
   const users = ensureArray<Record<string, unknown>>(record.users).map((item) => ({
@@ -36,6 +48,11 @@ function normalizePanelUsersResponse(value: unknown): { users: PanelUser[]; coun
   }
 }
 
+/**
+ * 面板用户管理页面
+ * 提供 Web 面板用户的增删改查，支持 admin/user 角色分配
+ * API 前缀: /api/panel-users
+ */
 export default function PanelUsersPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
