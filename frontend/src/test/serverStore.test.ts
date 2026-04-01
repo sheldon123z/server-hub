@@ -1,10 +1,35 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useServerStore } from '@/stores/serverStore'
 
+// ---------------------------------------------------------------------------
+// Mock the API client at module level (outside describe) using vi.hoisted
+// ---------------------------------------------------------------------------
+const { mockGet } = vi.hoisted(() => ({
+  mockGet: vi.fn(),
+}))
+
+vi.mock('@/api/client', () => ({
+  default: { get: (...args: any[]) => mockGet(...args) },
+}))
+
+// ---------------------------------------------------------------------------
+// Helper: reset store state
+// ---------------------------------------------------------------------------
+function resetStore() {
+  useServerStore.setState({ servers: [], selectedServerId: 'local' })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 describe('useServerStore', () => {
-  // Reset store to initial state before each test
   beforeEach(() => {
-    useServerStore.setState({ servers: [], selectedServerId: 'local' })
+    resetStore()
+    mockGet.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   // ---------------------------------------------------------------------------
@@ -46,7 +71,7 @@ describe('useServerStore', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // fetchServers
+  // fetchServers — actually calls the real fetchServers()
   // ---------------------------------------------------------------------------
   describe('fetchServers', () => {
     it('sets servers from array response', async () => {
@@ -54,39 +79,35 @@ describe('useServerStore', () => {
         { id: 'local', name: 'Local', hostname: 'h1', status: 'online' },
         { id: 'remote', name: 'Remote', hostname: 'h2', status: 'offline' },
       ]
-
-      // Mock the axios client
-      const mockGet = vi.fn().mockResolvedValue({ data: mockData })
-      vi.mock('@/api/client', () => ({
-        default: { get: (...args: any[]) => mockGet(...args) },
-      }))
-
-      // We need to re-import to get the mocked version,
-      // but since Zustand store is already created, we test via setState directly
-      // to verify the data flow logic.
-      // Instead, test the parsing logic by setting state as the store would:
-      const data = Array.isArray(mockData) ? mockData : mockData?.servers ?? []
-      useServerStore.setState({ servers: data })
+      mockGet.mockResolvedValue({ data: mockData })
+      await useServerStore.getState().fetchServers()
+      expect(mockGet).toHaveBeenCalledWith('/api/servers')
       expect(useServerStore.getState().servers).toEqual(mockData)
       expect(useServerStore.getState().servers).toHaveLength(2)
     })
 
-    it('unwraps { servers: [...] } response shape', () => {
+    it('unwraps { servers: [...] } response shape', async () => {
       const apiResponse = {
         servers: [
           { id: 'local', name: 'Local', hostname: 'h1', status: 'online' },
         ],
       }
-      const data = Array.isArray(apiResponse) ? apiResponse : (apiResponse as any)?.servers ?? []
-      useServerStore.setState({ servers: data })
+      mockGet.mockResolvedValue({ data: apiResponse })
+      await useServerStore.getState().fetchServers()
       expect(useServerStore.getState().servers).toHaveLength(1)
       expect(useServerStore.getState().servers[0].id).toBe('local')
     })
 
-    it('handles empty response gracefully', () => {
-      const apiResponse = null
-      const data = Array.isArray(apiResponse) ? apiResponse : (apiResponse as any)?.servers ?? []
-      useServerStore.setState({ servers: data })
+    it('handles empty response gracefully', async () => {
+      mockGet.mockResolvedValue({ data: null })
+      await useServerStore.getState().fetchServers()
+      expect(useServerStore.getState().servers).toEqual([])
+    })
+
+    it('keeps state stable on API error', async () => {
+      mockGet.mockRejectedValue(new Error('Network error'))
+      // fetchServers catches internally — state should remain unchanged
+      await useServerStore.getState().fetchServers()
       expect(useServerStore.getState().servers).toEqual([])
     })
   })
