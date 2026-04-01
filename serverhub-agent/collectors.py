@@ -4,6 +4,7 @@ ServerHub Agent 指标采集器
 """
 
 import json
+import logging
 import os
 import platform
 import re
@@ -11,6 +12,8 @@ import subprocess
 import time
 
 import psutil
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +28,7 @@ def _read_os_pretty_name() -> str:
                 if line.startswith("PRETTY_NAME="):
                     return line.split("=", 1)[1].strip().strip('"')
     except Exception:
-        pass
+        logger.debug("读取 /etc/os-release 失败，使用 platform.system() 回退", exc_info=True)
     return platform.system()
 
 
@@ -37,7 +40,7 @@ def _read_cpu_model() -> str:
                 if line.lower().startswith("model name"):
                     return line.split(":", 1)[1].strip()
     except Exception:
-        pass
+        logger.debug("读取 /proc/cpuinfo 失败，使用 platform.processor() 回退", exc_info=True)
     return platform.processor() or "Unknown CPU"
 
 

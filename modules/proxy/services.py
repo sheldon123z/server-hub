@@ -419,6 +419,7 @@ async def _clash_api(
             return {}
         return response.json()
     except Exception:
+        logger.debug("获取首选更新配置 key 失败")
         return None
 
 

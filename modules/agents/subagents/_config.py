@@ -52,6 +52,7 @@ def _get_subagent_model(purpose: str):
 
         return get_chat_model(purpose)
     except Exception:
+        logger.debug("获取 SubAgent 模型失败 (purpose=%s)，将回退到主模型", purpose, exc_info=True)
         return None
 
 
@@ -62,6 +63,7 @@ def _get_subagent_model_by_id(model_id: str):
 
         return get_chat_model_by_id(model_id)
     except Exception:
+        logger.debug("通过 ID 获取模型失败 (model_id=%s)，将回退到主模型", model_id, exc_info=True)
         return None
 
 

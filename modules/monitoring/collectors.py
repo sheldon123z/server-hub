@@ -521,6 +521,7 @@ def collect_disk_io() -> dict:
     try:
         current = psutil.disk_io_counters(perdisk=True)
     except Exception:
+        logger.debug("disk_io_counters 采集失败", exc_info=True)
         return {"devices": {}}
 
     prev_c = _prev_disk_io["counters"]

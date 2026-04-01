@@ -323,7 +323,7 @@ async def execute_command(req: ExecuteRequest):
             proc.kill()
             await proc.communicate()
         except Exception:
-            pass
+            logger.debug("超时后 kill 进程失败", exc_info=True)
         raise HTTPException(status_code=408, detail=f"命令执行超时 ({req.timeout}s)")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"命令执行失败: {e!s}")
@@ -360,7 +360,7 @@ async def _safe_exec(
             proc.kill()
             await proc.communicate()
         except Exception:
-            pass
+            logger.debug("超时后 kill 进程失败: %s", label, exc_info=True)
         raise HTTPException(status_code=408, detail=f"{label} 执行超时 ({timeout}s)")
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=f"命令不存在: {e}")
