@@ -192,7 +192,10 @@ async def api_switch_config(req: SwitchConfigReq, user=Depends(require_role("adm
     config_key = req.profile_key or req.config
     if not config_key:
         raise HTTPException(status_code=422, detail="config or profile_key required")
-    result = await switch_config(config_key)
+    try:
+        result = await switch_config(config_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if result.get("unsupported"):
         return JSONResponse(result, status_code=400)
     status_code = 200 if result["ok"] else 500
