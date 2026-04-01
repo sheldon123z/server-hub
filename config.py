@@ -70,7 +70,7 @@ class Settings:
 
         # 监控
         self.metrics_interval_seconds: int = 60
-        self.metrics_retention_days: int = 90
+        self.metrics_retention_days: int = int(os.getenv("SERVERHUB_METRICS_RETENTION_DAYS", "30"))
         self.gpu_metrics_ttl_seconds: int = int(os.getenv("SERVERHUB_GPU_METRICS_TTL_SECONDS", "20"))
         self.top_processes_cache_seconds: int = int(os.getenv("SERVERHUB_TOP_PROCESSES_CACHE_SECONDS", "10"))
         self.metrics_cache_ttl_seconds: int = 30

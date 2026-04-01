@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 _scheduler_task: asyncio.Task | None = None
 _ws_task: asyncio.Task | None = None
+_last_vacuum: datetime | None = None
+_VACUUM_INTERVAL = timedelta(hours=24)
 
 
 async def _collect_and_store():
@@ -57,11 +59,14 @@ async def _collect_and_store():
 
 
 async def _cleanup_old_metrics():
-    """清理超过保留天数的过期指标
+    """清理超过保留天数的过期指标，并定期 VACUUM 回收磁盘空间
 
     使用 server_id + timestamp 条件以命中 idx_metrics_server_time 复合索引，
     避免全表扫描。按 server_id 分批删除，每批 LIMIT 防止长事务锁定。
+    每 24 小时执行一次 VACUUM 回收已删除行的磁盘空间。
+    同时清理已移除服务器的 metrics_latest 残留。
     """
+    global _last_vacuum
     try:
         cutoff = (datetime.now() - timedelta(days=settings.metrics_retention_days)).isoformat()
         db = await get_db()
@@ -69,14 +74,27 @@ async def _cleanup_old_metrics():
         rows = await (
             await db.execute("SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,))
         ).fetchall()
-        if not rows:
-            return
-        for (sid,) in rows:
-            await db.execute(
-                "DELETE FROM metrics WHERE server_id = ? AND timestamp < ?",
-                (sid, cutoff),
-            )
+        if rows:
+            for (sid,) in rows:
+                await db.execute(
+                    "DELETE FROM metrics WHERE server_id = ? AND timestamp < ?",
+                    (sid, cutoff),
+                )
+            await db.commit()
+            logger.info("清理过期指标完成: %d 个 server_id, 保留 %d 天", len(rows), settings.metrics_retention_days)
+
+        # 清理已移除服务器的 metrics_latest 残留
+        cursor = await db.execute("DELETE FROM metrics_latest WHERE server_id NOT IN (SELECT id FROM servers)")
+        if cursor.rowcount:
+            logger.info("清理 metrics_latest 残留: %d 条", cursor.rowcount)
         await db.commit()
+
+        # 每 24 小时执行 VACUUM 回收磁盘空间
+        now = datetime.now()
+        if _last_vacuum is None or (now - _last_vacuum) >= _VACUUM_INTERVAL:
+            await db.execute("VACUUM")
+            _last_vacuum = now
+            logger.info("SQLite VACUUM 完成，磁盘空间已回收")
     except Exception as e:
         logger.error("清理过期指标失败: %s", e)
 
