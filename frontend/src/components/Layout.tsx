@@ -32,11 +32,11 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen">
-      <ErrorBoundary>
+      <ErrorBoundary fallback={null}>
         <Sidebar />
       </ErrorBoundary>
       <div className="flex-1 ml-sidebar flex flex-col">
-        <ErrorBoundary>
+        <ErrorBoundary fallback={<div className="h-header border-b border-border" />}>
           <TopBar title={title} />
         </ErrorBoundary>
         <main className="flex-1 p-5 overflow-auto">
@@ -45,7 +45,7 @@ export default function Layout() {
           </ErrorBoundary>
         </main>
       </div>
-      <ErrorBoundary>
+      <ErrorBoundary fallback={null}>
         <ChatWidget />
       </ErrorBoundary>
     </div>

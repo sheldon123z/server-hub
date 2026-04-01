@@ -19,7 +19,12 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback ?? (
+      // 区分"未传 fallback"和"显式传入 null/false"
+      // ?? 运算符对 null 和 undefined 一视同仁，无法区分二者
+      if ('fallback' in this.props) {
+        return this.props.fallback as ReactNode
+      }
+      return (
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
           <div className="text-red text-lg font-semibold">页面渲染出错</div>
           <pre className="text-xs text-text3 bg-bg2 p-4 rounded-lg max-w-lg overflow-auto">

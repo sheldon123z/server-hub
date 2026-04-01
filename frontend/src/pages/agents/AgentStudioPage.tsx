@@ -111,7 +111,7 @@ function OverviewTab() {
 
   const enabledSkills = useMemo(() => skills?.filter((item) => item.enabled).length ?? 0, [skills])
   const failedRuns = useMemo(() => runs?.filter((item) => item.status === 'error').length ?? 0, [runs])
-  const waitingApproval = approvals.length
+  const waitingApproval = approvals?.length ?? 0
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
