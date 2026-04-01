@@ -34,6 +34,13 @@
           "switch_arg": "fastfly",
           "subscription_url": "https://sbbcc.gggay.cn/api/v1/client/gjP3Lu9jMNU5LmjH9X?token=48d8afb5f402f2860705de309869f1a0",
           "preferred_after_update": true
+        },
+        {
+          "key": "cloudupup",
+          "name": "CloudUpUp",
+          "file": "/opt/clash/serverhub-profiles/cloudupup.yaml",
+          "switch_arg": "cloudupup",
+          "subscription_url": "https://up01.cloudupup07.com/link/p968NouzwdZ068Sn?clash=1"
         }
       ],
       "commands": {

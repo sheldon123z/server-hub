@@ -711,6 +711,36 @@ async def run_proxy_instance_action(instance_id: str, action: str) -> dict[str, 
     if action == "update_subscription":
         return await update_subscription(instance_id)
 
+    if action == "test":
+        # 测试连接：检查服务状态和 Clash API 可用性
+        capabilities = instance.get("capabilities") or {}
+        if capabilities.get("delay_test") and instance.get("plugin") == "clash":
+            # Clash 实例：检查 API 是否响应
+            try:
+                data = await _clash_api(instance, "GET", "/configs")
+                if data is not None:
+                    return {"ok": True, "msg": "Clash API 正常响应，连接正常"}
+            except Exception as exc:
+                logger.debug(f"Clash API test failed: {exc}")
+            return {"ok": False, "msg": "Clash API 无响应，请检查服务状态"}
+        else:
+            # 非 Clash 实例：检查 systemd 服务状态
+            service_name = str(instance.get("service_name", "")).strip()
+            if service_name:
+                try:
+                    returncode, output = await _run(
+                        ["sudo", "systemctl", "is-active", service_name],
+                        timeout=10,
+                    )
+                    is_active = returncode == 0 and "active" in output
+                    return {
+                        "ok": is_active,
+                        "msg": f"服务{'运行正常' if is_active else '未运行'}",
+                    }
+                except Exception as exc:
+                    return {"ok": False, "msg": str(exc)}
+            return {"ok": False, "msg": "无法执行测试，请检查服务状态"}
+
     return _unsupported(action)
 
 

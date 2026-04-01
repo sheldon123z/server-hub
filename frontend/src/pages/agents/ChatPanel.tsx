@@ -96,7 +96,7 @@ export function ChatPanel() {
   } = useChatStore()
   const { sendMessage, cancel } = useSSEChat()
   const [input, setInput] = useState(() => {
-    return localStorage.getItem('serverhub-chat-draft') || ''
+    return sessionStorage.getItem('serverhub-chat-draft') || ''
   })
   const [showSlashMenu, setShowSlashMenu] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
@@ -151,8 +151,8 @@ export function ChatPanel() {
   // 草稿自动保存（防抖 500ms）
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (input) localStorage.setItem('serverhub-chat-draft', input)
-      else localStorage.removeItem('serverhub-chat-draft')
+      if (input) sessionStorage.setItem('serverhub-chat-draft', input)
+      else sessionStorage.removeItem('serverhub-chat-draft')
     }, 500)
     return () => clearTimeout(timer)
   }, [input])
@@ -170,7 +170,7 @@ export function ChatPanel() {
       if (!msg || isStreaming) return
       setInput('')
       setShowSlashMenu(false)
-      localStorage.removeItem('serverhub-chat-draft')
+      sessionStorage.removeItem('serverhub-chat-draft')
       sendMessage(msg, { pageContext, skillId: selectedSkillId })
     },
     [input, isStreaming, pageContext, selectedSkillId, sendMessage],

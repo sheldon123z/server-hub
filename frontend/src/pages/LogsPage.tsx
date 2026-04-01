@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import DOMPurify from 'dompurify'
 import client from '@/api/client'
 import { cn, ensureArray, ensureRecord, formatBytes, formatDate, toNumber, toString } from '@/lib/utils'
 import { useServerStore } from '@/stores/serverStore'
@@ -192,6 +193,9 @@ export default function LogsPage() {
         .join('\n')
     : ''
 
+  // XSS 防护：净化日志内容
+  const sanitizedContent = DOMPurify.sanitize(highlightedContent, { ALLOWED_TAGS: [], ALLOW_DATA_ATTR: false })
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -344,7 +348,7 @@ export default function LogsPage() {
             ) : (
               <pre
                 className="p-4 text-xs text-text2 font-mono whitespace-pre-wrap break-all leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: highlightedContent || '(空)' }}
+                dangerouslySetInnerHTML={{ __html: sanitizedContent || '(空)' }}
               />
             )}
           </div>

@@ -33,7 +33,7 @@ function generateId(): string {
 
 function loadPosition(): PanelPosition | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_POS)
+    const raw = sessionStorage.getItem(STORAGE_KEY_POS)
     return raw ? JSON.parse(raw) : null
   } catch {
     return null
@@ -42,7 +42,7 @@ function loadPosition(): PanelPosition | null {
 
 function savePosition(pos: PanelPosition) {
   try {
-    localStorage.setItem(STORAGE_KEY_POS, JSON.stringify(pos))
+    sessionStorage.setItem(STORAGE_KEY_POS, JSON.stringify(pos))
   } catch {
     /* noop */
   }
@@ -50,7 +50,7 @@ function savePosition(pos: PanelPosition) {
 
 function loadConversationId(): string | null {
   try {
-    return localStorage.getItem(STORAGE_KEY_CONV)
+    return sessionStorage.getItem(STORAGE_KEY_CONV)
   } catch {
     return null
   }
@@ -58,7 +58,7 @@ function loadConversationId(): string | null {
 
 function saveConversationId(id: string) {
   try {
-    localStorage.setItem(STORAGE_KEY_CONV, id)
+    sessionStorage.setItem(STORAGE_KEY_CONV, id)
   } catch {
     /* noop */
   }

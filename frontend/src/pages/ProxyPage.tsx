@@ -1,26 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import client from '@/api/client'
 import toast from 'react-hot-toast'
-import { cn, formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 /* ── Types ────────────────────────────────────────── */
+
+interface ListenPort {
+  label: string
+  port: number
+  description: string
+}
 
 interface ConfigProfile {
   key: string
   name: string
-  active: boolean
+  has_subscription: boolean
+  subscription_url_preview: string
 }
 
 interface ProxyInstance {
   id: string
   name: string
-  display_name: string
   type: string
-  status: string
-  port: number
+  plugin: string
+  running: boolean
+  enabled: boolean
+  status_text: string
+  listen_ports: ListenPort[]
+  current_config: string
+  current_config_name: string
   config_profiles: ConfigProfile[]
-  active_config: string
+  supported_actions: string[]
+  version: string
 }
 
 interface ProxyGroup {
@@ -36,16 +48,12 @@ interface DelayResult {
 
 /* ── Helpers ──────────────────────────────────────── */
 
-function statusDot(status: string) {
-  if (status === 'running') return 'bg-green'
-  if (status === 'stopped') return 'bg-red'
-  return 'bg-yellow'
+function statusDot(running: boolean) {
+  return running ? 'bg-green' : 'bg-red'
 }
 
-function statusBadge(status: string) {
-  if (status === 'running') return 'bg-green/20 text-green'
-  if (status === 'stopped') return 'bg-red/20 text-red'
-  return 'bg-yellow/20 text-yellow'
+function statusBadge(running: boolean) {
+  return running ? 'bg-green/20 text-green' : 'bg-red/20 text-red'
 }
 
 function delayColor(delay: number | string): string {
@@ -64,7 +72,6 @@ function delayText(delay: number | string): string {
 
 function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
-  const [key, setKey] = useState('')
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
 
@@ -72,9 +79,8 @@ function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: ()
     mutationFn: () =>
       client
         .post(`/api/proxy/instances/${instanceId}/config-profiles`, {
-          key,
           name,
-          subscription_url: url,
+          url,
         })
         .then((r) => r.data),
     onSuccess: () => {
@@ -88,14 +94,7 @@ function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: ()
   return (
     <div className="bg-bg border border-border rounded-lg p-4 space-y-3">
       <h5 className="text-xs uppercase text-text3 font-medium">新增配置</h5>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <input
-          type="text"
-          placeholder="标识 key"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          className="bg-bg2 border border-border rounded-md px-3 py-2 text-sm text-text focus:border-accent focus:outline-none"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input
           type="text"
           placeholder="显示名称"
@@ -114,7 +113,7 @@ function AddProfileForm({ instanceId, onDone }: { instanceId: string; onDone: ()
       <div className="flex gap-2">
         <button
           className="bg-accent text-[#0f172a] px-3 py-1.5 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
-          disabled={!key || !name || addMut.isPending}
+          disabled={!name || addMut.isPending}
           onClick={() => addMut.mutate()}
         >
           添加
@@ -356,12 +355,12 @@ export default function ProxyPage() {
             )}
             onClick={() => setSelectedId(inst.id)}
           >
-            <span className={cn('w-2 h-2 rounded-full shrink-0', statusDot(inst.status))} />
+            <span className={cn('w-2 h-2 rounded-full shrink-0', statusDot(inst.running))} />
             <div className="min-w-0">
               <div className="text-sm font-medium text-text truncate">
-                {inst.display_name || inst.name}
+                {inst.name}
               </div>
-              <div className="text-xs text-text3">{inst.type} : {inst.port}</div>
+              <div className="text-xs text-text3">{inst.type} : {inst.listen_ports?.[0]?.port ?? '-'}</div>
             </div>
           </button>
         ))}
@@ -375,19 +374,19 @@ export default function ProxyPage() {
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-text">
-                  {selected.display_name || selected.name}
+                  {selected.name}
                 </h3>
                 <div className="flex items-center gap-3 mt-2 text-sm text-text3">
                   <span>类型: {selected.type}</span>
-                  <span>端口: {selected.port}</span>
+                  <span>端口: {selected.listen_ports?.[0]?.port ?? '-'}</span>
                   <span
-                    className={cn('px-2 py-0.5 rounded text-xs font-medium', statusBadge(selected.status))}
+                    className={cn('px-2 py-0.5 rounded text-xs font-medium', statusBadge(selected.running))}
                   >
-                    {selected.status === 'running' ? '运行中' : selected.status === 'stopped' ? '已停止' : selected.status}
+                    {selected.running ? '运行中' : '已停止'}
                   </span>
-                  {selected.active_config && (
+                  {selected.current_config_name && (
                     <span className="px-2 py-0.5 rounded text-xs font-medium bg-accent-dim text-accent">
-                      {selected.active_config}
+                      {selected.current_config_name}
                     </span>
                   )}
                 </div>
@@ -395,7 +394,7 @@ export default function ProxyPage() {
 
               {/* Action buttons */}
               <div className="flex items-center gap-2">
-                {selected.status !== 'running' ? (
+                {!selected.running ? (
                   <button
                     className="bg-accent text-[#0f172a] px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
                     disabled={actionMut.isPending}
@@ -455,53 +454,58 @@ export default function ProxyPage() {
               <p className="text-text3 text-sm">暂无配置文件</p>
             ) : (
               <div className="space-y-2">
-                {selected.config_profiles.map((profile) => (
-                  <div
-                    key={profile.key}
-                    className={cn(
-                      'flex items-center justify-between px-4 py-3 rounded-lg border transition-colors',
-                      profile.active
-                        ? 'border-accent/50 bg-accent-dim/30'
-                        : 'border-border bg-bg',
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      {profile.active && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                {selected.config_profiles.map((profile) => {
+                  const isActive = profile.key === selected.current_config
+                  return (
+                    <div
+                      key={profile.key}
+                      className={cn(
+                        'flex items-center justify-between px-4 py-3 rounded-lg border transition-colors',
+                        isActive
+                          ? 'border-accent/50 bg-accent-dim/30'
+                          : 'border-border bg-bg',
                       )}
-                      <span className="text-sm text-text font-medium">{profile.name}</span>
-                      <span className="text-xs text-text3 font-mono">{profile.key}</span>
+                    >
+                      <div className="flex items-center gap-3">
+                        {isActive && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                        )}
+                        <span className="text-sm text-text font-medium">{profile.name}</span>
+                        <span className="text-xs text-text3 font-mono">{profile.key}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {profile.has_subscription && (
+                          <button
+                            className="bg-accent-dim text-accent px-2.5 py-1 rounded-md text-xs hover:opacity-90 disabled:opacity-50"
+                            disabled={updateSubMut.isPending}
+                            onClick={() =>
+                              updateSubMut.mutate({ id: selected.id, profileKey: profile.key })
+                            }
+                          >
+                            更新订阅
+                          </button>
+                        )}
+                        {!isActive && (
+                          <button
+                            className="bg-accent text-[#0f172a] px-2.5 py-1 rounded-md text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                            disabled={switchConfigMut.isPending}
+                            onClick={() =>
+                              switchConfigMut.mutate({ id: selected.id, profileKey: profile.key })
+                            }
+                          >
+                            切换
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="bg-accent-dim text-accent px-2.5 py-1 rounded-md text-xs hover:opacity-90 disabled:opacity-50"
-                        disabled={updateSubMut.isPending}
-                        onClick={() =>
-                          updateSubMut.mutate({ id: selected.id, profileKey: profile.key })
-                        }
-                      >
-                        更新订阅
-                      </button>
-                      {!profile.active && (
-                        <button
-                          className="bg-accent text-[#0f172a] px-2.5 py-1 rounded-md text-xs font-medium hover:opacity-90 disabled:opacity-50"
-                          disabled={switchConfigMut.isPending}
-                          onClick={() =>
-                            switchConfigMut.mutate({ id: selected.id, profileKey: profile.key })
-                          }
-                        >
-                          切换
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
 
           {/* Clash extension */}
-          {selected.type === 'clash' && (
+          {selected.plugin === 'clash' && (
             <div className="bg-card border border-border rounded-lg p-5">
               <ClashExtension instanceId={selected.id} />
             </div>

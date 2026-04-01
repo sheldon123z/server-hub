@@ -31,7 +31,8 @@ class SwitchNodeReq(BaseModel):
 
 
 class SwitchConfigReq(BaseModel):
-    config: str
+    config: str | None = None
+    profile_key: str | None = None
 
 
 class AddSubscriptionProfileReq(BaseModel):
@@ -74,7 +75,10 @@ async def api_instance_switch_config(
     user=Depends(require_role("admin")),
 ):
     try:
-        result = await switch_proxy_config(instance_id, req.config)
+        config_key = req.profile_key or req.config
+        if not config_key:
+            raise HTTPException(status_code=422, detail="config or profile_key required")
+        result = await switch_proxy_config(instance_id, config_key)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -185,7 +189,7 @@ async def api_switch_node(req: SwitchNodeReq, user=Depends(require_role("admin")
 
 @router.post("/switch-config")
 async def api_switch_config(req: SwitchConfigReq, user=Depends(require_role("admin"))):
-    result = await switch_config(req.config)
+    result = await switch_config(req.profile_key or req.config)
     if result.get("unsupported"):
         return JSONResponse(result, status_code=400)
     status_code = 200 if result["ok"] else 500
