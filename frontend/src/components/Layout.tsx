@@ -32,16 +32,22 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar />
+      <ErrorBoundary>
+        <Sidebar />
+      </ErrorBoundary>
       <div className="flex-1 ml-sidebar flex flex-col">
-        <TopBar title={title} />
+        <ErrorBoundary>
+          <TopBar title={title} />
+        </ErrorBoundary>
         <main className="flex-1 p-5 overflow-auto">
-          <ErrorBoundary>
+          <ErrorBoundary key={location.pathname}>
             <Outlet />
           </ErrorBoundary>
         </main>
       </div>
-      <ChatWidget />
+      <ErrorBoundary>
+        <ChatWidget />
+      </ErrorBoundary>
     </div>
   )
 }
