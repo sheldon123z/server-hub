@@ -14,6 +14,10 @@ function generateUUID(): string {
   })
 }
 
+/** Module-level singleton: ensures only one active SSE request across all hook instances */
+let _activeController: AbortController | null = null
+let _activeSubscribers = 0
+
 interface SendMessageOptions {
   pageContext?: string
   skillId?: string | null
@@ -22,18 +26,30 @@ interface SendMessageOptions {
 export function useSSEChat() {
   const store = useChatStore()
   const queryClient = useQueryClient()
-  const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(false)
 
   useEffect(() => {
-    return () => abortRef.current?.abort()
+    mountedRef.current = true
+    _activeSubscribers++
+    return () => {
+      mountedRef.current = false
+      _activeSubscribers--
+      // Only abort if this is the last subscriber and no other instance is mounted
+      if (_activeSubscribers <= 0) {
+        _activeController?.abort()
+        _activeController = null
+        _activeSubscribers = 0
+      }
+    }
   }, [])
 
   const sendMessage = useCallback(
     async (text: string, options?: SendMessageOptions) => {
       const state = useChatStore.getState()
-      abortRef.current?.abort()
+      // Abort any existing request (singleton across all instances)
+      _activeController?.abort()
       const controller = new AbortController()
-      abortRef.current = controller
+      _activeController = controller
 
       const conversationId = state.conversationId ?? generateUUID()
       if (!state.conversationId) {
@@ -113,6 +129,9 @@ export function useSSEChat() {
           content: '错误: ' + (err instanceof Error ? err.message : '连接失败'),
         })
       } finally {
+        if (_activeController === controller) {
+          _activeController = null
+        }
         store.setStreaming(false)
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
         queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
@@ -235,7 +254,8 @@ export function useSSEChat() {
 
   const cancel = useCallback(async () => {
     const state = useChatStore.getState()
-    abortRef.current?.abort()
+    _activeController?.abort()
+    _activeController = null
     if (state.currentRunId) {
       await fetch(`/api/agents/runs/${state.currentRunId}/cancel`, {
         method: 'POST',
