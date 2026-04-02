@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from auth.dependencies import get_current_user
 
@@ -13,15 +15,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# payload 允许的最大 JSON 序列化大小 (10KB)
+_MAX_PAYLOAD_BYTES = 10 * 1024
+
+# 合法的组件类型和操作类型
+VALID_COMPONENT_TYPES = ("chart", "table", "form", "card")
+VALID_ACTION_TYPES = ("submit", "reset", "agent", "download", "refresh", "navigate")
+
 
 class UIActionRequest(BaseModel):
-    component_id: str
-    component_type: str
-    action_id: str
-    action_type: str
-    payload: dict = {}
-    conversation_id: str = ""
-    run_id: str = ""
+    component_id: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_\-]+$")
+    component_type: Literal["chart", "table", "form", "card"]
+    action_id: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_\-]+$")
+    action_type: Literal["submit", "reset", "agent", "download", "refresh", "navigate"]
+    payload: dict = Field(default_factory=dict)
+    conversation_id: str = Field(default="", max_length=128)
+    run_id: str = Field(default="", max_length=128)
+
+    @field_validator("payload")
+    @classmethod
+    def validate_payload_size(cls, v: dict) -> dict:
+        """限制 payload 序列化后不超过 10KB，防止内存滥用。"""
+        size = len(json.dumps(v, default=str))
+        if size > _MAX_PAYLOAD_BYTES:
+            msg = f"payload 过大 ({size} bytes)，最大允许 {_MAX_PAYLOAD_BYTES} bytes"
+            raise ValueError(msg)
+        return v
 
 
 class UIActionResponse(BaseModel):
