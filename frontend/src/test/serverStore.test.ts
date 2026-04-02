@@ -99,16 +99,24 @@ describe('useServerStore', () => {
     })
 
     it('handles empty response gracefully', async () => {
+      // Set non-empty state first to verify it gets cleared correctly
+      const existingServers = [{ id: 's1', name: 'Server 1' }] as any
+      useServerStore.setState({ servers: existingServers })
+
       mockGet.mockResolvedValue({ data: null })
       await useServerStore.getState().fetchServers()
       expect(useServerStore.getState().servers).toEqual([])
     })
 
     it('keeps state stable on API error', async () => {
+      // Set non-empty state first to verify preservation on error
+      const existingServers = [{ id: 's1', name: 'Server 1' }] as any
+      useServerStore.setState({ servers: existingServers })
+
       mockGet.mockRejectedValue(new Error('Network error'))
       // fetchServers catches internally — state should remain unchanged
       await useServerStore.getState().fetchServers()
-      expect(useServerStore.getState().servers).toEqual([])
+      expect(useServerStore.getState().servers).toEqual(existingServers)
     })
   })
 
