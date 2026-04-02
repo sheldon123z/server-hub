@@ -216,9 +216,6 @@ async def _create_monitoring_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "alert_rules", "stddev_multiplier", "REAL DEFAULT 3.0")
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
-    await _ensure_column(db, "assets", "server_id", "TEXT DEFAULT 'local'")
-    # 迁移: assets 表从单列 PK(id) 升级为复合 PK(id, server_id)
-    await _migrate_assets_composite_pk(db)
     # server_id 列就绪后才能创建复合索引
     await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
 
@@ -698,6 +695,9 @@ async def _create_other_tables(db: aiosqlite.Connection):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
+    # assets 表迁移: 旧库可能没有 server_id 列，补列后再升级主键
+    await _ensure_column(db, "assets", "server_id", "TEXT DEFAULT 'local'")
+    await _migrate_assets_composite_pk(db)
 
 
 async def init_tables(db: aiosqlite.Connection):
