@@ -80,6 +80,14 @@ from modules.agents.tools.system import (
     get_system_overview,
 )
 
+# ─── UI 渲染 ───
+from modules.agents.tools.ui_tools import (
+    render_card,
+    render_chart,
+    render_form,
+    render_table,
+)
+
 # ─── 用户 ───
 from modules.agents.tools.users import (
     check_quota_violations,
@@ -161,6 +169,11 @@ def get_server_tools(user_role: str = "admin") -> list:
         # 服务器舰队管理
         server_list,
         server_test_connectivity,
+        # UI 渲染
+        render_chart,
+        render_table,
+        render_form,
+        render_card,
     ]
 
     if user_role == "admin":

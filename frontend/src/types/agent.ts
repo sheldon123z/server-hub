@@ -1,4 +1,4 @@
-export type MessageRole = 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'approval'
+export type MessageRole = 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'approval' | 'ui_component'
 
 export interface ChatMessage {
   _id: string
@@ -90,4 +90,31 @@ export interface AgentRunEvent {
   event_type: string
   payload: Record<string, unknown>
   created_at: string
+}
+
+// ── A to UI: Agent UI 组件渲染 ──
+
+export type UIComponentType = 'chart' | 'table' | 'form' | 'card' | 'metric' | 'log-viewer' | 'process-tree' | 'custom'
+
+export interface UIAction {
+  id: string
+  label: string
+  variant?: 'primary' | 'secondary' | 'danger'
+  action_type: 'callback' | 'navigate' | 'api' | 'agent' | 'submit' | 'reset'
+  payload?: Record<string, unknown>
+}
+
+export interface UIComponentData {
+  id: string
+  type: UIComponentType
+  version?: string
+  title?: string
+  [key: string]: unknown
+}
+
+export interface UIComponentMessage extends ChatMessage {
+  role: 'ui_component'
+  componentType: UIComponentType
+  data: UIComponentData
+  uiActions?: UIAction[]
 }

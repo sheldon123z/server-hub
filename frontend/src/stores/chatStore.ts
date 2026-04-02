@@ -27,7 +27,7 @@ interface ChatState {
   // Internal
   _msgSeq: number
   _seenIds: Set<string>
-  pushMsg: (msg: Partial<ChatMessage>) => void
+  pushMsg: (msg: Partial<ChatMessage> & Record<string, unknown>) => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -91,28 +91,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get()
 
     // Deduplicate by _serverId
-    if (msg._serverId && state._seenIds.has(msg._serverId)) return
+    if (msg._serverId && state._seenIds.has(msg._serverId as string)) return
 
     const seq = state._msgSeq + 1
-    const _id = msg._id ?? 's_' + seq
+    const _id = (msg._id as string) ?? 's_' + seq
 
-    const newMsg: ChatMessage = {
+    const newMsg: ChatMessage & Record<string, unknown> = {
       _id,
-      role: msg.role ?? 'assistant',
-      content: msg.content ?? '',
-      tool: msg.tool,
-      args: msg.args,
-      approval_id: msg.approval_id,
-      description: msg.description,
+      role: (msg.role as ChatMessage['role']) ?? 'assistant',
+      content: (msg.content as string) ?? '',
+      tool: msg.tool as string | undefined,
+      args: msg.args as Record<string, unknown> | undefined,
+      approval_id: msg.approval_id as string | undefined,
+      description: msg.description as string | undefined,
       actions: Array.isArray(msg.actions) ? msg.actions : undefined,
-      _serverId: msg._serverId,
+      _serverId: msg._serverId as string | undefined,
+    }
+
+    // A to UI: 透传 UI 组件字段
+    if (msg.role === 'ui_component') {
+      newMsg.componentType = msg.componentType
+      newMsg.data = msg.data
+      newMsg.uiActions = msg.uiActions
     }
 
     const newSeen = new Set(state._seenIds)
-    if (msg._serverId) newSeen.add(msg._serverId)
+    if (msg._serverId) newSeen.add(msg._serverId as string)
 
     set({
-      messages: [...state.messages, newMsg],
+      messages: [...state.messages, newMsg as unknown as ChatMessage],
       _msgSeq: seq,
       _seenIds: newSeen,
     })

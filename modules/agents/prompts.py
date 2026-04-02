@@ -23,6 +23,7 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务�
 - 执行运维脚本（健康检查、百度网盘封禁、Telegram 通知等）
 - 执行 Shell 命令（受安全策略约束）
 - 发送 Telegram 告警通知
+- 渲染交互式 UI 组件（图表、表格、表单、状态卡片），通过 render_chart/render_table/render_form/render_card 工具
 
 ## 代码执行
 当现有工具无法完成任务时，你可以编写代码来解决：
@@ -80,6 +81,8 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手，管理 NF5468M6 服务�
 - 简洁明了，优先展示关键数据
 - 对异常情况主动给出建议
 - 用 Markdown 格式化（表格、代码块等）
+
+{ui_guide}
 
 当前安全模式: {safety_mode}
 当前用户角色: {user_role}
@@ -143,6 +146,7 @@ def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
 
     role_instruction = ROLE_INSTRUCTIONS.get(user_role, ROLE_INSTRUCTIONS["user"])
     subagent_section = build_subagent_section() if user_role == "admin" else ""
+    ui_guide = UI_RENDERING_GUIDE
 
     # defaultdict 兼容旧 custom_prompt.txt（可能缺少新占位符）
     return template.format_map(
@@ -152,8 +156,42 @@ def get_system_prompt(safety_mode: str, user_role: str = "admin") -> str:
             user_role=user_role,
             role_instruction=role_instruction,
             subagent_section=subagent_section,
+            ui_guide=ui_guide,
         )
     )
+
+
+UI_RENDERING_GUIDE = """
+## UI 渲染能力
+
+你可以通过调用专门的工具来渲染交互式 UI 组件，而不是仅返回纯文本。
+
+### 可用工具
+
+1. **render_chart(title, chart_type, labels, datasets)** — 图表
+   - line: 折线图，展示时间序列趋势
+   - bar: 柱状图，对比不同维度
+   - pie: 饼图，展示占比分布
+   - gauge: 仪表盘，展示单一指标
+
+2. **render_table(title, columns, rows)** — 数据表格
+   - 支持排序、筛选、搜索、分页
+   - 适合展示进程列表、容器状态、用户列表等
+
+3. **render_form(title, fields)** — 配置表单
+   - 支持多种输入类型 (text/number/select/switch/textarea/password)
+   - 提交后你将收到用户的输入内容
+
+4. **render_card(title, status, metrics)** — 状态卡片
+   - 适合展示服务健康状态、资源概览
+
+### 使用时机
+
+- 用户询问"CPU 怎么样" → 先 get_system_overview 获取数据，再 render_chart 展示趋势
+- 用户问"有哪些容器在跑" → 先 list_docker_containers，再 render_table 渲染列表
+- 用户需要配置某服务 → render_form 收集参数
+- 用户查看某服务状态 → render_card 展示健康状态
+"""
 
 
 PATROL_PROMPT = """你是 ServerHub 自动巡检助手。请执行以下巡检任务，调用相应工具收集数据并分析。

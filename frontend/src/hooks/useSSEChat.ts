@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/stores/chatStore'
-import type { TodoItem } from '@/types/agent'
+import type { TodoItem, UIComponentType, UIComponentData, UIAction, UIComponentMessage } from '@/types/agent'
 import { ensureArray } from '@/lib/utils'
 
 function generateUUID(): string {
@@ -240,6 +240,50 @@ export function useSSEChat() {
           content: '错误: ' + (data.error as string),
         })
         break
+
+      case 'ui.render':
+        store.pushMsg({
+          role: 'ui_component' as const,
+          componentType: data.component_type as UIComponentType,
+          data: data.data as UIComponentData,
+          uiActions: (data.actions as UIAction[]) ?? [],
+          content: '',
+          _serverId: data.id as string | undefined,
+        } as Parameters<typeof store.pushMsg>[0])
+        break
+
+      case 'ui.update': {
+        const componentId = data.component_id as string
+        const updateType = data.update_type as string
+        const updateData = data.data as Record<string, unknown>
+        const msgs = [...useChatStore.getState().messages]
+        const idx = msgs.findIndex(
+          (m) => m.role === 'ui_component' && (m as UIComponentMessage).data?.id === componentId,
+        )
+        if (idx !== -1) {
+          const existing = msgs[idx] as UIComponentMessage
+          msgs[idx] = {
+            ...existing,
+            data:
+              updateType === 'replace'
+                ? { ...existing.data, ...updateData }
+                : updateType === 'clear'
+                  ? { ...existing.data, data: undefined }
+                  : existing.data,
+          } as UIComponentMessage
+          useChatStore.getState().setMessages(msgs)
+        }
+        break
+      }
+
+      case 'ui.remove': {
+        const removeId = data.component_id as string
+        const currentMsgs = useChatStore.getState().messages.filter(
+          (m) => !(m.role === 'ui_component' && (m as UIComponentMessage).data?.id === removeId),
+        )
+        useChatStore.getState().setMessages(currentMsgs)
+        break
+      }
 
       case 'done':
         if (data.conversation_id) {

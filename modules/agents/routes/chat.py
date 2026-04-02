@@ -87,6 +87,35 @@ async def _process_ai_message(
 async def _process_tool_message(msg: ToolMessage, run_id: str, conversation_id: str, username: str) -> list[dict]:
     """处理工具调用结果消息，返回要 yield 的 SSE event 列表。"""
     msg_id = getattr(msg, "id", None)
+
+    # 检测 UI 组件标记
+    try:
+        content_data = json.loads(msg.content) if msg.content else {}
+    except (json.JSONDecodeError, TypeError):
+        content_data = {}
+
+    if content_data.get("_ui"):
+        component_type = content_data.get("type", "unknown")
+        ui_payload = {
+            "run_id": run_id,
+            "component_type": component_type,
+            "data": content_data,
+            "id": msg_id or "",
+        }
+        await append_run_event(run_id, conversation_id, "ui.render", ui_payload)
+        # 同时发送文字 fallback
+        title = content_data.get("title", "")
+        fallback_payload = {
+            "run_id": run_id,
+            "content": f"[UI: {title}]" if title else "[UI 组件已渲染]",
+            "role": "assistant",
+            "id": msg_id or "",
+        }
+        return [
+            {"event": "ui.render", "data": json.dumps(ui_payload, ensure_ascii=False)},
+            {"event": "message.final", "data": json.dumps(fallback_payload, ensure_ascii=False)},
+        ]
+
     payload = {
         "run_id": run_id,
         "tool": getattr(msg, "name", ""),

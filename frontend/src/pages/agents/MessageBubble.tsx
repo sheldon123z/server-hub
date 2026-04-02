@@ -6,8 +6,11 @@
 import React, { useState, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
-import type { ChatMessage } from '@/types/agent'
+import type { ChatMessage, UIComponentMessage } from '@/types/agent'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { UICard } from '@/components/agent/UICard'
+import { UIComponentErrorBoundary } from '@/components/agent/UIComponentErrorBoundary'
+import { useChatStore } from '@/stores/chatStore'
 
 /* ── Props ──────────────────────────────────────────── */
 
@@ -235,6 +238,41 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
           borderColor="border-[rgba(56,189,248,0.2)]"
           bgColor="bg-[rgba(56,189,248,0.08)]"
         />
+      </div>
+    )
+  }
+
+  /* ── UI Component ─────────────────────────────── */
+  if (role === 'ui_component') {
+    const uiMsg = message as UIComponentMessage
+    const handleUIAction = (actionId: string, payload?: Record<string, unknown>) => {
+      fetch('/api/agents/ui/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          component_id: uiMsg.data?.id,
+          component_type: uiMsg.componentType,
+          action_id: actionId,
+          action_type: 'agent',
+          payload: payload ?? {},
+          conversation_id: useChatStore.getState().conversationId,
+          run_id: useChatStore.getState().currentRunId,
+        }),
+      }).catch(console.error)
+    }
+
+    return (
+      <div className="flex justify-start">
+        <div className="group relative max-w-[95%]">
+          <ActionBar onCopy={handleCopy} onDelete={handleDelete} />
+          <UIComponentErrorBoundary componentId={uiMsg.data?.id ?? 'unknown'}>
+            <UICard
+              component={uiMsg.data as any}
+              onAction={handleUIAction}
+            />
+          </UIComponentErrorBoundary>
+        </div>
       </div>
     )
   }
