@@ -10,6 +10,7 @@ const FALLBACK_ITEMS: SidebarItem[] = [
   { name: 'servers', display_name: '服务器', icon: 'server-2', category: '基础设施', required_role: 'admin', order: 2 },
   { name: 'fleet', display_name: '舰队总览', icon: 'topology-ring-3', category: '基础设施', required_role: 'admin', order: 3 },
   { name: 'agents', display_name: 'OpsAgent', icon: 'robot', category: '智能', required_role: 'user', order: 5 },
+  { name: 'teams', display_name: '团队管理', icon: 'users-group', category: '智能', required_role: 'admin', order: 6 },
   { name: 'playbooks', display_name: '运维剧本', icon: 'script', category: '自动化', required_role: 'admin', order: 55 },
   { name: 'docker', display_name: 'Docker', icon: 'brand-docker', category: '管理', required_role: 'admin', order: 10 },
   { name: 'services', display_name: '服务管理', icon: 'server', category: '管理', required_role: 'admin', order: 11 },
