@@ -217,7 +217,12 @@ async def _create_monitoring_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
     # server_id 列就绪后才能创建复合索引
+    # idx_metrics_server_time: 清理路径 DELETE WHERE server_id=? AND timestamp<? 使用
     await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
+    # idx_metrics_server_type_time: 历史查询 WHERE server_id=? AND metric_type=? 使用
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_metrics_server_type_time ON metrics(server_id, metric_type, timestamp)"
+    )
 
 
 async def _create_notification_tables(db: aiosqlite.Connection):
