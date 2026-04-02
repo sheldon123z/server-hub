@@ -371,6 +371,68 @@ _EXEC_INJECTION_PATTERNS = re.compile(
     re.VERBOSE,
 )
 
+# CWE-78: 危险命令黑名单 (防止破坏性操作)
+_DANGEROUS_COMMANDS = frozenset(
+    {
+        # 破坏性命令
+        "rm",
+        "dd",
+        "mkfs",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "init",
+        # 特权提升
+        "su",
+        "sudo",
+        "doas",
+        "pkexec",
+        "chmod",
+        "chown",
+        "chgrp",
+        # 网络工具 (可能用于数据外泄)
+        "nc",
+        "ncat",
+        "netcat",
+        "telnet",
+        "wget",
+        "curl",
+        "scp",
+        "sftp",
+        "rsync",
+        # 系统修改
+        "fdisk",
+        "parted",
+        "lvm",
+        "vgcreate",
+        "lvcreate",
+        "pvcreate",
+        # 用户管理
+        "useradd",
+        "userdel",
+        "usermod",
+        "passwd",
+        "adduser",
+        "deluser",
+        # 危险脚本
+        "bash",
+        "sh",
+        "zsh",
+        "fish",  # 直接调用 shell
+    }
+)
+
+
+def _extract_base_command(command: str) -> str | None:
+    """从命令字符串中提取基础命令名（处理路径和参数）"""
+    # 去除前导空白
+    cmd = command.strip().split()[0] if command.strip() else ""
+    if not cmd:
+        return None
+    # 提取 basename (处理 /usr/bin/rm 这种路径)
+    return cmd.rsplit("/", maxsplit=1)[-1].lower() if "/" in cmd else cmd.lower()
+
 
 async def container_exec(name: str, command: str) -> str:
     """在运行中的容器内执行命令
@@ -378,6 +440,9 @@ async def container_exec(name: str, command: str) -> str:
     Args:
         name: 容器名称
         command: 要执行的命令
+
+    Raises:
+        ValueError: 命令包含不允许的字符或危险命令
     """
     _validate_name(name)
     # 限制命令长度
@@ -387,6 +452,11 @@ async def container_exec(name: str, command: str) -> str:
     # CWE-78: 拒绝含 Shell 注入元字符的命令
     if _EXEC_INJECTION_PATTERNS.search(command):
         raise ValueError("命令包含不允许的 Shell 元字符 (;, |, &&, `, $() 等)")
+
+    # CWE-78: 拒绝危险命令
+    base_cmd = _extract_base_command(command)
+    if base_cmd in _DANGEROUS_COMMANDS:
+        raise ValueError(f"禁止执行危险命令: {base_cmd}")
 
     output = await run_cmd(
         ["docker", "exec", name, "sh", "-c", command],
