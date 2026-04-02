@@ -437,7 +437,11 @@ function ExecuteTab({ team }: { team: Team }) {
               } else if (eventType === 'team_error' || eventType === 'error') {
                 setMessages((prev) => [...prev, { agent: 'system', content: `错误: ${data.error ?? data.message ?? ''}`, type: 'error' }])
               } else if (eventType === 'team_complete') {
-                setMessages((prev) => [...prev, { agent: 'system', content: `完成 — 状态: ${data.status ?? 'done'}, 耗时: ${data.duration ?? '-'}s, 步数: ${data.steps ?? '-'}`, type: 'complete' }])
+                const status = String(data.status ?? 'done')
+                const failStatuses = ['failed', 'timeout', 'cancelled']
+                const msgType = status === 'success' ? 'complete' : failStatuses.includes(status) ? 'error' : 'complete'
+                const label = status === 'success' ? '完成' : failStatuses.includes(status) ? `${status} — 执行未成功` : `完成 (${status})`
+                setMessages((prev) => [...prev, { agent: 'system', content: `${label} — 耗时: ${data.duration ?? '-'}s, 步数: ${data.steps ?? '-'}`, type: msgType }])
               }
               // 'done' is stream-end marker only, no UI message needed
             } catch { /* ignore parse errors */ }
