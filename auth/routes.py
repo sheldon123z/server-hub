@@ -5,6 +5,7 @@ import time
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from utils import get_client_ip
 
 from auth.dependencies import get_current_user, get_user_from_token
 from auth.jwt_handler import create_access_token, create_refresh_token
@@ -84,7 +85,7 @@ def _clear_auth_cookies(response: Response, secure: bool) -> None:
 
 @router.post("/login")
 async def login(req: LoginRequest, response: Response, request: Request):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     _check_login_rate_limit(client_ip)
     _record_login_attempt(client_ip)
 

@@ -8,6 +8,7 @@ import logging
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from utils import get_client_ip
 
 from auth.dependencies import get_current_user_optional
 from database import get_db
@@ -66,8 +67,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
         user = await get_current_user_optional(request)
         username = user["username"] if user else "anonymous"
 
-        # 客户端 IP
-        ip = request.client.host if request.client else ""
+        # 客户端 IP（兼容 nginx 反代）
+        ip = get_client_ip(request)
 
         # 执行请求
         response = await call_next(request)
