@@ -274,14 +274,13 @@ async def test_connectivity(server_id: str) -> dict:
         if not ssh_user:
             return
         try:
-            import asyncssh
+            from modules.servers.ssh_tofu import tofu_connect
 
             async with asyncio.timeout(5):
-                async with asyncssh.connect(
+                async with tofu_connect(
                     ip,
                     port=ssh_port,
                     username=ssh_user,
-                    known_hosts=None,  # TODO: Issue #28 — 实现 TOFU 模型主机密钥验证
                 ) as _conn:
                     result["ssh_ok"] = True
         except ImportError:
@@ -489,17 +488,18 @@ async def deploy_agent_to_server(
         install_cmd = base_script
         stdin_data = None
     try:
+        from modules.servers.ssh_tofu import tofu_connect
+
         connect_kw: dict = {
             "host": ip,
             "port": ssh_port,
             "username": ssh_user,
-            "known_hosts": None,
         }
         if ssh_password:
             connect_kw["password"] = ssh_password
             connect_kw["client_keys"] = []  # 禁用密钥认证，强制密码
             connect_kw["preferred_auth"] = ["password", "keyboard-interactive"]
-        async with asyncssh.connect(**connect_kw) as conn:
+        async with tofu_connect(**connect_kw) as conn:
             result = await asyncio.wait_for(
                 conn.run(install_cmd, input=stdin_data),
                 timeout=install_timeout,

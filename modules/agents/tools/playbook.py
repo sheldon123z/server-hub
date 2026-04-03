@@ -64,12 +64,13 @@ async def ssh_execute_command(
         if violation:
             return violation
 
-    # Build connection options
+    # Build connection options (TOFU host key verification)
+    from modules.servers.ssh_tofu import tofu_connect
+
     connect_opts = {
         "host": host,
         "port": port,
         "username": username,
-        "known_hosts": None,  # Skip host key verification for managed devices
         "connect_timeout": timeout,
     }
     if password:
@@ -81,7 +82,7 @@ async def ssh_execute_command(
 
     results = []
     try:
-        async with asyncssh.connect(**connect_opts) as conn:
+        async with tofu_connect(**connect_opts) as conn:
             for cmd in commands:
                 try:
                     result = await asyncio.wait_for(
