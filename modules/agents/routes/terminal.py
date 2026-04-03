@@ -38,13 +38,23 @@ async def terminal_ws(websocket: WebSocket):
     try:
 
         async def read_terminal():
-            """持续读取终端输出并发送到 WebSocket"""
+            """持续读取终端输出并发送到 WebSocket，含空闲超时检测"""
+            idle_check_interval = 30  # 每 30 秒检查一次空闲超时
+            last_check = asyncio.get_event_loop().time()
             while terminal.is_alive():
                 data = terminal.read()
                 if data:
                     await websocket.send_text(data)
                 else:
                     await asyncio.sleep(0.05)
+                # 周期性检查空闲超时
+                now = asyncio.get_event_loop().time()
+                if now - last_check >= idle_check_interval:
+                    last_check = now
+                    if terminal.is_idle_timeout():
+                        await websocket.send_text("\r\n\x1b[33m[ServerHub] 终端已空闲超时，自动关闭。\x1b[0m\r\n")
+                        logger.info("终端空闲超时，自动关闭 (pid=%d)", terminal.pid or 0)
+                        return
 
         async def write_terminal():
             """接收 WebSocket 输入并写入终端"""
