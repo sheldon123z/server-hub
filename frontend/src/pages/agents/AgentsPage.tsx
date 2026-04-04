@@ -83,7 +83,7 @@ export default function AgentsPage() {
       {/* 3-column body */}
       <ResizablePanelGroup orientation="horizontal" id="agents-layout" className="flex-1 min-h-0">
         {/* Left: conversation sidebar */}
-        <ResizablePanel id="sidebar"defaultSize={15} minSize={10} maxSize={25}>
+        <ResizablePanel id="sidebar" defaultSize={15} minSize={10} maxSize={25}>
           <div className="h-full border-r border-border overflow-y-auto bg-bg">
             <ConversationSidebar />
           </div>
@@ -92,7 +92,7 @@ export default function AgentsPage() {
         <ResizableHandle withHandle />
 
         {/* Center: chat panel (always visible) */}
-        <ResizablePanel id="chat"defaultSize={isAdmin ? 50 : 85} minSize={30}>
+        <ResizablePanel id="chat" defaultSize={isAdmin ? 50 : 85} minSize={30}>
           <div className="flex flex-col min-w-0 h-full border-r border-border">
             <ChatPanel />
           </div>
@@ -102,7 +102,7 @@ export default function AgentsPage() {
         {isAdmin && (
           <>
             <ResizableHandle withHandle />
-            <ResizablePanel id="right-panel"defaultSize={35} minSize={20} maxSize={50}>
+            <ResizablePanel id="right-panel" defaultSize={35} minSize={20} maxSize={50}>
               <div className="flex flex-col min-w-0 h-full overflow-hidden">
                 {showTerminal ? (
                   <TerminalPanel />
