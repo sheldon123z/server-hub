@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from sse_starlette.sse import EventSourceResponse
 
 from auth.dependencies import get_current_user
+from config import settings
 from database import get_db
 from modules.agents.run_service import (
     DbWriteBuffer,
@@ -414,6 +415,24 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                 await buf.flush()
             except Exception:
                 logger.debug("finally flush 失败", exc_info=True)
+
+            # 异步入队记忆更新
+            try:
+                from pathlib import Path
+
+                from modules.agents.memory.queue import get_memory_queue
+                from modules.agents.memory.storage import MemoryStorage
+
+                smart_memory_dir = Path(settings.db_path).parent / "smart-memory"
+                mem_storage = MemoryStorage(smart_memory_dir)
+                snapshot_for_memory = await agent.aget_state(config)
+                msgs = snapshot_for_memory.values.get("messages", [])
+                if len(msgs) >= 2:
+                    queue = get_memory_queue()
+                    await queue.enqueue(conversation_id, mem_storage, msgs)
+            except Exception:
+                logger.debug("记忆更新入队失败", exc_info=True)
+
             unregister_active_run(run_id)
 
         yield {

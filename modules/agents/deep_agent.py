@@ -37,16 +37,13 @@ from modules.agents.deferred_tools import (
 )
 from modules.agents.llm import get_chat_model
 from modules.agents.loop_detection import LoopDetectionMiddleware
+from modules.agents.memory.injection import format_memory_for_prompt
+from modules.agents.memory.storage import MemoryStorage
 from modules.agents.prompts import get_system_prompt
 from modules.agents.safety import build_interrupt_config
 from modules.agents.sandbox import SafeLocalShellBackend
 from modules.agents.subagents import load_subagents
-from modules.agents.deferred_tools import (
-    DeferredToolRegistry,
-    set_deferred_registry,
-    tool_search,
-)
-from modules.agents.tools import get_server_tools, get_tools_split
+from modules.agents.tools import get_tools_split
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +219,13 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     # 注入延迟工具列表到系统提示词
     if deferred_section:
         system_prompt = system_prompt + "\n" + deferred_section
+
+    # Smart Memory — LLM-powered 结构化记忆注入
+    smart_memory_dir = data_dir / "smart-memory"
+    smart_memory_storage = MemoryStorage(smart_memory_dir)
+    memory_context = format_memory_for_prompt(smart_memory_storage.load(), token_budget=2000)
+    if memory_context:
+        system_prompt = system_prompt + "\n" + memory_context
 
     agent = create_deep_agent(
         model=model,
