@@ -138,6 +138,9 @@ def get_chat_model(purpose: str = "chat") -> ChatOpenAI:
     model_map = {
         "chat": settings.agent_default_model,
         "patrol": settings.agent_patrol_model,
+        "fast": getattr(settings, "agent_fast_model", "") or settings.agent_patrol_model,
+        "standard": settings.agent_default_model,
+        "expert": getattr(settings, "agent_expert_model", "") or settings.agent_default_model,
     }
     full_model_id = model_map.get(purpose, model_map["chat"])
     provider_key, model_name = parse_model_id(full_model_id)

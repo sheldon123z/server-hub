@@ -156,10 +156,20 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     checkpointer = AsyncSqliteSaver(await aiosqlite.connect(checkpoint_path))
 
-    # Memory — 长期记忆（data/agent-memory.md 文件，agent 通过 edit_file 更新）
+    # Memory — 核心身份 + 长期记忆
+    data_dir = Path(settings.db_path).parent
+    memory_paths = []
+    core_memory = data_dir / "agents-core.md"
+    if core_memory.exists():
+        memory_paths.append(str(core_memory))
     memory_path = get_memory_path()
     memory_path.parent.mkdir(parents=True, exist_ok=True)
-    memory_paths = [str(memory_path)] if memory_path.exists() else []
+    if memory_path.exists():
+        memory_paths.append(str(memory_path))
+
+    # Skills — 按需加载的专业工作流
+    skills_dir = data_dir / "skills"
+    skills_paths = [str(skills_dir)] if skills_dir.is_dir() else []
 
     system_prompt = get_system_prompt(safety_mode, user_role)
 
@@ -173,6 +183,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
         subagents=subagents,
         middleware=extra_middleware,
         memory=memory_paths if memory_paths else None,
+        skills=skills_paths if skills_paths else None,
         store=store,
     )
 
@@ -180,7 +191,8 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     _agent_cache[cache_key] = agent
     logger.info(
         f"Deep Agent 已创建: mode={safety_mode}, purpose={purpose}, role={user_role}, "
-        f"middleware={mw_names}, memory={'AGENTS.md' if memory_paths else 'None'}, store={'AsyncSqliteStore' if store else 'None'}"
+        f"middleware={mw_names}, memory={[Path(p).name for p in memory_paths]}, "
+        f"skills={len(skills_paths)} dirs, store={'AsyncSqliteStore' if store else 'None'}"
     )
     return agent
 

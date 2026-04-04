@@ -57,6 +57,6 @@ DEFINITION = {
             "get_service_dependencies_tool",
         ]
     ),
-    "model_purpose": "chat",
+    "model_purpose": "expert",
     "middleware_profile": "heavy",
 }

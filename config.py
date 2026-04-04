@@ -108,6 +108,8 @@ class Settings:
         self.agent_checkpoint_db: str = str(BASE_DIR / "data" / "agent-checkpoints.db")
         self.agent_default_model: str = os.getenv("SERVERHUB_AGENT_MODEL", "openrouter:deepseek/deepseek-chat")
         self.agent_patrol_model: str = os.getenv("SERVERHUB_PATROL_MODEL", "openrouter:deepseek/deepseek-chat")
+        self.agent_fast_model: str = os.getenv("SERVERHUB_AGENT_FAST_MODEL", "")
+        self.agent_expert_model: str = os.getenv("SERVERHUB_AGENT_EXPERT_MODEL", "")
 
         # 服务商 API Key 通过环境变量注入，模型/服务商列表在 modules/agents/llm.py 中定义
         self.agent_shell_timeout: int = 30

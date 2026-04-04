@@ -70,12 +70,12 @@ def _get_subagent_model_by_id(model_id: str):
 # ─── 模型 purpose / middleware profile 反向映射 ───
 
 _MODEL_PURPOSE_MAP = {
-    "researcher": "chat",
-    "log-analyzer": "patrol",
-    "security-auditor": "patrol",
-    "correlation-analyzer": "chat",
-    "ops-scheduler": "patrol",
-    "knowledge-retriever": "patrol",
+    "researcher": "fast",
+    "log-analyzer": "standard",
+    "security-auditor": "expert",
+    "correlation-analyzer": "expert",
+    "ops-scheduler": "standard",
+    "knowledge-retriever": "fast",
 }
 
 _MIDDLEWARE_PROFILE_MAP = {

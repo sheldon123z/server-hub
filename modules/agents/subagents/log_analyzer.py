@@ -38,6 +38,6 @@ DEFINITION = {
     ),
     "system_prompt": PROMPT,
     "tools_fn": lambda: _get_tools_by_names(["get_container_logs", "get_service_logs"]),
-    "model_purpose": "patrol",
+    "model_purpose": "standard",
     "middleware_profile": "heavy",
 }

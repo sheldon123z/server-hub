@@ -50,7 +50,7 @@ DEFINITION = {
             "toggle_cron_job_tool",
         ]
     ),
-    "model_purpose": "patrol",
+    "model_purpose": "standard",
     "middleware_profile": "ops",
     "interrupt_on": {
         "create_cron_job": True,

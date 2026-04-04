@@ -36,6 +36,6 @@ DEFINITION = {
     ),
     "system_prompt": PROMPT,
     "tools_fn": lambda: _get_tools_by_names(["get_system_overview", "check_compliance"]),
-    "model_purpose": "patrol",
+    "model_purpose": "expert",
     "middleware_profile": "ops",
 }

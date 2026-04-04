@@ -41,6 +41,6 @@ DEFINITION = {
         web_search,
         think,
     ],
-    "model_purpose": "patrol",
+    "model_purpose": "fast",
     "middleware_profile": "light",
 }

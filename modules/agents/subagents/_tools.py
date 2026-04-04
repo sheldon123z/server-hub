@@ -56,6 +56,36 @@ def think(thought: str) -> str:
     return f"Reflected: {thought}"
 
 
+@tool
+def fetch_webpage_content(url: str, max_length: int = 50000) -> str:
+    """Fetch full webpage content and convert to markdown for deep analysis.
+
+    Use this after web_search to get complete content from high-value URLs.
+    """
+    try:
+        import httpx
+        from markdownify import markdownify as md
+    except ImportError:
+        return "Error: httpx or markdownify not installed"
+
+    try:
+        resp = httpx.get(
+            url,
+            timeout=30,
+            follow_redirects=True,
+            headers={"User-Agent": "ServerHub-Research/1.0"},
+        )
+        resp.raise_for_status()
+        content = md(resp.text, strip=["script", "style", "nav", "footer", "header"])
+        # 清理多余空行
+        import re
+
+        content = re.sub(r"\n{3,}", "\n\n", content).strip()
+        return content[:max_length]
+    except Exception as e:
+        return f"Failed to fetch {url}: {e}"
+
+
 def _get_tools_by_names(names: list[str]) -> list:
     """从主 agent 的工具集中按名称提取工具对象"""
     from modules.agents.tools import get_server_tools
@@ -73,4 +103,5 @@ def _get_tools_by_names(names: list[str]) -> list:
 TOOL_REGISTRY = {
     "web_search": web_search,
     "think": think,
+    "fetch_webpage_content": fetch_webpage_content,
 }
