@@ -3,7 +3,7 @@
  * Sidebar | Chat (always visible) | Right panel (patrol/admin/terminal)
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
 import { ConversationSidebar } from './ConversationSidebar'
@@ -12,9 +12,13 @@ import { PatrolPanel } from './PatrolPanel'
 import { AdminPanel } from './AdminPanel'
 import { TerminalPanel } from './TerminalPanel'
 import { SafetyToggle } from './SafetyToggle'
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
 
 type RightTab = 'patrol' | 'admin'
+
+const STORAGE_KEY = 'agents-sidebar-width'
+const DEFAULT_SIDEBAR = 200
+const MIN_SIDEBAR = 140
+const MAX_SIDEBAR = 360
 
 export default function AgentsPage() {
   const isAdmin = useAuthStore((s) => s.isAdmin())
@@ -24,11 +28,39 @@ export default function AgentsPage() {
     return (saved === 'patrol' || saved === 'admin') ? saved : 'patrol'
   })
   const [showTerminal, setShowTerminal] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    return saved ? Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, Number(saved))) : DEFAULT_SIDEBAR
+  })
+  const dragging = useRef(false)
 
-  // Persist tab selection to localStorage
   useEffect(() => {
     localStorage.setItem('agents-tab', tab)
   }, [tab])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    dragging.current = true
+    const startX = e.clientX
+    const startW = sidebarWidth
+
+    function onMove(ev: MouseEvent) {
+      if (!dragging.current) return
+      const newW = Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, startW + ev.clientX - startX))
+      setSidebarWidth(newW)
+    }
+    function onUp() {
+      dragging.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      setSidebarWidth((w) => {
+        localStorage.setItem(STORAGE_KEY, String(w))
+        return w
+      })
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [sidebarWidth])
 
   return (
     <div className="-m-5 flex flex-col" style={{ height: 'calc(100vh - 56px)' }}>
@@ -81,41 +113,36 @@ export default function AgentsPage() {
       </div>
 
       {/* 3-column body */}
-      <ResizablePanelGroup orientation="horizontal" id="agents-layout" className="flex-1 min-h-0">
-        {/* Left: conversation sidebar */}
-        <ResizablePanel id="sidebar" defaultSize={15} minSize={10} maxSize={25}>
-          <div className="h-full border-r border-border overflow-y-auto bg-bg">
-            <ConversationSidebar />
-          </div>
-        </ResizablePanel>
+      <div className="flex flex-1 min-h-0">
+        {/* Left: conversation sidebar (resizable) */}
+        <div className="shrink-0 overflow-y-auto bg-bg" style={{ width: sidebarWidth }}>
+          <ConversationSidebar />
+        </div>
 
-        <ResizableHandle withHandle />
+        {/* Drag handle */}
+        <div
+          className="shrink-0 w-1 cursor-col-resize bg-border hover:bg-accent/50 transition-colors"
+          onMouseDown={handleMouseDown}
+        />
 
-        {/* Center: chat panel (always visible) */}
-        <ResizablePanel id="chat" defaultSize={isAdmin ? 50 : 85} minSize={30}>
-          <div className="flex flex-col min-w-0 h-full border-r border-border">
-            <ChatPanel />
-          </div>
-        </ResizablePanel>
+        {/* Center: chat panel */}
+        <div className="flex flex-col flex-1 min-w-0 border-r border-border">
+          <ChatPanel />
+        </div>
 
         {/* Right: context panel (admin only) */}
         {isAdmin && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="right-panel" defaultSize={35} minSize={20} maxSize={50}>
-              <div className="flex flex-col min-w-0 h-full overflow-hidden">
-                {showTerminal ? (
-                  <TerminalPanel />
-                ) : tab === 'patrol' ? (
-                  <PatrolPanel />
-                ) : (
-                  <AdminPanel />
-                )}
-              </div>
-            </ResizablePanel>
-          </>
+          <div className="flex flex-col min-w-0 overflow-hidden" style={{ flex: '0 0 40%' }}>
+            {showTerminal ? (
+              <TerminalPanel />
+            ) : tab === 'patrol' ? (
+              <PatrolPanel />
+            ) : (
+              <AdminPanel />
+            )}
+          </div>
         )}
-      </ResizablePanelGroup>
+      </div>
     </div>
   )
 }
