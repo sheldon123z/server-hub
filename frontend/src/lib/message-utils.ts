@@ -55,7 +55,7 @@ export function isSubAgentCompleted(sa: SubAgentItem): boolean {
 }
 
 /** 获取消息分组类型 */
-export type MessageGroupType = 'content' | 'processing' | 'subagent' | 'mixed'
+import type { MessageGroupType } from '@/types/agent'
 
 export function getMessageGroupType(pm: ProcessedMessage): MessageGroupType {
   const hasTc = hasToolCalls(pm)

@@ -26,17 +26,6 @@ function pageContextFromPath(pathname: string): string {
   return seg || 'dashboard'
 }
 
-function TypingIndicator() {
-  return (
-    <div className="flex justify-start px-3">
-      <div className="flex items-center gap-1 rounded-lg border border-border bg-bg2 px-3 py-2">
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text3 [animation-delay:0ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text3 [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-text3 [animation-delay:300ms]" />
-      </div>
-    </div>
-  )
-}
 
 export function ChatPanel() {
   const location = useLocation()

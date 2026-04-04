@@ -40,8 +40,9 @@ export function useStreamingText(
   const rafRef = useRef<number>(0)
   const lastTimeRef = useRef(0)
   const prevContentRef = useRef('')
+  const [restartKey, setRestartKey] = useState(0)
 
-  // 当 fullContent 变化时，更新 segments
+  // 当 fullContent 变化时，更新 segments 并触发动画重启
   useEffect(() => {
     if (!enabled) return
 
@@ -50,17 +51,19 @@ export function useStreamingText(
       const newPart = fullContent.slice(prevContentRef.current.length)
       if (newPart) {
         segmentsRef.current.push(...segmentText(newPart))
+        setRestartKey((k) => k + 1) // 唤醒 RAF 循环
       }
     } else {
       // 内容完全变化，重置
       segmentsRef.current = segmentText(fullContent)
       segmentIndexRef.current = 0
       setDisplayedLength(0)
+      setRestartKey((k) => k + 1)
     }
     prevContentRef.current = fullContent
   }, [fullContent, enabled])
 
-  // 动画循环
+  // 动画循环 — 仅依赖 restartKey 触发，不依赖 fullContent
   useEffect(() => {
     if (!enabled) {
       setDisplayedLength(fullContent.length)
@@ -72,7 +75,6 @@ export function useStreamingText(
         lastTimeRef.current = time
         if (segmentIndexRef.current < segmentsRef.current.length) {
           segmentIndexRef.current++
-          // 计算已显示的字符总长度
           const shown = segmentsRef.current
             .slice(0, segmentIndexRef.current)
             .join('').length
@@ -86,7 +88,8 @@ export function useStreamingText(
 
     rafRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [enabled, segmentDelay, fullContent])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, segmentDelay, restartKey])
 
   const displayedContent = enabled
     ? fullContent.slice(0, displayedLength)

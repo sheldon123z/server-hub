@@ -4,7 +4,7 @@
  * 纯前端方案：关键词匹配 → 3 条建议
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState, useRef, useCallback } from 'react'
 import { useChatStore } from '@/stores/chatStore'
 
 interface SuggestionRule {
@@ -69,27 +69,35 @@ function matchSuggestions(content: string): string[] {
 export function useFollowUpSuggestions() {
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
-  const suggestions = useChatStore((s) => s.suggestions)
-  const setSuggestions = useChatStore((s) => s.setSuggestions)
-  const clearSuggestions = useChatStore((s) => s.clearSuggestions)
+  const [dismissed, setDismissed] = useState(false)
+  const lastAssistantIdRef = useRef<string | null>(null)
 
-  // 自动生成建议：当最后一条消息是 assistant 且不在 streaming 时
-  const autoSuggestions = useMemo(() => {
-    if (isStreaming) return []
-    if (suggestions.length > 0) return suggestions
-
-    // 找最后一条 assistant 消息
+  // 检测最后一条 assistant 消息是否变化，变化时重置 dismissed
+  const lastAssistantMsg = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant' && messages[i].content) {
-        return matchSuggestions(messages[i].content)
+        return messages[i]
       }
     }
-    return DEFAULT_SUGGESTIONS
-  }, [messages, isStreaming, suggestions])
+    return null
+  }, [messages])
+
+  // 新的 assistant 消息出现时，重置 dismissed 状态
+  if (lastAssistantMsg && lastAssistantMsg._id !== lastAssistantIdRef.current) {
+    lastAssistantIdRef.current = lastAssistantMsg._id
+    if (dismissed) setDismissed(false)
+  }
+
+  const autoSuggestions = useMemo(() => {
+    if (isStreaming || dismissed) return []
+    if (!lastAssistantMsg) return DEFAULT_SUGGESTIONS
+    return matchSuggestions(lastAssistantMsg.content)
+  }, [lastAssistantMsg, isStreaming, dismissed])
+
+  const clearSuggestions = useCallback(() => setDismissed(true), [])
 
   return {
     suggestions: autoSuggestions,
-    setSuggestions,
     clearSuggestions,
     hasSuggestions: autoSuggestions.length > 0 && !isStreaming,
   }
