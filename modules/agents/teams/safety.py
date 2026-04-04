@@ -6,7 +6,8 @@ SafeLocalShellBackend，因此需要独立的安全包装。
 安全机制:
 1. execute 类工具调用前检查 Shell 黑名单 (check_shell_command)
 2. supervised 模式下 DANGER 工具阻止执行并记录审批请求
-3. 剥离敏感环境变量 (*API_KEY*/*SECRET*/*TOKEN*)，防止泄露到子进程
+3. 敏感环境变量剥离由 SafeLocalShellBackend._env 在子进程层处理；
+   _build_safe_env() 提供局部安全副本供未来扩展使用
 """
 
 import logging
@@ -44,8 +45,11 @@ _SENSITIVE_ENV_PATTERNS = [
 ]
 
 
-def _strip_sensitive_env() -> dict[str, str]:
-    """从当前环境变量中剥离敏感信息，返回安全的环境副本"""
+def _build_safe_env() -> dict[str, str]:
+    """构建剥离敏感信息的环境变量副本（不修改 os.environ）
+
+    返回一个新的 dict，可传给 subprocess.Popen(env=...) 等场景。
+    """
     safe = {}
     for key, value in os.environ.items():
         if any(p.match(key) for p in _SENSITIVE_ENV_PATTERNS):
@@ -123,7 +127,9 @@ def _make_logged_tool(
     安全检查:
     1. execute 类工具 — 调用 check_shell_command() 检查黑名单
     2. DANGER 级别 + supervised 模式 — 阻止执行，返回审批提示
-    3. 所有调用剥离敏感环境变量
+
+    注意: 敏感环境变量剥离由 SafeLocalShellBackend._env 在子进程层面处理，
+    此处不修改全局 os.environ 以避免并发竞争条件。
     """
 
     original_func = original.func
@@ -169,19 +175,14 @@ def _make_logged_tool(
         if block_reason:
             return block_reason
 
-        # 剥离敏感环境变量（通过临时替换 os.environ）
-        original_env = os.environ.copy()
-        try:
-            os.environ.clear()
-            os.environ.update(_strip_sensitive_env())
-            if original_coroutine is not None:
-                return await original_coroutine(*args, **kwargs)
-            if original_func is not None:
-                return original_func(*args, **kwargs)
-            return await original.ainvoke(*args, **kwargs)
-        finally:
-            os.environ.clear()
-            os.environ.update(original_env)
+        # 注意: 不再修改全局 os.environ，避免并发竞争条件。
+        # 敏感变量剥离由 SafeLocalShellBackend._env 在子进程层面处理。
+        # 如需在此层传递安全环境，可使用 _build_safe_env() 构建局部副本。
+        if original_coroutine is not None:
+            return await original_coroutine(*args, **kwargs)
+        if original_func is not None:
+            return original_func(*args, **kwargs)
+        return await original.ainvoke(*args, **kwargs)
 
     def sync_wrapper(*args, **kwargs):
         logger.info(
@@ -196,17 +197,11 @@ def _make_logged_tool(
         if block_reason:
             return block_reason
 
-        # 剥离敏感环境变量
-        original_env = os.environ.copy()
-        try:
-            os.environ.clear()
-            os.environ.update(_strip_sensitive_env())
-            if original_func is not None:
-                return original_func(*args, **kwargs)
-            return original.invoke(*args, **kwargs)
-        finally:
-            os.environ.clear()
-            os.environ.update(original_env)
+        # 注意: 不再修改全局 os.environ，避免并发竞争条件。
+        # 敏感变量剥离由 SafeLocalShellBackend._env 在子进程层面处理。
+        if original_func is not None:
+            return original_func(*args, **kwargs)
+        return original.invoke(*args, **kwargs)
 
     return StructuredTool(
         name=original.name,
