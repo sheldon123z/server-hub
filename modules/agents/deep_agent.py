@@ -1,9 +1,10 @@
 """Deep Agent 工厂 — 基于 deepagents 框架构建运维智能体
 
-Middleware 栈 (12 个):
+Middleware 栈 (13 个):
   框架自动注入: TodoList, Filesystem, SubAgent, Summarization, PatchToolCalls,
                 AnthropicPromptCaching, HumanInTheLoop, Memory
-  手动注入:     ModelRetry, ToolRetry, ModelCallLimit, ContextEditing, [ModelFallback]
+  手动注入:     LoopDetection, ModelRetry, ToolRetry, ModelCallLimit, ContextEditing,
+                [ModelFallback]
 
 记忆系统:
   短期: AsyncSqliteSaver checkpoint（per-conversation state 持久化）
@@ -30,11 +31,17 @@ from langgraph.store.sqlite import AsyncSqliteStore
 
 from config import settings
 from modules.agents.llm import get_chat_model
+from modules.agents.loop_detection import LoopDetectionMiddleware
 from modules.agents.prompts import get_system_prompt
 from modules.agents.safety import build_interrupt_config
 from modules.agents.sandbox import SafeLocalShellBackend
 from modules.agents.subagents import load_subagents
-from modules.agents.tools import get_server_tools
+from modules.agents.deferred_tools import (
+    DeferredToolRegistry,
+    set_deferred_registry,
+    tool_search,
+)
+from modules.agents.tools import get_server_tools, get_tools_split
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +73,18 @@ def _build_extra_middleware(purpose: str = "chat") -> list:
     AnthropicPromptCaching 和 MemoryMiddleware 之前。
 
     框架自动注入: TodoList, Filesystem, SubAgent, Summarization, PatchToolCalls
-    我们额外添加: ModelRetry, ToolRetry, ModelCallLimit, ContextEditing, [ModelFallback]
+    我们额外添加: LoopDetection, ModelRetry, ToolRetry, ModelCallLimit, ContextEditing, [ModelFallback]
     """
     extra = []
+
+    # 0. 循环检测 — 检测重复工具调用，3 次警告 5 次强停
+    extra.append(
+        LoopDetectionMiddleware(
+            window_size=20,
+            warn_threshold=3,
+            stop_threshold=5,
+        )
+    )
 
     # 1. 模型调用重试 — 网络抖动、API 限流时自动重试（3 次，1s → 2s → 4s）
     extra.append(ModelRetryMiddleware(max_retries=3, backoff_factor=1.0))
