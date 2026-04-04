@@ -1,13 +1,16 @@
 /**
  * MessageBubble — renders a single chat message with role-specific styling
  * and hover action bar (copy / delete / resend).
+ *
+ * Tool calls, tool results, and approvals are now rendered by ChatPanel
+ * via ToolCallBox and ToolApprovalInterrupt respectively.
  */
 
-import React, { useState, useCallback } from 'react'
+import React, { useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, UIComponentMessage } from '@/types/agent'
-import { MarkdownRenderer } from './MarkdownRenderer'
+import { MarkdownContent } from './MarkdownContent'
 import { UICard } from '@/components/agent/UICard'
 import { UIComponentErrorBoundary } from '@/components/agent/UIComponentErrorBoundary'
 import { useChatStore } from '@/stores/chatStore'
@@ -18,8 +21,6 @@ interface MessageBubbleProps {
   message: ChatMessage
   onDelete?: (id: string) => void
   onResend?: (content: string, id: string) => void
-  onApprove?: (approvalId: string) => void
-  onReject?: (approvalId: string) => void
 }
 
 /* ── Sub-components ─────────────────────────────────── */
@@ -60,108 +61,9 @@ function ActionBar({
   )
 }
 
-/* ── Tool call / result card ────────────────────────── */
-
-function formatContent(content: string): string {
-  try {
-    const parsed = JSON.parse(content)
-    return JSON.stringify(parsed, null, 2)
-  } catch {
-    return content
-  }
-}
-
-function ToolCard({
-  icon,
-  label,
-  content,
-  borderColor,
-  bgColor,
-}: {
-  icon: string
-  label: string
-  content: string
-  borderColor: string
-  bgColor: string
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [showFullscreen, setShowFullscreen] = useState(false)
-  const formatted = formatContent(content)
-  const lines = formatted.split('\n')
-  const preview = lines.slice(0, 3).join('\n')
-  const hasMore = lines.length > 3
-
-  return (
-    <>
-      <div
-        className={cn(
-          'max-w-[90%] rounded-lg border px-3 py-2 text-sm',
-          borderColor,
-          bgColor,
-        )}
-      >
-        <div
-          className="flex items-center gap-1.5 font-medium text-text cursor-pointer select-none"
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span>{icon}</span>
-          <span>{label}</span>
-          <div className="ml-auto flex items-center gap-2">
-            {hasMore && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowFullscreen(true) }}
-                className="text-text3 text-xs hover:text-accent transition-colors"
-              >
-                全屏
-              </button>
-            )}
-            <span className="text-text3 text-xs">{expanded ? '收起' : '展开'}</span>
-          </div>
-        </div>
-        <div
-          className={cn(
-            'mt-1.5 font-mono text-xs text-text2 whitespace-pre-wrap break-all overflow-hidden transition-all duration-200',
-            expanded ? 'max-h-[600px] overflow-y-auto' : '',
-          )}
-        >
-          {expanded ? formatted : preview}
-          {!expanded && hasMore && <span className="text-text3"> ...</span>}
-        </div>
-      </div>
-      {showFullscreen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setShowFullscreen(false)}
-        >
-          <div
-            className="relative mx-4 max-h-[80vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-border bg-card p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 font-medium text-text text-sm">
-                <span>{icon}</span>
-                <span>{label}</span>
-              </div>
-              <button
-                onClick={() => setShowFullscreen(false)}
-                className="text-text3 hover:text-text text-sm px-2 py-1 rounded hover:bg-bg2 transition-colors"
-              >
-                关闭
-              </button>
-            </div>
-            <pre className="font-mono text-xs text-text2 whitespace-pre-wrap break-all">
-              {formatted}
-            </pre>
-          </div>
-        </div>
-      )}
-    </>
-  )
-}
-
 /* ── Main component ─────────────────────────────────── */
 
-export const MessageBubble = React.memo(function MessageBubble({ message, onDelete, onResend, onApprove, onReject }: MessageBubbleProps) {
+export const MessageBubble = React.memo(function MessageBubble({ message, onDelete, onResend }: MessageBubbleProps) {
   const { role, content, _id } = message
 
   const handleCopy = useCallback(() => {
@@ -204,40 +106,9 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
               'text-sm leading-relaxed',
             )}
           >
-            <MarkdownRenderer content={content} />
+            <MarkdownContent content={content} />
           </div>
         </div>
-      </div>
-    )
-  }
-
-  /* ── Tool call ────────────────────────────────── */
-  if (role === 'tool_call') {
-    const argsStr = message.args ? JSON.stringify(message.args, null, 2) : content
-    return (
-      <div className="flex justify-start">
-        <ToolCard
-          icon="🔧"
-          label={message.tool || '工具调用'}
-          content={argsStr}
-          borderColor="border-[rgba(56,189,248,0.2)]"
-          bgColor="bg-[rgba(56,189,248,0.08)]"
-        />
-      </div>
-    )
-  }
-
-  /* ── Tool result ──────────────────────────────── */
-  if (role === 'tool_result') {
-    return (
-      <div className="flex justify-start">
-        <ToolCard
-          icon="📋"
-          label={message.tool || '结果'}
-          content={content}
-          borderColor="border-[rgba(56,189,248,0.2)]"
-          bgColor="bg-[rgba(56,189,248,0.08)]"
-        />
       </div>
     )
   }
@@ -272,54 +143,6 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
               onAction={handleUIAction}
             />
           </UIComponentErrorBoundary>
-        </div>
-      </div>
-    )
-  }
-
-  /* ── Approval request ─────────────────────────── */
-  if (role === 'approval') {
-    return (
-      <div className="flex justify-start">
-        <div
-          className={cn(
-            'max-w-[90%] rounded-lg border px-4 py-3 text-sm',
-            'border-yellow bg-[rgba(251,191,36,0.1)]',
-          )}
-        >
-          <div className="flex items-center gap-1.5 font-semibold text-yellow mb-2">
-            <span>⚠️</span>
-            <span>需要审批</span>
-          </div>
-          {message.description && (
-            <p className="text-text2 text-xs mb-3 whitespace-pre-wrap">{message.description}</p>
-          )}
-          <div className="flex items-center gap-2">
-            {onApprove && message.approval_id && (
-              <button
-                onClick={() => onApprove(message.approval_id!)}
-                className={cn(
-                  'px-3 py-1 rounded text-xs font-medium',
-                  'bg-green/20 text-green border border-green/30',
-                  'hover:bg-green/30 transition-colors',
-                )}
-              >
-                批准
-              </button>
-            )}
-            {onReject && message.approval_id && (
-              <button
-                onClick={() => onReject(message.approval_id!)}
-                className={cn(
-                  'px-3 py-1 rounded text-xs font-medium',
-                  'bg-red/20 text-red border border-red/30',
-                  'hover:bg-red/30 transition-colors',
-                )}
-              >
-                拒绝
-              </button>
-            )}
-          </div>
         </div>
       </div>
     )

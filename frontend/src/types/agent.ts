@@ -118,3 +118,30 @@ export interface UIComponentMessage extends ChatMessage {
   data: UIComponentData
   uiActions?: UIAction[]
 }
+
+// ── 消息分组：工具调用与 SubAgent ──
+
+export type ToolCallStatus = 'pending' | 'completed' | 'error' | 'interrupted'
+
+export interface ToolCallItem {
+  id: string
+  name: string
+  args: Record<string, unknown>
+  result?: string
+  status: ToolCallStatus
+}
+
+export interface SubAgentItem {
+  id: string
+  name: string
+  subAgentName: string
+  input: Record<string, unknown>
+  output?: Record<string, unknown>
+  status: ToolCallStatus
+}
+
+export interface ProcessedMessage {
+  message: ChatMessage
+  toolCalls: ToolCallItem[]
+  subAgents: SubAgentItem[]
+}
