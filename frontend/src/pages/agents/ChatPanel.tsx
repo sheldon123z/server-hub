@@ -9,8 +9,13 @@ import { useChatStore } from '@/stores/chatStore'
 import { useSSEChat } from '@/hooks/useSSEChat'
 import type { ChatMessage, ProcessedMessage, SkillRecommendation } from '@/types/agent'
 import { useProcessedMessages } from '@/hooks/useProcessedMessages'
+import { hasToolCalls, hasSubAgents, getToolResultSummary } from '@/lib/message-utils'
+import { MessageGroup } from '@/components/chat/MessageGroup'
+import { ToolCallCard } from '@/components/chat/ToolCallCard'
+import { FollowUpSuggestions } from '@/components/chat/FollowUpSuggestions'
+import { SkeletonMessage } from '@/components/chat/SkeletonMessage'
+import { useFollowUpSuggestions } from '@/hooks/useFollowUpSuggestions'
 import { MessageBubble } from './MessageBubble'
-import { ToolCallBox } from './ToolCallBox'
 import { ToolApprovalInterrupt } from './ToolApprovalInterrupt'
 import { SubAgentIndicator } from './SubAgentIndicator'
 import { TodoPanel } from './TodoPanel'
@@ -53,6 +58,7 @@ export function ChatPanel() {
   const { scrollRef, contentRef, isAtBottom } = useStickToBottom()
   const pageContext = pageContextFromPath(location.pathname)
   const processedMessages = useProcessedMessages()
+  const { suggestions: followUpSuggestions, hasSuggestions, clearSuggestions } = useFollowUpSuggestions()
 
   const trimmedInput = input.trim()
 
@@ -157,23 +163,30 @@ export function ChatPanel() {
             onDelete={handleDelete}
             onResend={msg.role === 'user' ? handleResend : undefined}
           />
-          {/* Tool calls grouped under this assistant message */}
-          {pm.toolCalls.length > 0 && (
-            <div className="mt-1 flex flex-col gap-0.5 pl-3">
-              {pm.toolCalls
-                .filter(tc => !tc.args?.subagent_type)
-                .map(tc => (
-                  <ToolCallBox key={tc.id} toolCall={tc} />
+          {/* Tool calls — MessageGroup 折叠包裹 */}
+          {hasToolCalls(pm) && (() => {
+            const regularToolCalls = pm.toolCalls.filter(tc => !tc.args?.subagent_type)
+            if (regularToolCalls.length === 0) return null
+            const lastTc = regularToolCalls[regularToolCalls.length - 1]
+            return (
+              <MessageGroup
+                type="processing"
+                toolCalls={regularToolCalls}
+                lastResultSummary={getToolResultSummary(lastTc?.result)}
+              >
+                {regularToolCalls.map(tc => (
+                  <ToolCallCard key={tc.id} toolCall={tc} />
                 ))}
-            </div>
-          )}
-          {/* SubAgent indicators */}
-          {pm.subAgents.length > 0 && (
-            <div className="mt-2 flex flex-col gap-2 pl-3">
+              </MessageGroup>
+            )
+          })()}
+          {/* SubAgent indicators — MessageGroup 折叠包裹 */}
+          {hasSubAgents(pm) && (
+            <MessageGroup type="subagent" subAgents={pm.subAgents}>
               {pm.subAgents.map(sa => (
                 <SubAgentIndicator key={sa.id} subAgent={sa} />
               ))}
-            </div>
+            </MessageGroup>
           )}
         </div>
       )
@@ -219,7 +232,7 @@ export function ChatPanel() {
             </div>
           )}
           <div className="flex flex-col gap-2.5">{processedMessages.map(renderProcessedMessage)}</div>
-          {isStreaming && <TypingIndicator />}
+          {isStreaming && <div className="px-3"><SkeletonMessage /></div>}
         </div>
         {!isAtBottom && messages.length > 0 && (
           <button
@@ -232,6 +245,17 @@ export function ChatPanel() {
       </div>
 
       <TodoPanel />
+
+      {hasSuggestions && (
+        <FollowUpSuggestions
+          suggestions={followUpSuggestions}
+          onSelect={(text) => {
+            clearSuggestions()
+            handleSend(text)
+          }}
+          onDismiss={clearSuggestions}
+        />
+      )}
 
       <div className="border-t border-border px-3 py-2.5">
         {!!recommendations?.length && (

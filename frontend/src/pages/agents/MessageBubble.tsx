@@ -10,6 +10,8 @@ import React, { useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import type { ChatMessage, UIComponentMessage } from '@/types/agent'
+import { isUIComponentMessage } from '@/lib/message-utils'
+import { useStreamingText } from '@/hooks/useStreamingText'
 import { MarkdownContent } from './MarkdownContent'
 import { UICard } from '@/components/agent/UICard'
 import { UIComponentErrorBoundary } from '@/components/agent/UIComponentErrorBoundary'
@@ -66,6 +68,14 @@ function ActionBar({
 export const MessageBubble = React.memo(function MessageBubble({ message, onDelete, onResend }: MessageBubbleProps) {
   const { role, content, _id } = message
 
+  // Streaming state (hooks must be at top level)
+  const streamingMessageId = useChatStore((s) => s.streamingMessageId)
+  const isCurrentlyStreaming = role === 'assistant' && _id === streamingMessageId
+  const { displayedContent, isAnimating } = useStreamingText(content, {
+    enabled: isCurrentlyStreaming,
+    segmentDelay: 12,
+  })
+
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => toast.success('已复制')).catch(() => toast.error('复制失败'))
   }, [content])
@@ -106,7 +116,16 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
               'text-sm leading-relaxed',
             )}
           >
-            <MarkdownContent content={content} />
+            {isCurrentlyStreaming ? (
+              <>
+                <span className="whitespace-pre-wrap">{displayedContent}</span>
+                {isAnimating && (
+                  <span className="inline-block w-1.5 h-4 bg-accent/60 ml-0.5 animate-pulse rounded-sm align-text-bottom" />
+                )}
+              </>
+            ) : (
+              <MarkdownContent content={content} />
+            )}
           </div>
         </div>
       </div>
@@ -114,16 +133,15 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
   }
 
   /* ── UI Component ─────────────────────────────── */
-  if (role === 'ui_component') {
-    const uiMsg = message as UIComponentMessage
+  if (role === 'ui_component' && isUIComponentMessage(message)) {
     const handleUIAction = (actionId: string, payload?: Record<string, unknown>) => {
       fetch('/api/agents/ui/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          component_id: uiMsg.data?.id,
-          component_type: uiMsg.componentType,
+          component_id: message.data?.id,
+          component_type: message.componentType,
           action_id: actionId,
           action_type: 'agent',
           payload: payload ?? {},
@@ -137,9 +155,9 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
       <div className="flex justify-start">
         <div className="group relative max-w-[95%]">
           <ActionBar onCopy={handleCopy} onDelete={handleDelete} />
-          <UIComponentErrorBoundary componentId={uiMsg.data?.id ?? 'unknown'}>
+          <UIComponentErrorBoundary componentId={(message.data?.id as string) ?? 'unknown'}>
             <UICard
-              component={uiMsg.data}
+              component={message.data as UIComponentMessage['data']}
               onAction={handleUIAction}
             />
           </UIComponentErrorBoundary>
