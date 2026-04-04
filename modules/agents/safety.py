@@ -17,6 +17,8 @@ class RiskLevel(StrEnum):
 
 # 风险标签（仅 UI 展示用）
 TOOL_RISK_MAP = {
+    # 澄清工具
+    "ask_clarification": RiskLevel.SAFE,
     # 自定义工具
     "get_system_overview": RiskLevel.SAFE,
     "get_disk_info": RiskLevel.SAFE,

@@ -145,6 +145,29 @@ def _process_tool_message(
             {"event": "message.final", "data": json.dumps(fallback_payload, ensure_ascii=False)},
         ]
 
+    # 检测澄清请求
+    if content_data.get("_clarification"):
+        clarification_payload = {
+            "run_id": run_id,
+            "question": content_data.get("question", ""),
+            "clarification_type": content_data.get("clarification_type", "missing_info"),
+            "context": content_data.get("context", ""),
+            "options": content_data.get("options"),
+            "id": msg_id or "",
+        }
+        buf.buffer_run_event(run_id, conversation_id, "clarification.request", clarification_payload)
+        # Also send as a regular message for fallback display
+        fallback_payload = {
+            "run_id": run_id,
+            "content": content_data.get("question", "需要更多信息"),
+            "role": "assistant",
+            "id": msg_id or "",
+        }
+        return [
+            {"event": "clarification.request", "data": json.dumps(clarification_payload, ensure_ascii=False)},
+            {"event": "message.final", "data": json.dumps(fallback_payload, ensure_ascii=False)},
+        ]
+
     payload = {
         "run_id": run_id,
         "tool": getattr(msg, "name", ""),

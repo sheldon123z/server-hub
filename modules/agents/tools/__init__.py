@@ -1,5 +1,6 @@
 """运维工具集 — 封装现有 services 为 LangChain @tool"""
 
+# ─── 澄清 ───
 # ─── 系统 ───
 # ─── 资产与故障案例 ───
 from modules.agents.tools.assets import (
@@ -8,6 +9,7 @@ from modules.agents.tools.assets import (
     save_fault_case,
     search_fault_cases,
 )
+from modules.agents.tools.clarification import ask_clarification
 
 # ─── 定时任务 ───
 from modules.agents.tools.cron import (
@@ -112,6 +114,7 @@ def get_server_tools(user_role: str = "admin") -> list:
         user_role: "admin" 返回全部工具，"user" 只返回只读安全工具
     """
     all_tools = [
+        ask_clarification,  # 结构化澄清工具 — 始终可用
         get_system_overview,
         get_disk_info,
         get_user_resources,
