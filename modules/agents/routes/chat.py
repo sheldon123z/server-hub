@@ -1,4 +1,10 @@
-"""SSE 对话流路由。"""
+"""SSE 对话流路由。
+
+架构: StreamBridge 解耦
+  Producer: _run_agent() 后台 asyncio.Task → 发布事件到 StreamBridge 队列
+  Consumer: _sse_consumer() SSE 生成器 → 从队列消费 → yield SSE 帧
+  客户端断连时 agent 继续执行，重连后可从队列恢复。
+"""
 
 from __future__ import annotations
 
@@ -25,14 +31,23 @@ from modules.agents.run_service import (
 )
 from modules.agents.schemas import ChatRequest  # noqa: TC001 — FastAPI 需要运行时解析 Pydantic 模型
 from modules.agents.skill_service import load_skill_context
+from modules.agents.stream_bridge import (
+    END_SENTINEL,
+    HEARTBEAT_SENTINEL,
+    StreamEvent,
+    get_stream_bridge,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# 防止后台 agent task 被 GC 回收
+_active_agent_tasks: set[asyncio.Task] = set()
+
 
 # ---------------------------------------------------------------------------
-# event_generator 辅助函数
+# 消息处理辅助函数 (不变)
 # ---------------------------------------------------------------------------
 
 
@@ -44,7 +59,7 @@ def _process_ai_message(
     username: str,
     buf: DbWriteBuffer,
 ) -> list[dict]:
-    """处理 AI 消息，返回要 yield 的 SSE event 列表。DB 写入缓冲到 buf。"""
+    """处理 AI 消息，返回要发布的 SSE event 列表。DB 写入缓冲到 buf。"""
     events: list[dict] = []
 
     if getattr(msg, "tool_calls", None):
@@ -115,7 +130,7 @@ def _process_tool_message(
     username: str,
     buf: DbWriteBuffer,
 ) -> list[dict]:
-    """处理工具调用结果消息，返回要 yield 的 SSE event 列表。DB 写入缓冲到 buf。"""
+    """处理工具调用结果消息，返回要发布的 SSE event 列表。DB 写入缓冲到 buf。"""
     msg_id = getattr(msg, "id", None)
 
     # 检测 UI 组件标记
@@ -191,7 +206,7 @@ def _process_tool_message(
 
 
 async def _handle_interrupt(snapshot, run_id: str, conversation_id: str, db) -> list[dict]:
-    """处理审批中断（interrupt），返回要 yield 的 SSE event 列表。"""
+    """处理审批中断（interrupt），返回要发布的 SSE event 列表。"""
     events: list[dict] = []
     tasks = snapshot.tasks
     if not (tasks and tasks[0].interrupts):
@@ -275,16 +290,203 @@ async def _handle_interrupt(snapshot, run_id: str, conversation_id: str, db) -> 
 
 
 # ---------------------------------------------------------------------------
+# Producer: Agent 后台执行，事件发布到 StreamBridge
+# ---------------------------------------------------------------------------
+
+
+async def _run_agent(
+    *,
+    run_id: str,
+    conversation_id: str,
+    safety_mode: str,
+    user_role: str,
+    username: str,
+    message: str,
+    skill_id: str | None,
+    page_context: str | None,
+) -> None:
+    """后台执行 agent，将所有 SSE 事件发布到 StreamBridge 队列。
+
+    客户端断连不影响此函数执行。
+    """
+    bridge = get_stream_bridge()
+    buf = DbWriteBuffer()
+    bg_tasks: set[asyncio.Task] = set()
+
+    async def _publish_events(events: list[dict]) -> None:
+        """将事件列表发布到 bridge"""
+        for ev in events:
+            await bridge.publish(run_id, ev["event"], ev["data"])
+
+    try:
+        from modules.agents.deep_agent import build_agent
+
+        agent = await build_agent(safety_mode=safety_mode, user_role=user_role)
+        config = {"configurable": {"thread_id": conversation_id}}
+        input_messages = [{"role": "user", "content": message}]
+
+        if skill_id:
+            skill_ctx = await load_skill_context(skill_id)
+            if skill_ctx:
+                input_messages.insert(0, {"role": "system", "content": skill_ctx})
+
+        if page_context:
+            from modules.agents.page_context import get_page_context
+
+            page_ctx = await get_page_context(page_context)
+            if page_ctx:
+                input_messages.insert(0, {"role": "system", "content": page_ctx})
+
+        input_state = {"messages": input_messages}
+        prev_todos = None
+        emitted_ids: set[str] = set()
+        try:
+            snapshot = await agent.aget_state(config)
+            emitted_count = len(snapshot.values.get("messages", []))
+        except Exception:
+            emitted_count = 0
+
+        async for step in agent.astream(input_state, config, stream_mode="values"):
+            todos = step.get("todos")
+            if todos is not None and todos != prev_todos:
+                prev_todos = todos
+                payload = {"run_id": run_id, "todos": todos}
+                buf.buffer_run_event(run_id, conversation_id, "todo.update", payload)
+                await bridge.publish(run_id, "todo.update", json.dumps(payload, ensure_ascii=False))
+
+            messages = step.get("messages", [])
+            if not messages or len(messages) <= emitted_count:
+                continue
+
+            for msg in messages[emitted_count:]:
+                msg_id = getattr(msg, "id", None)
+                if msg_id and msg_id in emitted_ids:
+                    continue
+                if msg_id:
+                    emitted_ids.add(msg_id)
+
+                if isinstance(msg, AIMessage):
+                    await _publish_events(_process_ai_message(msg, run_id, conversation_id, emitted_ids, username, buf))
+                elif isinstance(msg, ToolMessage):
+                    await _publish_events(_process_tool_message(msg, run_id, conversation_id, username, buf))
+
+            emitted_count = len(messages)
+
+            # 异步刷写缓冲
+            if buf.pending >= 4:
+                task = asyncio.create_task(buf.flush())
+                bg_tasks.add(task)
+                task.add_done_callback(bg_tasks.discard)
+
+        # 流结束后检查是否有中断（审批请求）
+        db = await get_db()
+        snapshot = await agent.aget_state(config)
+        if snapshot.next:
+            await buf.flush()
+            await _publish_events(await _handle_interrupt(snapshot, run_id, conversation_id, db))
+        else:
+            payload = {"conversation_id": conversation_id, "run_id": run_id, "status": "completed"}
+            buf.buffer_run_event(run_id, conversation_id, "run.completed", payload)
+            buf.buffer_run_status(run_id, status="completed", completed=True)
+            await bridge.publish(run_id, "run.completed", json.dumps(payload, ensure_ascii=False))
+
+        buf.buffer_conversation_touch(conversation_id)
+        await buf.flush()
+
+    except asyncio.CancelledError:
+        payload = {"run_id": run_id, "conversation_id": conversation_id, "error": "运行已取消"}
+        buf.buffer_run_event(run_id, conversation_id, "run.error", payload)
+        buf.buffer_run_status(run_id, status="cancelled", error="运行已取消", completed=True)
+        await buf.flush()
+        await bridge.publish(run_id, "run.error", json.dumps(payload, ensure_ascii=False))
+    except Exception as exc:
+        logger.exception("Agent run error: %s", exc)
+        payload = {"run_id": run_id, "conversation_id": conversation_id, "error": str(exc)}
+        buf.buffer_run_event(run_id, conversation_id, "run.error", payload)
+        buf.buffer_run_status(run_id, status="error", error=str(exc), completed=True)
+        await buf.flush()
+        await bridge.publish(run_id, "run.error", json.dumps(payload, ensure_ascii=False))
+    finally:
+        try:
+            await buf.flush()
+        except Exception:
+            logger.debug("finally flush 失败", exc_info=True)
+
+        # 异步入队记忆更新
+        try:
+            from pathlib import Path
+
+            from modules.agents.memory.queue import get_memory_queue
+            from modules.agents.memory.storage import MemoryStorage
+
+            smart_memory_dir = Path(settings.db_path).parent / "smart-memory"
+            mem_storage = MemoryStorage(smart_memory_dir)
+            snapshot_for_memory = await agent.aget_state(config)
+            msgs = snapshot_for_memory.values.get("messages", [])
+            if len(msgs) >= 2:
+                queue = get_memory_queue()
+                await queue.enqueue(conversation_id, mem_storage, msgs)
+        except Exception:
+            logger.debug("记忆更新入队失败", exc_info=True)
+
+        unregister_active_run(run_id)
+
+        # 发布 done 事件 + END sentinel
+        done_payload = json.dumps({"conversation_id": conversation_id, "run_id": run_id}, ensure_ascii=False)
+        await bridge.publish(run_id, "done", done_payload)
+        await bridge.publish_end(run_id)
+
+
+# ---------------------------------------------------------------------------
+# Consumer: SSE 生成器，从 StreamBridge 队列消费
+# ---------------------------------------------------------------------------
+
+
+async def _sse_consumer(run_id: str, conversation_id: str, run_created_at: str, skill_id: str | None):
+    """从 StreamBridge 消费事件并 yield SSE 帧。
+
+    客户端断连时此生成器结束，但 _run_agent 后台任务继续执行。
+    """
+    bridge = get_stream_bridge()
+
+    # 先 yield run.started 事件（立即返回给客户端）
+    started_payload = {
+        "run_id": run_id,
+        "conversation_id": conversation_id,
+        "status": "running",
+        "created_at": run_created_at,
+        "skill_id": skill_id,
+    }
+    yield {"event": "run.started", "data": json.dumps(started_payload, ensure_ascii=False)}
+
+    async for entry in bridge.subscribe(run_id):
+        if entry is HEARTBEAT_SENTINEL:
+            yield {"comment": "heartbeat"}
+            continue
+
+        if entry is END_SENTINEL:
+            return
+
+        if isinstance(entry, StreamEvent):
+            yield {"event": entry.event, "data": entry.data}
+
+
+# ---------------------------------------------------------------------------
 # 路由
 # ---------------------------------------------------------------------------
 
 
 @router.post("/chat")
 async def chat(request: Request, body: ChatRequest, user=Depends(get_current_user)):
-    """兼容旧入口，内部按照 run 生命周期执行。"""
+    """SSE 对话入口 — StreamBridge 解耦架构。
+
+    Agent 在后台 asyncio.Task 中执行，SSE 从 StreamBridge 队列消费。
+    客户端断连不会中断 Agent 执行。
+    """
     conversation_id = body.conversation_id or str(uuid.uuid4())
     user_role = user["role"]
     safety_mode = body.safety_mode if user_role == "admin" else "supervised"
+
     await ensure_conversation(
         conversation_id,
         username=user["username"],
@@ -300,144 +502,56 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
         skill_id=body.skill_id,
     )
     run_id = run["run_id"]
-    db = await get_db()
+    register_active_run(run_id)
 
-    async def event_generator():
-        buf = DbWriteBuffer()
-        bg_tasks: set[asyncio.Task] = set()  # 防止 fire-and-forget flush 被 GC
-        register_active_run(run_id)
-        try:
-            started_payload = {
-                "run_id": run_id,
-                "conversation_id": conversation_id,
-                "status": "running",
-                "created_at": run["created_at"],
-                "skill_id": body.skill_id,
+    # 启动 Agent 后台任务 — 发布事件到 StreamBridge
+    # 将 task 存入 _active_agent_tasks 防止被 GC 回收
+    task = asyncio.create_task(
+        _run_agent(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            safety_mode=safety_mode,
+            user_role=user_role,
+            username=user["username"],
+            message=body.message,
+            skill_id=body.skill_id,
+            page_context=body.page_context,
+        )
+    )
+    _active_agent_tasks.add(task)
+    task.add_done_callback(_active_agent_tasks.discard)
+
+    # SSE 消费者 — 从 StreamBridge 队列读取事件
+    return EventSourceResponse(_sse_consumer(run_id, conversation_id, run["created_at"], body.skill_id))
+
+
+@router.get("/runs/{run_id}/stream")
+async def reconnect_stream(run_id: str, user=Depends(get_current_user)):
+    """SSE 重连端点 — 客户端断连后恢复事件流。
+
+    如果 run 仍在执行（队列存在），从队列中恢复未消费的事件。
+    如果 run 已结束且队列已清理，返回空流。
+    """
+    bridge = get_stream_bridge()
+
+    if not bridge.has_queue(run_id):
+        # 队列已清理或 run 不存在 — 返回 done 事件
+        async def _empty_stream():
+            yield {
+                "event": "done",
+                "data": json.dumps({"run_id": run_id, "reconnected": True, "status": "completed"}),
             }
-            buf.buffer_run_event(run_id, conversation_id, "run.started", started_payload)
-            yield {"event": "run.started", "data": json.dumps(started_payload, ensure_ascii=False)}
 
-            from modules.agents.deep_agent import build_agent
+        return EventSourceResponse(_empty_stream())
 
-            agent = await build_agent(safety_mode=safety_mode, user_role=user_role)
-            config = {"configurable": {"thread_id": conversation_id}}
-            input_messages = [{"role": "user", "content": body.message}]
+    async def _reconnect_consumer():
+        async for entry in bridge.subscribe(run_id):
+            if entry is HEARTBEAT_SENTINEL:
+                yield {"comment": "heartbeat"}
+                continue
+            if entry is END_SENTINEL:
+                return
+            if isinstance(entry, StreamEvent):
+                yield {"event": entry.event, "data": entry.data}
 
-            if body.skill_id:
-                skill_ctx = await load_skill_context(body.skill_id)
-                if skill_ctx:
-                    input_messages.insert(0, {"role": "system", "content": skill_ctx})
-
-            if body.page_context:
-                from modules.agents.page_context import get_page_context
-
-                page_ctx = await get_page_context(body.page_context)
-                if page_ctx:
-                    input_messages.insert(0, {"role": "system", "content": page_ctx})
-
-            input_state = {"messages": input_messages}
-            prev_todos = None
-            emitted_ids: set[str] = set()
-            try:
-                snapshot = await agent.aget_state(config)
-                emitted_count = len(snapshot.values.get("messages", []))
-            except Exception:
-                emitted_count = 0
-
-            async for step in agent.astream(input_state, config, stream_mode="values"):
-                todos = step.get("todos")
-                if todos is not None and todos != prev_todos:
-                    prev_todos = todos
-                    payload = {"run_id": run_id, "todos": todos}
-                    buf.buffer_run_event(run_id, conversation_id, "todo.update", payload)
-                    yield {"event": "todo.update", "data": json.dumps(payload, ensure_ascii=False)}
-
-                messages = step.get("messages", [])
-                if not messages or len(messages) <= emitted_count:
-                    continue
-
-                for msg in messages[emitted_count:]:
-                    msg_id = getattr(msg, "id", None)
-                    if msg_id and msg_id in emitted_ids:
-                        continue
-                    if msg_id:
-                        emitted_ids.add(msg_id)
-
-                    if isinstance(msg, AIMessage):
-                        for event in _process_ai_message(
-                            msg, run_id, conversation_id, emitted_ids, user["username"], buf
-                        ):
-                            yield event
-
-                    elif isinstance(msg, ToolMessage):
-                        for event in _process_tool_message(msg, run_id, conversation_id, user["username"], buf):
-                            yield event
-
-                emitted_count = len(messages)
-
-                # 每个 astream step 结束后异步刷写缓冲，不阻塞下一个 SSE 事件
-                if buf.pending >= 4:
-                    task = asyncio.create_task(buf.flush())
-                    bg_tasks.add(task)
-                    task.add_done_callback(bg_tasks.discard)
-
-            # 流结束后检查是否有中断（审批请求）
-            snapshot = await agent.aget_state(config)
-            if snapshot.next:
-                # _handle_interrupt 自行直接写 DB（含审批记录），先刷缓冲
-                await buf.flush()
-                for event in await _handle_interrupt(snapshot, run_id, conversation_id, db):
-                    yield event
-            else:
-                payload = {"conversation_id": conversation_id, "run_id": run_id, "status": "completed"}
-                buf.buffer_run_event(run_id, conversation_id, "run.completed", payload)
-                buf.buffer_run_status(run_id, status="completed", completed=True)
-                yield {"event": "run.completed", "data": json.dumps(payload, ensure_ascii=False)}
-
-            buf.buffer_conversation_touch(conversation_id)
-            await buf.flush()
-        except asyncio.CancelledError:
-            payload = {"run_id": run_id, "conversation_id": conversation_id, "error": "运行已取消"}
-            buf.buffer_run_event(run_id, conversation_id, "run.error", payload)
-            buf.buffer_run_status(run_id, status="cancelled", error="运行已取消", completed=True)
-            await buf.flush()
-            yield {"event": "run.error", "data": json.dumps(payload, ensure_ascii=False)}
-        except Exception as exc:
-            logger.exception("Chat error: %s", exc)
-            payload = {"run_id": run_id, "conversation_id": conversation_id, "error": str(exc)}
-            buf.buffer_run_event(run_id, conversation_id, "run.error", payload)
-            buf.buffer_run_status(run_id, status="error", error=str(exc), completed=True)
-            await buf.flush()
-            yield {"event": "run.error", "data": json.dumps(payload, ensure_ascii=False)}
-        finally:
-            # 确保残留缓冲不丢失（正常路径已 flush，这里兜底）
-            try:
-                await buf.flush()
-            except Exception:
-                logger.debug("finally flush 失败", exc_info=True)
-
-            # 异步入队记忆更新
-            try:
-                from pathlib import Path
-
-                from modules.agents.memory.queue import get_memory_queue
-                from modules.agents.memory.storage import MemoryStorage
-
-                smart_memory_dir = Path(settings.db_path).parent / "smart-memory"
-                mem_storage = MemoryStorage(smart_memory_dir)
-                snapshot_for_memory = await agent.aget_state(config)
-                msgs = snapshot_for_memory.values.get("messages", [])
-                if len(msgs) >= 2:
-                    queue = get_memory_queue()
-                    await queue.enqueue(conversation_id, mem_storage, msgs)
-            except Exception:
-                logger.debug("记忆更新入队失败", exc_info=True)
-
-            unregister_active_run(run_id)
-
-        yield {
-            "event": "done",
-            "data": json.dumps({"conversation_id": conversation_id, "run_id": run_id}, ensure_ascii=False),
-        }
-
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(_reconnect_consumer())
