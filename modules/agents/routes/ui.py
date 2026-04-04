@@ -9,7 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
-from auth.dependencies import get_current_user
+from auth.dependencies import require_role
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class UIActionResponse(BaseModel):
 
 
 @router.post("/ui/action")
-async def handle_ui_action(body: UIActionRequest, user=Depends(get_current_user)):
+async def handle_ui_action(body: UIActionRequest, user=Depends(require_role("admin"))):
     """处理前端 UI 组件的交互事件。
 
     当前为 MVP 实现，仅记录日志并返回确认。
