@@ -15,7 +15,7 @@ import { ArtifactsPanel } from './ArtifactsPanel'
 import { TerminalPanel } from './TerminalPanel'
 import { SafetyToggle } from './SafetyToggle'
 
-type RightTab = 'patrol' | 'admin' | 'files'
+type RightTab = 'patrol' | 'admin'
 
 const STORAGE_KEY = 'agents-sidebar-width'
 const DEFAULT_SIDEBAR = 200
@@ -27,9 +27,10 @@ export default function AgentsPage() {
   const { safetyMode, setSafetyMode } = useChatStore()
   const [tab, setTab] = useState<RightTab>(() => {
     const saved = localStorage.getItem('agents-tab')
-    return (saved === 'patrol' || saved === 'admin' || saved === 'files') ? saved : 'patrol'
+    return (saved === 'patrol' || saved === 'admin') ? saved : 'patrol'
   })
   const artifactCount = useArtifactStore((s) => s.artifacts.length)
+  const artifactIsOpen = useArtifactStore((s) => s.isOpen)
   const autoOpenUsed = useArtifactStore((s) => s._autoOpenUsed)
   const [showTerminal, setShowTerminal] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -42,11 +43,13 @@ export default function AgentsPage() {
     localStorage.setItem('agents-tab', tab)
   }, [tab])
 
-  // 首次产出 artifact 时自动切到文件标签（仅触发一次）
+  // 首次产出 artifact 时自动打开查看器（仅触发一次）
   useEffect(() => {
     if (artifactCount > 0 && !autoOpenUsed) {
-      setTab('files')
-      setShowTerminal(false)
+      const latest = useArtifactStore.getState().artifacts.at(-1)
+      if (latest) {
+        useArtifactStore.getState().select(latest.filePath)
+      }
       useArtifactStore.getState().markAutoOpenUsed()
     }
   }, [artifactCount, autoOpenUsed])
@@ -102,6 +105,24 @@ export default function AgentsPage() {
               </svg>
             </button>
           )}
+          {isAdmin && artifactCount > 0 && (
+            <button
+              className={`relative p-1.5 rounded text-xs transition-colors ${
+                artifactIsOpen
+                  ? 'bg-accent-dim text-accent'
+                  : 'text-text3 hover:text-text hover:bg-card'
+              }`}
+              title="查看 Artifact 文件"
+              onClick={() => useArtifactStore.getState().setOpen(true)}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-accent text-[10px] font-bold text-[#0f172a] flex items-center justify-center px-1">
+                {artifactCount}
+              </span>
+            </button>
+          )}
           {isAdmin && (
             <div className="flex items-center bg-bg rounded border border-border text-xs">
               <button
@@ -113,25 +134,12 @@ export default function AgentsPage() {
                 巡检
               </button>
               <button
-                className={`px-2.5 py-1 transition-colors ${
+                className={`px-2.5 py-1 rounded-r transition-colors ${
                   tab === 'admin' ? 'bg-accent-dim text-accent' : 'text-text3 hover:text-text'
                 }`}
                 onClick={() => { setTab('admin'); setShowTerminal(false) }}
               >
                 管理
-              </button>
-              <button
-                className={`px-2.5 py-1 rounded-r transition-colors relative ${
-                  tab === 'files' ? 'bg-accent-dim text-accent' : 'text-text3 hover:text-text'
-                }`}
-                onClick={() => { setTab('files'); setShowTerminal(false) }}
-              >
-                文件
-                {artifactCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-accent text-[10px] font-bold text-[#0f172a] flex items-center justify-center px-1">
-                    {artifactCount}
-                  </span>
-                )}
               </button>
             </div>
           )}
@@ -159,12 +167,12 @@ export default function AgentsPage() {
         {/* Right: context panel (admin only) */}
         {isAdmin && (
           <div className="flex flex-col min-w-0 overflow-hidden" style={{ flex: '0 0 40%' }}>
-            {showTerminal ? (
+            {artifactIsOpen ? (
+              <ArtifactsPanel />
+            ) : showTerminal ? (
               <TerminalPanel />
             ) : tab === 'patrol' ? (
               <PatrolPanel />
-            ) : tab === 'files' ? (
-              <ArtifactsPanel />
             ) : (
               <AdminPanel />
             )}

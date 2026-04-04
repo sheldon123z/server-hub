@@ -20,6 +20,7 @@ import { ToolApprovalInterrupt } from './ToolApprovalInterrupt'
 import { SubAgentIndicator } from './SubAgentIndicator'
 import { TodoPanel } from './TodoPanel'
 import { SlashCommandMenu, type SlashCommandMenuHandle, generateHelpText } from './SlashCommandMenu'
+import { ArtifactCard } from './ArtifactCard'
 
 function pageContextFromPath(pathname: string): string {
   const seg = pathname.replace(/^\//, '').split('/')[0]
@@ -158,15 +159,38 @@ export function ChatPanel() {
             if (regularToolCalls.length === 0) return null
             const lastTc = regularToolCalls[regularToolCalls.length - 1]
             return (
-              <MessageGroup
-                type="processing"
-                toolCalls={regularToolCalls}
-                lastResultSummary={getToolResultSummary(lastTc?.result)}
-              >
-                {regularToolCalls.map(tc => (
-                  <ToolCallCard key={tc.id} toolCall={tc} />
-                ))}
-              </MessageGroup>
+              <>
+                <MessageGroup
+                  type="processing"
+                  toolCalls={regularToolCalls}
+                  lastResultSummary={getToolResultSummary(lastTc?.result)}
+                >
+                  {regularToolCalls.map(tc => (
+                    <ToolCallCard key={tc.id} toolCall={tc} />
+                  ))}
+                </MessageGroup>
+                {/* Artifact 卡片 - 在工具调用组之后显示 */}
+                {(() => {
+                  const fileOps = regularToolCalls.filter(
+                    tc => tc.name === 'write_file' || tc.name === 'edit_file'
+                  )
+                  if (!fileOps.length) return null
+                  // 按路径去重，保留最后一个
+                  const unique = new Map<string, typeof fileOps[0]>()
+                  for (const tc of fileOps) {
+                    const fp = (tc.args?.file_path as string) || (tc.args?.path as string)
+                    if (fp) unique.set(fp, tc)
+                  }
+                  if (!unique.size) return null
+                  return (
+                    <div className="flex flex-wrap gap-1.5 mt-1.5 ml-1">
+                      {[...unique.entries()].map(([fp, tc]) => (
+                        <ArtifactCard key={fp} filePath={fp} action={tc.name as 'write_file' | 'edit_file'} />
+                      ))}
+                    </div>
+                  )
+                })()}
+              </>
             )
           })()}
           {/* SubAgent indicators — MessageGroup 折叠包裹 */}

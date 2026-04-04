@@ -209,12 +209,16 @@ export function useSSEChat() {
         if (toolName === 'write_file' || toolName === 'edit_file') {
           const filePath = (toolArgs?.file_path as string) || (toolArgs?.path as string) || ''
           if (filePath) {
-            useArtifactStore.getState().addArtifact({
-              filePath,
-              action: toolName as 'write_file' | 'edit_file',
-              content: toolArgs?.content as string | undefined,
-              timestamp: Date.now(),
-            })
+            const storeConvId = useArtifactStore.getState().conversationId
+            const chatConvId = useChatStore.getState().conversationId
+            if (!storeConvId || chatConvId === storeConvId) {
+              useArtifactStore.getState().addArtifact({
+                filePath,
+                action: toolName as 'write_file' | 'edit_file',
+                content: toolArgs?.content as string | undefined,
+                timestamp: Date.now(),
+              })
+            }
           }
         }
         break
@@ -265,6 +269,9 @@ export function useSSEChat() {
         // 后端显式推送的 artifact 事件（去重由 store 处理）
         const fp = data.file_path as string
         if (fp) {
+          const storeConvId = useArtifactStore.getState().conversationId
+          const chatConvId = useChatStore.getState().conversationId
+          if (storeConvId && chatConvId !== storeConvId) break
           useArtifactStore.getState().addArtifact({
             filePath: fp,
             action: (data.action as 'write_file' | 'edit_file') ?? 'write_file',

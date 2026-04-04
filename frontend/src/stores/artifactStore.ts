@@ -7,15 +7,24 @@ export interface ArtifactItem {
   timestamp: number
 }
 
+const STORAGE_KEY_CONV_ID = 'serverhub-artifact-conversation-id'
+
+/** 读取持久化的 conversationId（供外部调用） */
+export function getPersistedConversationId(): string | null {
+  return sessionStorage.getItem(STORAGE_KEY_CONV_ID)
+}
+
 interface ArtifactState {
   artifacts: ArtifactItem[]
   selectedPath: string | null
   isOpen: boolean
+  conversationId: string | null
   /** 用户手动切走标签后禁用自动切换 */
   _autoOpenUsed: boolean
 
   addArtifact: (item: ArtifactItem) => void
   setArtifacts: (items: ArtifactItem[]) => void
+  setArtifactsForConversation: (conversationId: string, items: ArtifactItem[]) => void
   select: (path: string) => void
   deselect: () => void
   setOpen: (open: boolean) => void
@@ -27,6 +36,7 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
   artifacts: [],
   selectedPath: null,
   isOpen: false,
+  conversationId: null,
   _autoOpenUsed: false,
 
   addArtifact: (item) => {
@@ -38,19 +48,33 @@ export const useArtifactStore = create<ArtifactState>((set, get) => ({
 
   setArtifacts: (items) => set({ artifacts: items }),
 
+  setArtifactsForConversation: (conversationId, items) => {
+    sessionStorage.setItem(STORAGE_KEY_CONV_ID, conversationId)
+    set({
+      conversationId,
+      artifacts: items,
+      selectedPath: null,
+      isOpen: false,
+      _autoOpenUsed: false,
+    })
+  },
+
   select: (path) => set({ selectedPath: path, isOpen: true }),
 
-  deselect: () => set({ selectedPath: null }),
+  deselect: () => set({ selectedPath: null, isOpen: false }),
 
   setOpen: (open) => set({ isOpen: open }),
 
-  clear: () =>
+  clear: () => {
+    sessionStorage.removeItem(STORAGE_KEY_CONV_ID)
     set({
       artifacts: [],
       selectedPath: null,
       isOpen: false,
+      conversationId: null,
       _autoOpenUsed: false,
-    }),
+    })
+  },
 
   markAutoOpenUsed: () => set({ _autoOpenUsed: true }),
 }))

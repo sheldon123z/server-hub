@@ -63,6 +63,15 @@ export function ConversationSidebar() {
     return () => clearTimeout(timer)
   }, [confirmDeleteId])
 
+  // 页面刷新恢复：检查 sessionStorage 中是否有持久化的 conversationId
+  useEffect(() => {
+    const persistedId = sessionStorage.getItem('serverhub-conversation-id')
+    if (persistedId && !conversationId) {
+      handleLoad(persistedId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // 仅 mount 时执行一次
+
   const { data: conversations = [] } = useQuery({
     queryKey: ['conversations'],
     queryFn: fetchConversations,
@@ -136,7 +145,8 @@ export function ConversationSidebar() {
           params: { conversation_id: detail.conversation_id },
         })
         const items = ensureArray<{ file_path: string; action: string; created_at: string }>(artData?.items)
-        useArtifactStore.getState().setArtifacts(
+        useArtifactStore.getState().setArtifactsForConversation(
+          detail.conversation_id,
           items.map((a) => ({
             filePath: a.file_path,
             action: (a.action as 'write_file' | 'edit_file') ?? 'write_file',

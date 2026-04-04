@@ -38,7 +38,7 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  conversationId: null,
+  conversationId: sessionStorage.getItem('serverhub-conversation-id') || null,
   currentRunId: null,
   messages: [],
   todos: [],
@@ -51,7 +51,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   _msgSeq: 0,
   _seenIds: new Set<string>(),
 
-  setConversationId: (id) => set({ conversationId: id }),
+  setConversationId: (id) => {
+    if (id) {
+      sessionStorage.setItem('serverhub-conversation-id', id)
+    } else {
+      sessionStorage.removeItem('serverhub-conversation-id')
+    }
+    set({ conversationId: id })
+  },
   setCurrentRunId: (id) => set({ currentRunId: id }),
 
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
@@ -84,6 +91,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSelectedSkillId: (id) => set({ selectedSkillId: id }),
 
   clearChat: () => {
+    sessionStorage.removeItem('serverhub-conversation-id')
     set({
       conversationId: null,
       currentRunId: null,
