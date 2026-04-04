@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { FileText } from "lucide-react";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
@@ -32,6 +33,75 @@ SyntaxHighlighter.registerLanguage("dockerfile", docker);
 SyntaxHighlighter.registerLanguage("nginx", nginx);
 SyntaxHighlighter.registerLanguage("markdown", markdown);
 SyntaxHighlighter.registerLanguage("md", markdown);
+
+// ---------------------------------------------------------------------------
+// FilePathChip — 沙箱/服务器路径可点击芯片，点击调出 Artifact 查看器
+// ---------------------------------------------------------------------------
+
+/** 匹配沙箱路径和常见服务器路径（不在 <code> 内，仅纯文本节点） */
+const FILE_PATH_RE =
+  /(\/(?:tmp\/serverhub-sandbox|home|var\/log|etc|opt|mnt)\/[\w.\-/]+(?:\.\w{1,10})?)/g;
+
+function FilePathChip({ path }: { path: string }) {
+  const basename = path.split("/").pop() ?? path;
+  const handleClick = () => {
+    // 动态导入避免循环依赖
+    import("@/stores/artifactStore").then(({ useArtifactStore }) => {
+      const store = useArtifactStore.getState();
+      // 如果 artifact 列表中有该路径，直接 select 打开查看器
+      const exists = store.artifacts.some((a) => a.filePath === path);
+      if (exists) {
+        store.select(path);
+      } else {
+        // 没有则添加为临时 artifact 并打开
+        store.addArtifact({
+          filePath: path,
+          action: "write_file",
+          timestamp: Date.now(),
+        });
+        store.select(path);
+      }
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={path}
+      className={cn(
+        "inline-flex items-center gap-1 mx-0.5 px-1.5 py-0.5 rounded",
+        "bg-accent/10 border border-accent/30 text-accent text-[0.85em]",
+        "hover:bg-accent/20 hover:border-accent/50 transition-colors",
+        "cursor-pointer font-mono leading-tight"
+      )}
+    >
+      <FileText size={12} className="shrink-0 opacity-70" />
+      <span className="truncate max-w-[200px]">{basename}</span>
+    </button>
+  );
+}
+
+/**
+ * 将 React children 中的文本节点拆分，把文件路径替换为 FilePathChip。
+ * 跳过非字符串节点（已经是 React 元素的不处理）。
+ */
+function processChildrenWithPaths(children: ReactNode): ReactNode {
+  return React.Children.map(children, (child) => {
+    if (typeof child !== "string") return child;
+    const parts: ReactNode[] = [];
+    let lastIdx = 0;
+    for (const match of child.matchAll(FILE_PATH_RE)) {
+      const idx = match.index!;
+      if (idx > lastIdx) parts.push(child.slice(lastIdx, idx));
+      parts.push(<FilePathChip key={`fp-${idx}`} path={match[0]} />);
+      lastIdx = idx + match[0].length;
+    }
+    if (lastIdx === 0) return child; // 无匹配，原样返回
+    if (lastIdx < child.length) parts.push(child.slice(lastIdx));
+    return <>{parts}</>;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Mermaid — lazy-loaded on first use, initialized only once
@@ -311,7 +381,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
             },
             td({ children }) {
               return (
-                <td className="px-3 py-2 text-text2">{children}</td>
+                <td className="px-3 py-2 text-text2">{processChildrenWithPaths(children)}</td>
               );
             },
 
@@ -360,7 +430,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
               );
             },
             li({ children }) {
-              return <li className="leading-relaxed">{children}</li>;
+              return <li className="leading-relaxed">{processChildrenWithPaths(children)}</li>;
             },
 
             // ----------------------------------------------------------------
@@ -384,7 +454,7 @@ export const MarkdownContent = React.memo<MarkdownContentProps>(
             // Paragraphs
             // ----------------------------------------------------------------
             p({ children }) {
-              return <p>{children}</p>;
+              return <p>{processChildrenWithPaths(children)}</p>;
             },
 
             // ----------------------------------------------------------------

@@ -64,9 +64,13 @@ export function isMarkdown(fileName: string): boolean {
   return ext === 'md' || ext === 'mdx'
 }
 
+export function isSVG(fileName: string): boolean {
+  return getFileExtension(fileName) === 'svg'
+}
+
 export function isImage(fileName: string): boolean {
   const ext = getFileExtension(fileName)
-  return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].includes(ext)
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico'].includes(ext)
 }
 
 export function isHTML(fileName: string): boolean {

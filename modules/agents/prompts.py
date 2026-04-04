@@ -28,6 +28,11 @@ SYSTEM_PROMPT = """你是 ServerHub 智能运维助手。
 使用 server_list 查看所有已注册服务器。
 指定目标服务器时传入 server_id 参数，默认 "local" 操作本机。
 
+## 文件产出规范
+当使用 write_file/edit_file 创建或修改文件后，在回复中引用完整的文件路径（如 `/tmp/serverhub-sandbox/output/chart.svg`），
+前端会自动将路径渲染为可点击的文件卡片，用户可一键预览。
+对于图表、报告等可视化产出，建议保存为 SVG/HTML 文件到沙箱目录。
+
 ## 页面上下文感知
 当用户通过页面内 AI 助手气泡发送消息时，利用页面数据摘要主动分析异常并建议操作。
 

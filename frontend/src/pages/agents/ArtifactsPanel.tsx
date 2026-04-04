@@ -9,12 +9,35 @@ import { FileText, Copy, Download, X, FolderOpen, Eye, Code2 } from 'lucide-reac
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import toast from 'react-hot-toast'
+import DOMPurify from 'dompurify'
 import { useArtifactStore } from '@/stores/artifactStore'
 import { useChatStore } from '@/stores/chatStore'
-import { getLanguage, getFileName, isMarkdown, isImage, isHTML } from '@/lib/file-utils'
+import { getLanguage, getFileName, isMarkdown, isImage, isSVG, isHTML } from '@/lib/file-utils'
 import { MarkdownContent } from './MarkdownContent'
 import { cn } from '@/lib/utils'
 import api from '@/api/client'
+
+// ---------------------------------------------------------------------------
+// SafeSvgViewer — DOMPurify 安全渲染 SVG（保留 CSS 动画/渐变/滤镜）
+// ---------------------------------------------------------------------------
+
+const SVG_PURIFY_CONFIG = {
+  USE_PROFILES: { svg: true, svgFilters: true },
+  ADD_TAGS: ['use'],
+  ADD_ATTR: ['xlink:href', 'clip-path', 'fill-rule', 'viewBox', 'xmlns', 'xmlns:xlink'],
+  FORBID_TAGS: ['script', 'foreignObject'],
+  FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
+}
+
+function SafeSvgViewer({ content, className }: { content: string; className?: string }) {
+  const clean = DOMPurify.sanitize(content, SVG_PURIFY_CONFIG)
+  return (
+    <div
+      className={cn('flex items-center justify-center p-4 [&_svg]:max-w-full [&_svg]:max-h-[60vh]', className)}
+      dangerouslySetInnerHTML={{ __html: clean }}
+    />
+  )
+}
 
 // ---------------------------------------------------------------------------
 // FileDetail — 选中文件的查看器
@@ -37,6 +60,7 @@ function FileDetail({ filePath, inlineContent }: { filePath: string; inlineConte
   })
 
   const content = inlineContent ?? fetchedData?.content ?? ''
+  const showSVG = isSVG(filePath)
   const showMarkdown = isMarkdown(filePath)
   const showImage = isImage(filePath)
   const showHTML = isHTML(filePath)
@@ -91,8 +115,10 @@ function FileDetail({ filePath, inlineContent }: { filePath: string; inlineConte
       <div className="flex-1 overflow-auto min-h-0">
         {isLoading && !inlineContent ? (
           <div className="flex items-center justify-center h-32 text-sm text-text3">加载中...</div>
-        ) : !content && !showImage ? (
+        ) : !content && !showImage && !showSVG ? (
           <div className="flex items-center justify-center h-32 text-sm text-text3">文件为空</div>
+        ) : showSVG && content ? (
+          <SafeSvgViewer content={content} />
         ) : showImage ? (
           <div className="flex items-center justify-center p-4">
             <img

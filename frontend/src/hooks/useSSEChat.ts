@@ -209,9 +209,13 @@ export function useSSEChat() {
         if (toolName === 'write_file' || toolName === 'edit_file') {
           const filePath = (toolArgs?.file_path as string) || (toolArgs?.path as string) || ''
           if (filePath) {
-            const storeConvId = useArtifactStore.getState().conversationId
+            const artStore = useArtifactStore.getState()
             const chatConvId = useChatStore.getState().conversationId
-            if (!storeConvId || chatConvId === storeConvId) {
+            if (!artStore.conversationId || chatConvId === artStore.conversationId) {
+              // 新对话首次产出 artifact 时，同步 conversationId 实现隔离
+              if (!artStore.conversationId && chatConvId) {
+                artStore.setArtifactsForConversation(chatConvId, artStore.artifacts)
+              }
               useArtifactStore.getState().addArtifact({
                 filePath,
                 action: toolName as 'write_file' | 'edit_file',
@@ -266,12 +270,16 @@ export function useSSEChat() {
         break
 
       case 'artifact.update': {
-        // 后端显式推送的 artifact 事件（去重由 store 处理）
+        // 后端显式推送的 artifact 事件（去重��� store 处理）
         const fp = data.file_path as string
         if (fp) {
-          const storeConvId = useArtifactStore.getState().conversationId
+          const artStore = useArtifactStore.getState()
           const chatConvId = useChatStore.getState().conversationId
-          if (storeConvId && chatConvId !== storeConvId) break
+          if (artStore.conversationId && chatConvId !== artStore.conversationId) break
+          // 新对话首次产出 artifact 时，同步 conversationId 实现隔离
+          if (!artStore.conversationId && chatConvId) {
+            artStore.setArtifactsForConversation(chatConvId, artStore.artifacts)
+          }
           useArtifactStore.getState().addArtifact({
             filePath: fp,
             action: (data.action as 'write_file' | 'edit_file') ?? 'write_file',
@@ -357,6 +365,11 @@ export function useSSEChat() {
       case 'done':
         if (data.conversation_id) {
           store.setConversationId(data.conversation_id as string)
+          // 同步 conversationId 到 artifactStore，确保新对话的 artifacts 绑定正确
+          const artState = useArtifactStore.getState()
+          if (!artState.conversationId) {
+            artState.setArtifactsForConversation(data.conversation_id as string, artState.artifacts)
+          }
         }
         if (data.run_id) {
           store.setCurrentRunId(data.run_id as string)
