@@ -30,6 +30,11 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.sqlite import AsyncSqliteStore
 
 from config import settings
+from modules.agents.deferred_tools import (
+    DeferredToolRegistry,
+    set_deferred_registry,
+    tool_search,
+)
 from modules.agents.llm import get_chat_model
 from modules.agents.loop_detection import LoopDetectionMiddleware
 from modules.agents.prompts import get_system_prompt
@@ -147,7 +152,32 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
         return _agent_cache[cache_key]
 
     model = get_chat_model(purpose)
-    tools = get_server_tools(user_role)
+
+    # 工具加载 — 核心工具始终绑定，领域工具延迟加载
+    core_tools, deferred_tools_list = get_tools_split(user_role)
+
+    if deferred_tools_list:
+        registry = DeferredToolRegistry()
+        for t in deferred_tools_list:
+            registry.register(t)
+        set_deferred_registry(registry)
+        # tool_search 工具允许 agent 按需发现延迟工具
+        tools = [*core_tools, tool_search]
+        # 生成延迟工具描述注入提示词
+        deferred_section = (
+            "\n## 可用的延迟加载工具\n"
+            "以下工具可通过 tool_search 按需加载（输入工具名或描述关键词）：\n"
+            + registry.get_deferred_tool_descriptions()
+        )
+        logger.info(
+            "延迟工具加载: core=%d, deferred=%d",
+            len(core_tools),
+            len(deferred_tools_list),
+        )
+    else:
+        tools = core_tools
+        deferred_section = ""
+
     interrupt_config = build_interrupt_config(safety_mode, user_role)
     backend = _create_backend()
     extra_middleware = _build_extra_middleware(purpose)
@@ -189,6 +219,9 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     skills_paths = [str(skills_dir)] if skills_dir.is_dir() else []
 
     system_prompt = get_system_prompt(safety_mode, user_role)
+    # 注入延迟工具列表到系统提示词
+    if deferred_section:
+        system_prompt = system_prompt + "\n" + deferred_section
 
     agent = create_deep_agent(
         model=model,

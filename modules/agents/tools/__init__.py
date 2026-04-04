@@ -193,3 +193,17 @@ def get_server_tools(user_role: str = "admin") -> list:
 
 # 向后兼容
 get_all_tools = get_server_tools
+
+
+def get_tools_split(user_role: str = "admin") -> tuple[list, list]:
+    """返回 (core_tools, deferred_tools) 分组
+
+    core_tools: 始终绑定到 LLM 的高频工具
+    deferred_tools: 按需通过 tool_search 加载的领域工具
+    """
+    from modules.agents.deferred_tools import CORE_TOOL_NAMES
+
+    all_tools = get_server_tools(user_role)
+    core = [t for t in all_tools if t.name in CORE_TOOL_NAMES]
+    deferred = [t for t in all_tools if t.name not in CORE_TOOL_NAMES]
+    return core, deferred
