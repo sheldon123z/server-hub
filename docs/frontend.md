@@ -112,6 +112,7 @@ frontend/src/
 │       └── SafetyToggle.tsx        # 安全模式切换
 ├── lib/
 │   ├── markdown.ts        # marked.js 配置 + DOMPurify 净化
+│   ├── ui-schema-validation.ts  # Zod schema 验证 UI 组件（chart/table/form/card）
 │   ├── utils.ts           # cn() 等工具函数
 │   └── constants.ts       # 常量定义
 └── types/
@@ -394,6 +395,32 @@ AgentsPage 是最复杂的页面，采用三栏 Grid 布局（admin 视图）或
 - highlight.js 自动检测或按指定语言高亮
 - 每个代码块顶部显示语言标签和"复制"按钮
 - 点击复制按钮通过 `navigator.clipboard.writeText()` 复制原始代码
+
+### UI 组件 Schema 验证
+
+`lib/ui-schema-validation.ts` 使用 Zod 定义 UI 组件的结构校验 schema，与后端 `ui_tools.py` 输出和前端渲染器 interface 三方对齐。
+
+**架构**: 通过 `z.discriminatedUnion('type', [...])` 按 `type` 字段分发到四种组件 schema：
+
+| 组件类型 | Schema | 关键字段 |
+|---------|--------|---------|
+| `chart` | `ChartSchema` | `chartType`（line/bar/pie/gauge/heatmap）, `data.labels`, `data.datasets` |
+| `table` | `TableSchema` | `schema`（列定义 ColumnSchema[]）, `data`（行数据）, `features`（排序/筛选/分页） |
+| `form` | `FormSchema` | `fields`（FormField[]）, `initialValues`, `actions`（FormAction[]） |
+| `card` | `CardSchema` | `status`（healthy/warning/error/unknown）, `metrics`（Metric[]） |
+
+**公共字段**: 所有组件共享 `_ui`, `id`, `type`, `version`, `title`, `actions`, `description`。
+
+**使用方式**:
+
+```typescript
+import { validateUIComponent, type UIComponent } from '@/lib/ui-schema-validation'
+
+const { valid, data, error } = validateUIComponent(rawData)
+if (valid) {
+  // data: UIComponent — 类型安全的组件数据
+}
+```
 
 ---
 

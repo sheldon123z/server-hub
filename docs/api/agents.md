@@ -16,7 +16,8 @@ modules/agents/routes/
 ├── alerts.py            # 告警规则
 ├── fault.py             # 故障报告 + 案例库 + 事件
 ├── async_tasks.py       # 异步任务管理
-└── terminal.py          # WebSocket 终端
+├── terminal.py          # WebSocket 终端
+└── ui.py                # UI 组件交互回调
 ```
 
 **相关文件**: `modules/agents/deep_agent.py`, `modules/agents/patrol.py`, `modules/agents/tools/`, `modules/agents/safety.py`, `modules/agents/llm.py`, `modules/agents/subagents/`, `modules/agents/lg_compat.py`
@@ -40,6 +41,7 @@ modules/agents/routes/
 11. [管理接口（Admin）](#11-管理接口)
 12. [异步任务（Async Tasks）](#12-异步任务)
 13. [WebSocket 终端](#13-websocket-终端)
+14. [UI 组件交互](#14-ui-组件交互)
 
 ---
 
@@ -1259,19 +1261,84 @@ data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000"}
 
 **连接地址**: `ws://<host>/api/agents/ws/terminal`
 
-> 注意：此端点无 Cookie 认证（WebSocket 握手时无法携带 HttpOnly Cookie），建议在内网环境使用，或通过 Nginx 增加额外保护。
+**认证**: WebSocket 握手时从 Cookie 读取 `access_token`，验证 JWT 且要求 `role=admin`。认证失败分别返回关闭码 `4001`（未认证）或 `4003`（权限不足）。
 
 **消息格式**:
 
 - **客户端 → 服务端**: 发送字符串，直接写入终端（键盘输入）
 - **服务端 → 客户端**: 发送字符串，终端输出内容（ANSI 转义序列）
 
-**终端调整大小**（客户端发送特殊格式字符串）:
+**终端调整大小**（两种格式）:
 
 ```
 \x1b[resize:80,24]
 ```
 
+或 JSON 格式:
+
+```json
+{"type": "resize", "cols": 80, "rows": 24}
+```
+
 格式：`\x1b[resize:{cols},{rows}]`，`cols` 为列数，`rows` 为行数。
 
+**空闲超时**: 服务端每 30 秒检测终端空闲状态。超时后自动发送黄色警告消息并关闭终端连接：
+
+```
+[ServerHub] 终端已空闲超时，自动关闭。
+```
+
 **断开连接**: 客户端关闭 WebSocket 连接后，服务端自动关闭 PTY 进程。
+
+---
+
+## 14. UI 组件交互
+
+### POST /ui/action
+
+处理前端 UI 组件（chart/table/form/card）的用户交互事件回调。当前为 MVP 实现，记录交互日志。后续可扩展为将交互注入 Agent 对话上下文。
+
+**权限**: 任意已登录用户（user / admin）
+
+**请求体**:
+
+```json
+{
+  "component_id": "cpu-chart-1",
+  "component_type": "chart",
+  "action_id": "refresh-btn",
+  "action_type": "refresh",
+  "payload": {},
+  "conversation_id": "",
+  "run_id": ""
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| component_id | string | 是 | 组件唯一标识（1-128 字符，`[a-zA-Z0-9_-]+`） |
+| component_type | string | 是 | 组件类型：`chart` / `table` / `form` / `card` |
+| action_id | string | 是 | 操作标识（1-128 字符，`[a-zA-Z0-9_-]+`） |
+| action_type | string | 是 | 操作类型：`submit` / `reset` / `agent` / `download` / `refresh` / `navigate` |
+| payload | object | 否 | 附带数据（JSON 序列化后不超过 10KB） |
+| conversation_id | string | 否 | 关联的对话 ID |
+| run_id | string | 否 | 关联的运行 ID |
+
+**成功响应** `200`:
+
+```json
+{
+  "ok": true,
+  "message": "已处理 refresh-btn 操作",
+  "data": {
+    "component_id": "cpu-chart-1",
+    "action_id": "refresh-btn"
+  }
+}
+```
+
+**输入验证**（Pydantic）:
+
+- `component_id` 和 `action_id` 必须匹配 `^[a-zA-Z0-9_-]+$`，长度 1-128
+- `payload` 序列化后不得超过 10KB（10240 bytes），超出返回 `422`
+- `component_type` 和 `action_type` 为枚举值，不在范围内返回 `422`
