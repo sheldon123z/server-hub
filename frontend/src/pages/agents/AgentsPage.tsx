@@ -12,6 +12,7 @@ import { PatrolPanel } from './PatrolPanel'
 import { AdminPanel } from './AdminPanel'
 import { TerminalPanel } from './TerminalPanel'
 import { SafetyToggle } from './SafetyToggle'
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
 
 type RightTab = 'patrol' | 'admin'
 
@@ -80,36 +81,41 @@ export default function AgentsPage() {
       </div>
 
       {/* 3-column body */}
-      <div
-        className="flex-1 min-h-0"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: isAdmin ? '180px 1fr 1fr' : '180px 1fr',
-        }}
-      >
+      <ResizablePanelGroup orientation="horizontal" id="agents-layout" className="flex-1 min-h-0">
         {/* Left: conversation sidebar */}
-        <div className="border-r border-border overflow-y-auto bg-bg">
-          <ConversationSidebar />
-        </div>
+        <ResizablePanel id="sidebar"defaultSize={15} minSize={10} maxSize={25}>
+          <div className="h-full border-r border-border overflow-y-auto bg-bg">
+            <ConversationSidebar />
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
 
         {/* Center: chat panel (always visible) */}
-        <div className="flex flex-col min-w-0 border-r border-border">
-          <ChatPanel />
-        </div>
+        <ResizablePanel id="chat"defaultSize={isAdmin ? 50 : 85} minSize={30}>
+          <div className="flex flex-col min-w-0 h-full border-r border-border">
+            <ChatPanel />
+          </div>
+        </ResizablePanel>
 
         {/* Right: context panel (admin only) */}
         {isAdmin && (
-          <div className="flex flex-col min-w-0 overflow-hidden">
-            {showTerminal ? (
-              <TerminalPanel />
-            ) : tab === 'patrol' ? (
-              <PatrolPanel />
-            ) : (
-              <AdminPanel />
-            )}
-          </div>
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="right-panel"defaultSize={35} minSize={20} maxSize={50}>
+              <div className="flex flex-col min-w-0 h-full overflow-hidden">
+                {showTerminal ? (
+                  <TerminalPanel />
+                ) : tab === 'patrol' ? (
+                  <PatrolPanel />
+                ) : (
+                  <AdminPanel />
+                )}
+              </div>
+            </ResizablePanel>
+          </>
         )}
-      </div>
+      </ResizablePanelGroup>
     </div>
   )
 }

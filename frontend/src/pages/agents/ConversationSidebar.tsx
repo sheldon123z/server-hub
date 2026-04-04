@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, X, Check, MessageSquare } from 'lucide-react'
 import { cn, ensureArray } from '@/lib/utils'
@@ -33,6 +33,22 @@ async function deleteConversationApi(id: string): Promise<void> {
   await client.delete(`/api/agents/conversations/${id}`)
 }
 
+function StatusDot({ status }: { status?: string | null }) {
+  if (!status) return null
+  const color =
+    status === 'running'
+      ? 'bg-green-500 animate-pulse'
+      : status === 'completed'
+        ? 'bg-green-500'
+        : status === 'error'
+          ? 'bg-red-500'
+          : status === 'interrupted'
+            ? 'bg-orange-400'
+            : ''
+  if (!color) return null
+  return <span className={cn('inline-block w-1.5 h-1.5 rounded-full shrink-0', color)} />
+}
+
 export function ConversationSidebar() {
   const queryClient = useQueryClient()
   const { conversationId, setConversationId, setMessages, setTodos, clearChat } =
@@ -51,6 +67,28 @@ export function ConversationSidebar() {
     queryFn: fetchConversations,
     refetchInterval: 30_000,
   })
+
+  const grouped = useMemo(() => {
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const yesterdayStart = new Date(todayStart.getTime() - 86_400_000)
+    const weekStart = new Date(todayStart.getTime() - 6 * 86_400_000)
+
+    const groups: { today: Conversation[]; yesterday: Conversation[]; thisWeek: Conversation[]; older: Conversation[] } = {
+      today: [],
+      yesterday: [],
+      thisWeek: [],
+      older: [],
+    }
+    for (const conv of conversations) {
+      const d = new Date(conv.updated_at)
+      if (d >= todayStart) groups.today.push(conv)
+      else if (d >= yesterdayStart) groups.yesterday.push(conv)
+      else if (d >= weekStart) groups.thisWeek.push(conv)
+      else groups.older.push(conv)
+    }
+    return groups
+  }, [conversations])
 
   const deleteMutation = useMutation({
     mutationFn: deleteConversationApi,
@@ -125,7 +163,7 @@ export function ConversationSidebar() {
   }
 
   return (
-    <div className="flex flex-col h-full w-[180px] border-r border-border bg-bg">
+    <div className="flex flex-col h-full w-full bg-bg">
       {/* New conversation button */}
       <button
         onClick={handleNew}
@@ -142,49 +180,77 @@ export function ConversationSidebar() {
 
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto px-1 py-1">
-        {conversations.map((conv) => {
-          const isActive = conv.id === conversationId
-          return (
-            <div
-              key={conv.id}
-              onClick={() => handleLoad(conv.id)}
-              className={cn(
-                'group flex items-center gap-2 px-2.5 py-2 mx-1 my-0.5 rounded-lg cursor-pointer',
-                'transition-colors text-sm',
-                isActive
-                  ? 'bg-accent-dim text-accent'
-                  : 'text-text2 hover:bg-card hover:text-text',
-              )}
-            >
-              <MessageSquare size={14} className="shrink-0 opacity-50" />
-              <div className="flex-1 min-w-0">
-                <div className="truncate text-[13px] leading-tight">
-                  {conv.title || '新对话'}
-                </div>
-                <div className="text-[11px] text-text3 mt-0.5">
-                  {formatTime(conv.updated_at)}
-                </div>
-              </div>
-              <button
-                onClick={(e) => handleDelete(e, conv.id)}
-                className={cn(
-                  'shrink-0 p-0.5 rounded transition-all cursor-pointer',
-                  confirmDeleteId === conv.id
-                    ? 'opacity-100 bg-red/20 text-red'
-                    : 'opacity-0 group-hover:opacity-100 hover:bg-red/20 hover:text-red',
-                )}
-                title={confirmDeleteId === conv.id ? '确认删除' : '删除对话'}
-              >
-                {confirmDeleteId === conv.id ? <Check size={14} /> : <X size={14} />}
-              </button>
-            </div>
-          )
-        })}
-
-        {conversations.length === 0 && (
+        {conversations.length === 0 ? (
           <div className="text-center text-text3 text-xs mt-8 px-3">
             暂无对话记录
           </div>
+        ) : (
+          <>
+            {(
+              [
+                { key: 'today', label: '今天' },
+                { key: 'yesterday', label: '昨天' },
+                { key: 'thisWeek', label: '本周' },
+                { key: 'older', label: '更早' },
+              ] as const
+            ).map(({ key, label }) => {
+              const group = grouped[key]
+              if (group.length === 0) return null
+              return (
+                <div key={key}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-text3 px-3 pt-3 pb-1">
+                    {label}
+                  </div>
+                  {group.map((conv) => {
+                    const isActive = conv.id === conversationId
+                    return (
+                      <div
+                        key={conv.id}
+                        onClick={() => handleLoad(conv.id)}
+                        className={cn(
+                          'group flex items-center gap-2 px-2.5 py-2 mx-1 my-0.5 rounded-lg cursor-pointer',
+                          'transition-colors text-sm',
+                          isActive
+                            ? 'bg-accent-dim text-accent'
+                            : 'text-text2 hover:bg-card hover:text-text',
+                        )}
+                      >
+                        <MessageSquare size={14} className="shrink-0 opacity-50" />
+                        <StatusDot status={conv.latest_run_status} />
+                        <div className="flex-1 min-w-0">
+                          <div className="truncate text-[13px] leading-tight">
+                            {conv.title || '新对话'}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[11px] text-text3">
+                              {formatTime(conv.updated_at)}
+                            </span>
+                            {conv.message_count > 0 && (
+                              <span className="text-[10px] text-text3 tabular-nums">
+                                {conv.message_count}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleDelete(e, conv.id)}
+                          className={cn(
+                            'shrink-0 p-0.5 rounded transition-all cursor-pointer',
+                            confirmDeleteId === conv.id
+                              ? 'opacity-100 bg-red/20 text-red'
+                              : 'opacity-0 group-hover:opacity-100 hover:bg-red/20 hover:text-red',
+                          )}
+                          title={confirmDeleteId === conv.id ? '确认删除' : '删除对话'}
+                        >
+                          {confirmDeleteId === conv.id ? <Check size={14} /> : <X size={14} />}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </>
         )}
       </div>
     </div>
