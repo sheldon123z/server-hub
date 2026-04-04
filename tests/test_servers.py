@@ -639,7 +639,7 @@ class TestRemoteCollect:
         fake_metrics = {"cpu": {"overall_percent": 50.0}, "memory": {"ram": {"percent": 70.0}}}
 
         mock_client_instance = MagicMock()
-        mock_client_instance.get_metrics_full = AsyncMock(return_value=fake_metrics)
+        mock_client_instance.get_metrics = AsyncMock(return_value={"ok": True, "data": fake_metrics})
 
         # Mock ws_manager.broadcast to avoid import errors
         mock_ws = MagicMock()

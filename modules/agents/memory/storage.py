@@ -83,10 +83,16 @@ class MemoryStorage:
         category: str = "knowledge",
         confidence: float = 0.8,
         source: str = "",
-    ) -> None:
-        """添加一条事实（自动去重）"""
+    ) -> bool:
+        """添加一条事实（自动去重）
+
+        Returns:
+            True 表示新增成功，False 表示内容为空或已存在（去重）
+        """
         data = self.load()
         normalized = content.strip().lower()
+        if not normalized:
+            return False
         for existing in data["facts"]:
             if existing["content"].strip().lower() == normalized:
                 # Update confidence if higher
@@ -94,7 +100,7 @@ class MemoryStorage:
                     existing["confidence"] = confidence
                     existing["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 self.save(data)
-                return
+                return False
 
         fact = {
             "id": str(uuid.uuid4())[:8],
@@ -110,6 +116,7 @@ class MemoryStorage:
             data["facts"].sort(key=lambda f: f.get("confidence", 0), reverse=True)
             data["facts"] = data["facts"][:50]
         self.save(data)
+        return True
 
     def remove_fact(self, fact_id: str) -> bool:
         data = self.load()

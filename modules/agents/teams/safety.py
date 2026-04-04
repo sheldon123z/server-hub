@@ -58,6 +58,10 @@ def _build_safe_env() -> dict[str, str]:
     return safe
 
 
+# 向后兼容别名
+_strip_sensitive_env = _build_safe_env
+
+
 def resolve_tools(tool_names: list[str], user_role: str = "admin") -> list[BaseTool]:
     """从工具名列表解析为实际 Tool 对象
 
