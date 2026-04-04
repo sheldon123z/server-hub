@@ -134,6 +134,7 @@ export function useSSEChat() {
         if (_activeController === controller) {
           _activeController = null
         }
+        store.setStreamingMessageId(null)
         store.setStreaming(false)
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
         queryClient.invalidateQueries({ queryKey: ['agent-runs'] })
@@ -169,13 +170,29 @@ export function useSSEChat() {
         break
 
       case 'message.final':
-      case 'message':
-        store.pushMsg({
-          role: 'assistant',
-          content: extractContent(data.content),
-          _serverId: (data.id as string | undefined) ?? (data.run_id as string | undefined),
-        })
+      case 'message': {
+        const content = extractContent(data.content)
+        const serverId = (data.id as string | undefined) ?? (data.run_id as string | undefined)
+        const currentStreamingId = useChatStore.getState().streamingMessageId
+
+        if (currentStreamingId) {
+          // 已有 streaming 消息，直接增量更新内容（绕过去重）
+          store.updateStreamingContent(currentStreamingId, content)
+        } else {
+          // 首次消息：pushMsg 创建并记录 streamingMessageId
+          store.pushMsg({
+            role: 'assistant',
+            content,
+            _serverId: serverId,
+          })
+          const msgs = useChatStore.getState().messages
+          const lastMsg = msgs[msgs.length - 1]
+          if (lastMsg && lastMsg.role === 'assistant') {
+            store.setStreamingMessageId(lastMsg._id)
+          }
+        }
         break
+      }
 
       case 'tool.call':
       case 'tool_call': {
@@ -262,6 +279,7 @@ export function useSSEChat() {
         if (data.run_id) {
           store.setCurrentRunId(data.run_id as string)
         }
+        store.setStreamingMessageId(null)
         break
 
       case 'run.error':
@@ -336,6 +354,7 @@ export function useSSEChat() {
         if (data.run_id) {
           store.setCurrentRunId(data.run_id as string)
         }
+        store.setStreamingMessageId(null)
         break
     }
   }

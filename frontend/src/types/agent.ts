@@ -145,3 +145,5 @@ export interface ProcessedMessage {
   toolCalls: ToolCallItem[]
   subAgents: SubAgentItem[]
 }
+
+export type MessageGroupType = 'content' | 'processing' | 'subagent' | 'mixed'

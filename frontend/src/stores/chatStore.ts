@@ -11,6 +11,8 @@ interface ChatState {
   isStreaming: boolean
   safetyMode: 'supervised' | 'autonomous'
   selectedSkillId: string | null
+  streamingMessageId: string | null
+  suggestions: string[]
 
   // Actions
   setConversationId: (id: string | null) => void
@@ -24,6 +26,10 @@ interface ChatState {
   setSafetyMode: (mode: 'supervised' | 'autonomous') => void
   setSelectedSkillId: (id: string | null) => void
   clearChat: () => void
+  setStreamingMessageId: (id: string | null) => void
+  updateStreamingContent: (id: string, content: string) => void
+  setSuggestions: (suggestions: string[]) => void
+  clearSuggestions: () => void
 
   // Internal
   _msgSeq: number
@@ -39,6 +45,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isStreaming: false,
   safetyMode: 'supervised',
   selectedSkillId: null,
+  streamingMessageId: null,
+  suggestions: [],
 
   _msgSeq: 0,
   _seenIds: new Set<string>(),
@@ -83,12 +91,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       todos: [],
       isStreaming: false,
       selectedSkillId: null,
+      streamingMessageId: null,
+      suggestions: [],
       _msgSeq: 0,
       _seenIds: new Set<string>(),
     })
     // 联动清理 artifacts
     useArtifactStore.getState().clear()
   },
+
+  setStreamingMessageId: (id) => set({ streamingMessageId: id }),
+
+  updateStreamingContent: (id, content) =>
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m._id === id ? { ...m, content } : m,
+      ),
+    })),
+
+  setSuggestions: (suggestions) => set({ suggestions }),
+
+  clearSuggestions: () => set({ suggestions: [] }),
 
   pushMsg: (msg) => {
     const state = get()
