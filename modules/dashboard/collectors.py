@@ -27,7 +27,9 @@ def get_system_info() -> dict:
     boot_time = datetime.fromtimestamp(psutil.boot_time())
     uptime = str(datetime.now() - boot_time).split(".")[0]
 
-    cpu_percent = psutil.cpu_percent(interval=0.5)
+    # interval=0 是非阻塞的，返回自上次调用以来的 CPU 使用率
+    # 避免 interval=0.5 阻塞事件循环 500ms (#295)
+    cpu_percent = psutil.cpu_percent(interval=0)
 
     gpu = {}
     gpu_raw = run(
