@@ -634,7 +634,7 @@ class TeamEngine:
         Args:
             team_id: 团队 ID
         """
-        keys_to_remove = [k for k in self._graph_cache if k.startswith(f"{team_id}:")]
+        keys_to_remove = [k for k in self._graph_cache if k == team_id or k.startswith(f"{team_id}:")]
         for k in keys_to_remove:
             del self._graph_cache[k]
         if keys_to_remove:
