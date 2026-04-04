@@ -5,7 +5,7 @@
 **路由前缀**: `/api/audit`
 **相关文件**: `modules/audit/routes.py`, `modules/audit/middleware.py`
 
-> 所有 `POST / PUT / DELETE /api/*` 请求均由审计中间件自动写入 `audit_log` 表，包含操作用户、操作类型、目标、IP 地址和成功/失败状态。
+> 所有 `POST / PUT / DELETE /api/*` 请求均由审计中间件自动写入 `audit_log` 表，包含操作用户、操作类型、目标、IP 地址和成功/失败状态。客户端 IP 通过 `utils.get_client_ip()` 提取，兼容 nginx 反代（优先级: `X-Forwarded-For` 首 IP > `X-Real-IP` > `request.client.host`）。
 
 ---
 

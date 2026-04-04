@@ -3,7 +3,7 @@
 管理用户登录、登出、令牌刷新和密码修改。
 
 **路由前缀**: `/api/auth`
-**相关文件**: `auth/routes.py`, `auth/jwt_handler.py`, `auth/user_store.py`, `auth/models.py`
+**相关文件**: `auth/routes.py`, `auth/jwt_handler.py`, `auth/user_store.py`, `auth/models.py`, `utils/__init__.py`（`get_client_ip`）
 
 ---
 
@@ -51,6 +51,16 @@
 ```json
 {
   "detail": "用户名或密码错误"
+}
+```
+
+**速率限制** `429`:
+
+登录接口按客户端 IP 实施滑动窗口速率限制（60 秒内最多 5 次尝试）。客户端 IP 通过 `utils.get_client_ip()` 提取，兼容 nginx 反代场景（优先级: `X-Forwarded-For` 首 IP > `X-Real-IP` > `request.client.host`）。
+
+```json
+{
+  "detail": "登录尝试过于频繁，请 60 秒后重试"
 }
 ```
 
