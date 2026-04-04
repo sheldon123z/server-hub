@@ -59,6 +59,10 @@ _threads: dict[str, ThreadData] = {}
 _runs: dict[str, RunData] = {}
 _graphs: dict[str, object] = {}  # graph_id → compiled LangGraph graph
 
+# 内存容量上限，防止长时间运行积累过多 thread/run 对象
+_MAX_THREADS = 200
+_MAX_RUNS_PER_THREAD = 10
+
 
 def register_graph(graph_id: str, graph) -> None:
     """注册一个编译好的 graph 供异步执行"""
@@ -177,6 +181,22 @@ async def create_thread(request: Request):
     body = await request.json() if await request.body() else {}
     thread_id = body.get("thread_id") or str(uuid.uuid4())
     now = _now_iso()
+
+    # 容量检查：超限时清理最旧的 idle thread，不删除运行中的 thread
+    if len(_threads) >= _MAX_THREADS:
+        running_thread_ids = {r.thread_id for r in _runs.values() if r.status == "running"}
+        idle_threads = sorted(
+            ((tid, t) for tid, t in _threads.items() if tid not in running_thread_ids),
+            key=lambda x: x[1].last_active if hasattr(x[1], "last_active") else x[1].updated_at,
+        )
+        to_remove = idle_threads[: len(_threads) - _MAX_THREADS + 1]
+        for tid, _ in to_remove:
+            _threads.pop(tid, None)
+            stale_runs = [rid for rid, r in _runs.items() if r.thread_id == tid]
+            for rid in stale_runs:
+                _runs.pop(rid, None)
+        if to_remove:
+            logger.info("LG Compat: 容量上限 %d，已清理 %d 个 idle thread", _MAX_THREADS, len(to_remove))
 
     thread = ThreadData(
         thread_id=thread_id,

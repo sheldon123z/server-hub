@@ -96,7 +96,7 @@ def collect_cpu() -> dict:
     with _cpu_cache_lock:
         cached = _cpu_cache["value"]
         if cached is not None and now - _cpu_cache["ts"] < _CPU_CACHE_TTL:
-            return copy.deepcopy(cached)
+            return cached  # Read-only: callers must not mutate
 
     per_cpu = psutil.cpu_percent(interval=0, percpu=True)
     overall = psutil.cpu_percent(interval=0)
@@ -157,7 +157,7 @@ def collect_gpu() -> dict:
     with _gpu_cache_lock:
         cached = _gpu_cache["value"]
         if cached is not None and now - _gpu_cache["ts"] < settings.gpu_metrics_ttl_seconds:
-            return copy.deepcopy(cached)
+            return cached  # Read-only: callers must not mutate
 
     result = {
         "available": False,

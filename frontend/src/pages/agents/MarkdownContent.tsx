@@ -1,19 +1,42 @@
 import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import mermaid from "mermaid";
+import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
+import python from "react-syntax-highlighter/dist/esm/languages/prism/python";
+import javascript from "react-syntax-highlighter/dist/esm/languages/prism/javascript";
+import typescript from "react-syntax-highlighter/dist/esm/languages/prism/typescript";
+import json from "react-syntax-highlighter/dist/esm/languages/prism/json";
+import yaml from "react-syntax-highlighter/dist/esm/languages/prism/yaml";
+import sql from "react-syntax-highlighter/dist/esm/languages/prism/sql";
+import css from "react-syntax-highlighter/dist/esm/languages/prism/css";
+import docker from "react-syntax-highlighter/dist/esm/languages/prism/docker";
+import nginx from "react-syntax-highlighter/dist/esm/languages/prism/nginx";
+import markdown from "react-syntax-highlighter/dist/esm/languages/prism/markdown";
 import { cn } from "@/lib/utils";
 
+SyntaxHighlighter.registerLanguage("bash", bash);
+SyntaxHighlighter.registerLanguage("shell", bash);
+SyntaxHighlighter.registerLanguage("python", python);
+SyntaxHighlighter.registerLanguage("javascript", javascript);
+SyntaxHighlighter.registerLanguage("js", javascript);
+SyntaxHighlighter.registerLanguage("typescript", typescript);
+SyntaxHighlighter.registerLanguage("ts", typescript);
+SyntaxHighlighter.registerLanguage("json", json);
+SyntaxHighlighter.registerLanguage("yaml", yaml);
+SyntaxHighlighter.registerLanguage("yml", yaml);
+SyntaxHighlighter.registerLanguage("sql", sql);
+SyntaxHighlighter.registerLanguage("css", css);
+SyntaxHighlighter.registerLanguage("dockerfile", docker);
+SyntaxHighlighter.registerLanguage("nginx", nginx);
+SyntaxHighlighter.registerLanguage("markdown", markdown);
+SyntaxHighlighter.registerLanguage("md", markdown);
+
 // ---------------------------------------------------------------------------
-// Mermaid initialization (once per module load)
+// Mermaid — lazy-loaded on first use, initialized only once
 // ---------------------------------------------------------------------------
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "dark",
-  themeVariables: { primaryColor: "#38bdf8" },
-});
+let _mermaidInitialized = false;
 
 // ---------------------------------------------------------------------------
 // MermaidBlock — renders a mermaid diagram from raw source
@@ -30,19 +53,32 @@ const MermaidBlock: React.FC<MermaidBlockProps> = ({ code }) => {
     let cancelled = false;
     const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    mermaid
-      .render(id, code)
-      .then(({ svg }) => {
-        if (!cancelled && containerRef.current) {
-          containerRef.current.innerHTML = svg;
-          setError(null);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-        }
-      });
+    async function render() {
+      const { default: mermaid } = await import("mermaid");
+      if (cancelled) return;
+      if (!_mermaidInitialized) {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          themeVariables: { primaryColor: "#38bdf8" },
+        });
+        _mermaidInitialized = true;
+      }
+      mermaid
+        .render(id, code)
+        .then(({ svg }) => {
+          if (!cancelled && containerRef.current) {
+            containerRef.current.innerHTML = svg;
+            setError(null);
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        });
+    }
+    render();
 
     return () => {
       cancelled = true;

@@ -34,6 +34,13 @@ VALID_TASK_TYPES = {
 }
 
 
+def _cleanup_done_tasks() -> None:
+    """移除已完成/取消的任务引用，防止 _running_tasks 累积僵尸条目"""
+    done = [tid for tid, task in _running_tasks.items() if task.done()]
+    for tid in done:
+        _running_tasks.pop(tid, None)
+
+
 async def start_background_task(task_type: str, instruction: str) -> str:
     """启动后台异步任务
 
@@ -57,7 +64,8 @@ async def start_background_task(task_type: str, instruction: str) -> str:
     )
     await db.commit()
 
-    # 启动后台 asyncio 任务
+    # 启动后台 asyncio 任务（先清理已完成的任务引用）
+    _cleanup_done_tasks()
     coro = _execute_background(task_id, task_type, instruction)
     async_task = asyncio.create_task(coro, name=f"bg-{task_type}-{task_id}")
     _running_tasks[task_id] = async_task
