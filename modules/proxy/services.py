@@ -36,7 +36,7 @@ DEFAULT_PROXY_REGISTRY: dict[str, Any] = {
             "listen_ports": [{"label": "Mixed Port", "port": 7890, "description": "HTTP / SOCKS5"}],
             "admin_api": {
                 "base_url": "http://127.0.0.1:9090",
-                "secret": "clash2026",
+                "secret": os.environ.get("SERVERHUB_CLASH_SECRET", ""),
             },
             "active_config_link": "/opt/clash/config_active.yaml",
             "config_profiles": [
