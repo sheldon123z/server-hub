@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from langchain_core.messages import AIMessage, ToolMessage
@@ -15,10 +14,10 @@ from sse_starlette.sse import EventSourceResponse
 from auth.dependencies import get_current_user
 from database import get_db
 from modules.agents.run_service import (
+    DbWriteBuffer,
     append_run_event,
     create_run,
     ensure_conversation,
-    record_legacy_agent_event,
     register_active_run,
     unregister_active_run,
     update_run_status,
@@ -36,10 +35,15 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-async def _process_ai_message(
-    msg: AIMessage, run_id: str, conversation_id: str, emitted_ids: set[str], username: str
+def _process_ai_message(
+    msg: AIMessage,
+    run_id: str,
+    conversation_id: str,
+    emitted_ids: set[str],
+    username: str,
+    buf: DbWriteBuffer,
 ) -> list[dict]:
-    """处理 AI 消息，返回要 yield 的 SSE event 列表。"""
+    """处理 AI 消息，返回要 yield 的 SSE event 列表。DB 写入缓冲到 buf。"""
     events: list[dict] = []
 
     if getattr(msg, "tool_calls", None):
@@ -55,12 +59,12 @@ async def _process_ai_message(
                 "input": tc["args"],
                 "id": tc_id,
             }
-            await append_run_event(run_id, conversation_id, "tool.call", payload)
+            buf.buffer_run_event(run_id, conversation_id, "tool.call", payload)
             events.append({"event": "tool.call", "data": json.dumps(payload, ensure_ascii=False)})
             try:
                 from modules.agents.safety import TOOL_RISK_MAP
 
-                await record_legacy_agent_event(
+                buf.buffer_legacy_event(
                     conversation_id,
                     event_type="tool_call",
                     username=username,
@@ -78,14 +82,20 @@ async def _process_ai_message(
             "role": "assistant",
             "id": msg_id or "",
         }
-        await append_run_event(run_id, conversation_id, "message.final", payload)
+        buf.buffer_run_event(run_id, conversation_id, "message.final", payload)
         events.append({"event": "message.final", "data": json.dumps(payload, ensure_ascii=False)})
 
     return events
 
 
-async def _process_tool_message(msg: ToolMessage, run_id: str, conversation_id: str, username: str) -> list[dict]:
-    """处理工具调用结果消息，返回要 yield 的 SSE event 列表。"""
+def _process_tool_message(
+    msg: ToolMessage,
+    run_id: str,
+    conversation_id: str,
+    username: str,
+    buf: DbWriteBuffer,
+) -> list[dict]:
+    """处理工具调用结果消息，返回要 yield 的 SSE event 列表。DB 写入缓冲到 buf。"""
     msg_id = getattr(msg, "id", None)
 
     # 检测 UI 组件标记
@@ -102,7 +112,7 @@ async def _process_tool_message(msg: ToolMessage, run_id: str, conversation_id: 
             "data": content_data,
             "id": msg_id or "",
         }
-        await append_run_event(run_id, conversation_id, "ui.render", ui_payload)
+        buf.buffer_run_event(run_id, conversation_id, "ui.render", ui_payload)
         # 同时发送文字 fallback
         title = content_data.get("title", "")
         fallback_payload = {
@@ -122,10 +132,10 @@ async def _process_tool_message(msg: ToolMessage, run_id: str, conversation_id: 
         "content": msg.content[:1500] if msg.content else "",
         "id": msg_id or "",
     }
-    await append_run_event(run_id, conversation_id, "tool.result", payload)
+    buf.buffer_run_event(run_id, conversation_id, "tool.result", payload)
     events = [{"event": "tool.result", "data": json.dumps(payload, ensure_ascii=False)}]
     try:
-        await record_legacy_agent_event(
+        buf.buffer_legacy_event(
             conversation_id,
             event_type="tool_result",
             username=username,
@@ -250,6 +260,8 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
     db = await get_db()
 
     async def event_generator():
+        buf = DbWriteBuffer()
+        bg_tasks: set[asyncio.Task] = set()  # 防止 fire-and-forget flush 被 GC
         register_active_run(run_id)
         try:
             started_payload = {
@@ -259,7 +271,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                 "created_at": run["created_at"],
                 "skill_id": body.skill_id,
             }
-            await append_run_event(run_id, conversation_id, "run.started", started_payload)
+            buf.buffer_run_event(run_id, conversation_id, "run.started", started_payload)
             yield {"event": "run.started", "data": json.dumps(started_payload, ensure_ascii=False)}
 
             from modules.agents.deep_agent import build_agent
@@ -294,7 +306,7 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                 if todos is not None and todos != prev_todos:
                     prev_todos = todos
                     payload = {"run_id": run_id, "todos": todos}
-                    await append_run_event(run_id, conversation_id, "todo.update", payload)
+                    buf.buffer_run_event(run_id, conversation_id, "todo.update", payload)
                     yield {"event": "todo.update", "data": json.dumps(payload, ensure_ascii=False)}
 
                 messages = step.get("messages", [])
@@ -309,45 +321,57 @@ async def chat(request: Request, body: ChatRequest, user=Depends(get_current_use
                         emitted_ids.add(msg_id)
 
                     if isinstance(msg, AIMessage):
-                        for event in await _process_ai_message(
-                            msg, run_id, conversation_id, emitted_ids, user["username"]
+                        for event in _process_ai_message(
+                            msg, run_id, conversation_id, emitted_ids, user["username"], buf
                         ):
                             yield event
 
                     elif isinstance(msg, ToolMessage):
-                        for event in await _process_tool_message(msg, run_id, conversation_id, user["username"]):
+                        for event in _process_tool_message(msg, run_id, conversation_id, user["username"], buf):
                             yield event
 
                 emitted_count = len(messages)
 
+                # 每个 astream step 结束后异步刷写缓冲，不阻塞下一个 SSE 事件
+                if buf.pending >= 4:
+                    task = asyncio.create_task(buf.flush())
+                    bg_tasks.add(task)
+                    task.add_done_callback(bg_tasks.discard)
+
             # 流结束后检查是否有中断（审批请求）
             snapshot = await agent.aget_state(config)
             if snapshot.next:
+                # _handle_interrupt 自行直接写 DB（含审批记录），先刷缓冲
+                await buf.flush()
                 for event in await _handle_interrupt(snapshot, run_id, conversation_id, db):
                     yield event
             else:
                 payload = {"conversation_id": conversation_id, "run_id": run_id, "status": "completed"}
-                await append_run_event(run_id, conversation_id, "run.completed", payload)
-                await update_run_status(run_id, status="completed", completed=True)
+                buf.buffer_run_event(run_id, conversation_id, "run.completed", payload)
+                buf.buffer_run_status(run_id, status="completed", completed=True)
                 yield {"event": "run.completed", "data": json.dumps(payload, ensure_ascii=False)}
 
-            await db.execute(
-                "UPDATE agent_conversations SET updated_at = ?, message_count = message_count + 1 WHERE id = ?",
-                (datetime.now().isoformat(), conversation_id),
-            )
-            await db.commit()
+            buf.buffer_conversation_touch(conversation_id)
+            await buf.flush()
         except asyncio.CancelledError:
             payload = {"run_id": run_id, "conversation_id": conversation_id, "error": "运行已取消"}
-            await append_run_event(run_id, conversation_id, "run.error", payload)
-            await update_run_status(run_id, status="cancelled", error="运行已取消", completed=True)
+            buf.buffer_run_event(run_id, conversation_id, "run.error", payload)
+            buf.buffer_run_status(run_id, status="cancelled", error="运行已取消", completed=True)
+            await buf.flush()
             yield {"event": "run.error", "data": json.dumps(payload, ensure_ascii=False)}
         except Exception as exc:
             logger.exception("Chat error: %s", exc)
             payload = {"run_id": run_id, "conversation_id": conversation_id, "error": str(exc)}
-            await append_run_event(run_id, conversation_id, "run.error", payload)
-            await update_run_status(run_id, status="error", error=str(exc), completed=True)
+            buf.buffer_run_event(run_id, conversation_id, "run.error", payload)
+            buf.buffer_run_status(run_id, status="error", error=str(exc), completed=True)
+            await buf.flush()
             yield {"event": "run.error", "data": json.dumps(payload, ensure_ascii=False)}
         finally:
+            # 确保残留缓冲不丢失（正常路径已 flush，这里兜底）
+            try:
+                await buf.flush()
+            except Exception:
+                logger.debug("finally flush 失败", exc_info=True)
             unregister_active_run(run_id)
 
         yield {

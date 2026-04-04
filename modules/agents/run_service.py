@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -16,6 +17,122 @@ from database import get_db
 logger = logging.getLogger(__name__)
 
 _active_run_tasks: dict[str, asyncio.Task] = {}
+
+
+# ---------------------------------------------------------------------------
+# DbWriteBuffer — 收集 SQL 操作，单事务批量写入
+# ---------------------------------------------------------------------------
+
+
+class DbWriteBuffer:
+    """在 SSE 流期间收集数据库写操作，通过 flush() 在单个事务中批量提交。
+
+    用法::
+
+        buf = DbWriteBuffer()
+        buf.add("INSERT INTO t (a) VALUES (?)", ("v",))
+        ...
+        await buf.flush()  # 单次 commit
+    """
+
+    def __init__(self) -> None:
+        self._ops: list[tuple[str, tuple[Any, ...]]] = []
+
+    # -- 收集 ----------------------------------------------------------------
+
+    def add(self, sql: str, params: tuple[Any, ...] = ()) -> None:
+        """将一条 SQL 写操作加入缓冲区（不立即执行）。"""
+        self._ops.append((sql, params))
+
+    @property
+    def pending(self) -> int:
+        return len(self._ops)
+
+    # -- 刷写 ----------------------------------------------------------------
+
+    async def flush(self) -> int:
+        """将缓冲区中所有操作在单个事务中提交，返回执行条数。
+
+        即使缓冲区为空也安全调用（直接返回 0）。
+        """
+        if not self._ops:
+            return 0
+        ops = self._ops
+        self._ops = []
+        db = await get_db()
+        try:
+            for sql, params in ops:
+                await db.execute(sql, params)
+            await db.commit()
+            return len(ops)
+        except Exception:
+            # 回滚后重新抛出，调用方可决定是否重试
+            with contextlib.suppress(Exception):
+                await db.rollback()
+            logger.exception("DbWriteBuffer flush 失败 (%d ops)", len(ops))
+            raise
+
+    # -- 便捷方法：与 append_run_event / record_legacy_agent_event 对应 --------
+
+    def buffer_run_event(
+        self,
+        run_id: str,
+        conversation_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> str:
+        """缓冲一条 run_event INSERT，返回生成的 event_id。"""
+        event_id = str(uuid.uuid4())
+        self.add(
+            "INSERT INTO agent_run_events (id, run_id, conversation_id, event_type, payload_json, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (event_id, run_id, conversation_id, event_type, json_dumps(payload), now_iso()),
+        )
+        return event_id
+
+    def buffer_legacy_event(
+        self,
+        conversation_id: str,
+        *,
+        event_type: str,
+        username: str,
+        tool_name: str | None = None,
+        tool_input: str | None = None,
+        tool_output: str | None = None,
+        risk_level: str | None = None,
+        details: str | None = None,
+    ) -> None:
+        """缓冲一条 legacy agent_events INSERT。"""
+        self.add(
+            "INSERT INTO agent_events"
+            " (conversation_id, event_type, tool_name, tool_input, tool_output, risk_level, username, details)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (conversation_id, event_type, tool_name, tool_input, tool_output, risk_level, username, details),
+        )
+
+    def buffer_run_status(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        error: str | None = None,
+        completed: bool = False,
+    ) -> None:
+        """缓冲一条 run 状态更新。"""
+        completed_at = now_iso() if completed else None
+        self.add(
+            "UPDATE agent_runs"
+            " SET status = ?, error = COALESCE(?, error), updated_at = ?, completed_at = COALESCE(?, completed_at)"
+            " WHERE id = ?",
+            (status, error, now_iso(), completed_at, run_id),
+        )
+
+    def buffer_conversation_touch(self, conversation_id: str) -> None:
+        """缓冲 conversation updated_at + message_count 更新。"""
+        self.add(
+            "UPDATE agent_conversations SET updated_at = ?, message_count = message_count + 1 WHERE id = ?",
+            (now_iso(), conversation_id),
+        )
 
 
 def now_iso() -> str:
