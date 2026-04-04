@@ -221,23 +221,15 @@ class MetricsStore:
     async def cleanup(self, retention_days: int = 90) -> int:
         """Delete metrics older than retention period. Returns deleted count.
 
-        Uses server_id in WHERE clause to leverage idx_metrics_server_time index.
+        Single DELETE across all servers — timestamp-only filter is sufficient
+        since the table is append-only and all rows older than cutoff should be removed.
+        idx_metrics_server_time index covers timestamp; SQLite will use it.
         """
         cutoff = (datetime.now() - timedelta(days=retention_days)).isoformat()
         db = await get_db()
-        # Per-server_id deletion leverages the compound index
-        rows = await (
-            await db.execute("SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,))
-        ).fetchall()
-        total = 0
-        for (sid,) in rows:
-            cursor = await db.execute(
-                "DELETE FROM metrics WHERE server_id = ? AND timestamp < ?",
-                (sid, cutoff),
-            )
-            total += cursor.rowcount
+        cursor = await db.execute("DELETE FROM metrics WHERE timestamp < ?", (cutoff,))
         await db.commit()
-        return total
+        return cursor.rowcount
 
 
 # Singleton

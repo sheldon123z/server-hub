@@ -127,6 +127,7 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     """
     cache_key = f"{safety_mode}:{purpose}:{user_role}"
     if cache_key in _agent_cache:
+        logger.debug("Agent cache hit: %s", cache_key)
         return _agent_cache[cache_key]
 
     model = get_chat_model(purpose)

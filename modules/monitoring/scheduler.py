@@ -61,8 +61,8 @@ async def _collect_and_store():
 async def _cleanup_old_metrics():
     """清理超过保留天数的过期指标，并定期 VACUUM 回收磁盘空间
 
-    使用 server_id + timestamp 条件以命中 idx_metrics_server_time 复合索引，
-    避免全表扫描。按 server_id 分批删除，每批 LIMIT 防止长事务锁定。
+    单条 DELETE 删除所有服务器的过期数据，避免 N+1 模式（旧实现按 server_id
+    逐条删除，N 台服务器 = N 次 DELETE + N 次 COMMIT）。
     每 24 小时执行一次 VACUUM 回收已删除行的磁盘空间。
     同时清理已移除服务器的 metrics_latest 残留。
     """
@@ -70,18 +70,11 @@ async def _cleanup_old_metrics():
     try:
         cutoff = (datetime.now() - timedelta(days=settings.metrics_retention_days)).isoformat()
         db = await get_db()
-        # 获取所有 server_id 以利用 idx_metrics_server_time 复合索引
-        rows = await (
-            await db.execute("SELECT DISTINCT server_id FROM metrics WHERE timestamp < ?", (cutoff,))
-        ).fetchall()
-        if rows:
-            for (sid,) in rows:
-                await db.execute(
-                    "DELETE FROM metrics WHERE server_id = ? AND timestamp < ?",
-                    (sid, cutoff),
-                )
+        # 单条 DELETE 替代 N 条，timestamp 过滤命中 idx_metrics_server_time 索引
+        cursor = await db.execute("DELETE FROM metrics WHERE timestamp < ?", (cutoff,))
+        if cursor.rowcount:
             await db.commit()
-            logger.info("清理过期指标完成: %d 个 server_id, 保留 %d 天", len(rows), settings.metrics_retention_days)
+            logger.info("清理过期指标完成: 删除 %d 行, 保留 %d 天", cursor.rowcount, settings.metrics_retention_days)
 
         # 清理已移除服务器的 metrics_latest 残留
         cursor = await db.execute("DELETE FROM metrics_latest WHERE server_id NOT IN (SELECT id FROM servers)")
