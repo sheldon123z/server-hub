@@ -1,75 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Send, ShieldAlert, Square, Sparkles } from 'lucide-react'
+import { Send, Square, Sparkles } from 'lucide-react'
+import { useStickToBottom } from 'use-stick-to-bottom'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { cn, ensureArray } from '@/lib/utils'
 import client from '@/api/client'
 import { useChatStore } from '@/stores/chatStore'
 import { useSSEChat } from '@/hooks/useSSEChat'
-import type { ChatMessage, SkillRecommendation } from '@/types/agent'
+import type { ChatMessage, ProcessedMessage, SkillRecommendation } from '@/types/agent'
+import { useProcessedMessages } from '@/hooks/useProcessedMessages'
 import { MessageBubble } from './MessageBubble'
+import { ToolCallBox } from './ToolCallBox'
+import { ToolApprovalInterrupt } from './ToolApprovalInterrupt'
+import { SubAgentIndicator } from './SubAgentIndicator'
 import { TodoPanel } from './TodoPanel'
 import { SlashCommandMenu, type SlashCommandMenuHandle, generateHelpText } from './SlashCommandMenu'
 
 function pageContextFromPath(pathname: string): string {
   const seg = pathname.replace(/^\//, '').split('/')[0]
   return seg || 'dashboard'
-}
-
-function ApprovalCard({
-  msg,
-  onResolve,
-}: {
-  msg: ChatMessage
-  onResolve: (id: string, action: 'approve' | 'reject') => void
-}) {
-  const [loading, setLoading] = useState(false)
-
-  async function handle(action: 'approve' | 'reject') {
-    if (!msg.approval_id) return
-    setLoading(true)
-    await onResolve(msg.approval_id, action)
-    setLoading(false)
-  }
-
-  const actions = ensureArray<NonNullable<ChatMessage['actions']>[number]>(msg.actions)
-
-  return (
-    <div className="flex justify-start px-3">
-      <div className="max-w-[85%] rounded-lg border border-yellow/40 bg-yellow/10 px-3 py-2.5">
-        <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-yellow">
-          <ShieldAlert size={14} />
-          <span>需要审批</span>
-        </div>
-        <div className="mb-2 text-sm text-text">{msg.description || '确认执行此操作？'}</div>
-        {actions.length > 0 && (
-          <div className="mb-2 rounded bg-bg/50 px-2 py-1 font-mono text-xs text-text3">
-            {actions.map((a, i) => (
-              <div key={i}>
-                {a.name}({JSON.stringify(a.args)})
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button
-            onClick={() => handle('approve')}
-            disabled={loading}
-            className="rounded bg-green/20 px-3 py-1 text-xs text-green transition-colors hover:bg-green/30 disabled:opacity-50"
-          >
-            批准
-          </button>
-          <button
-            onClick={() => handle('reject')}
-            disabled={loading}
-            className="rounded bg-red/20 px-3 py-1 text-xs text-red transition-colors hover:bg-red/30 disabled:opacity-50"
-          >
-            拒绝
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function TypingIndicator() {
@@ -99,12 +48,11 @@ export function ChatPanel() {
     return sessionStorage.getItem('serverhub-chat-draft') || ''
   })
   const [showSlashMenu, setShowSlashMenu] = useState(false)
-  const [isNearBottom, setIsNearBottom] = useState(true)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null)
+  const { scrollRef, contentRef, isAtBottom } = useStickToBottom()
   const pageContext = pageContextFromPath(location.pathname)
+  const processedMessages = useProcessedMessages()
 
   const trimmedInput = input.trim()
 
@@ -126,27 +74,6 @@ export function ChatPanel() {
     [recommendations, selectedSkillId],
   )
 
-  const handleScroll = useCallback(() => {
-    if (!containerRef.current) return
-    const { scrollHeight, scrollTop, clientHeight } = containerRef.current
-    setIsNearBottom(scrollHeight - scrollTop - clientHeight < 100)
-  }, [])
-
-  useEffect(() => {
-    if (!isNearBottom) return
-    if (!isStreaming) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-      return
-    }
-    // 流式输出期间使用 rAF 持续滚动，确保内容增长时视口跟随
-    let rafId: number
-    function tick() {
-      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
-      rafId = requestAnimationFrame(tick)
-    }
-    rafId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafId)
-  }, [messages.length, isStreaming, isNearBottom])
 
   // 草稿自动保存（防抖 500ms）
   useEffect(() => {
@@ -218,60 +145,85 @@ export function ChatPanel() {
     }
   }
 
-  async function handleApproval(approvalId: string, action: 'approve' | 'reject') {
-    try {
-      const { data } = await client.post(`/api/agents/approvals/${approvalId}`, { action, reason: '' })
-      const approvalMsg = messages.find((m) => m.approval_id === approvalId)
-      if (approvalMsg) removeMessage(approvalMsg._id)
-      pushMsg({
-        role: 'assistant',
-        content: data?.result || (action === 'approve' ? '操作已批准，正在执行...' : '操作已被拒绝'),
-      })
-    } catch {
-      pushMsg({ role: 'assistant', content: '审批请求处理失败' })
-    }
-  }
+  function renderProcessedMessage(pm: ProcessedMessage) {
+    const { message: msg } = pm
 
-  function renderMessage(msg: ChatMessage) {
-    switch (msg.role) {
-      case 'user':
-      case 'assistant':
-      case 'tool_call':
-      case 'tool_result':
-        return (
-          <div key={msg._id} className="px-3">
-            <MessageBubble
-              message={msg}
-              onDelete={handleDelete}
-              onResend={msg.role === 'user' ? handleResend : undefined}
+    // User or assistant message
+    if (msg.role === 'user' || msg.role === 'assistant') {
+      return (
+        <div key={msg._id} className="px-3">
+          <MessageBubble
+            message={msg}
+            onDelete={handleDelete}
+            onResend={msg.role === 'user' ? handleResend : undefined}
+          />
+          {/* Tool calls grouped under this assistant message */}
+          {pm.toolCalls.length > 0 && (
+            <div className="mt-1 flex flex-col gap-0.5 pl-3">
+              {pm.toolCalls
+                .filter(tc => !tc.args?.subagent_type)
+                .map(tc => (
+                  <ToolCallBox key={tc.id} toolCall={tc} />
+                ))}
+            </div>
+          )}
+          {/* SubAgent indicators */}
+          {pm.subAgents.length > 0 && (
+            <div className="mt-2 flex flex-col gap-2 pl-3">
+              {pm.subAgents.map(sa => (
+                <SubAgentIndicator key={sa.id} subAgent={sa} />
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    // Approval message — use new 3-way approval component
+    if (msg.role === 'approval') {
+      return (
+        <div key={msg._id} className="flex justify-start px-3">
+          <div className="max-w-[85%]">
+            <ToolApprovalInterrupt
+              approvalId={msg.approval_id || ''}
+              description={msg.description}
+              actions={msg.actions}
+              onResolved={() => {
+                useChatStore.getState().removeMessage(msg._id)
+              }}
             />
           </div>
-        )
-      case 'approval':
-        return <ApprovalCard key={msg._id} msg={msg} onResolve={handleApproval} />
-      default:
-        return null
+        </div>
+      )
     }
+
+    // UI component or fallback
+    return (
+      <div key={msg._id} className="px-3">
+        <MessageBubble message={msg} onDelete={handleDelete} />
+      </div>
+    )
   }
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="relative flex-1 overflow-y-auto py-3" ref={containerRef} onScroll={handleScroll}>
-        {messages.length === 0 && !isStreaming && (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center text-text3">
-              <div className="mb-2 text-3xl">&#129302;</div>
-              <div className="text-sm">OpsAgent 运维助手</div>
-              <div className="mt-1 text-xs">输入消息开始对话</div>
+      <div className="relative flex-1 overflow-y-auto py-3" ref={scrollRef}>
+        <div ref={contentRef}>
+          {messages.length === 0 && !isStreaming && (
+            <div className="flex h-full items-center justify-center" style={{ minHeight: '60vh' }}>
+              <div className="text-center text-text3">
+                <div className="mb-2 text-3xl">&#129302;</div>
+                <div className="text-sm">OpsAgent 运维助手</div>
+                <div className="mt-1 text-xs">输入消息开始对话</div>
+              </div>
             </div>
-          </div>
-        )}
-        <div className="flex flex-col gap-2.5">{messages.map(renderMessage)}</div>
-        {isStreaming && <TypingIndicator />}
-        <div ref={bottomRef} />
-        {!isNearBottom && messages.length > 0 && (
+          )}
+          <div className="flex flex-col gap-2.5">{processedMessages.map(renderProcessedMessage)}</div>
+          {isStreaming && <TypingIndicator />}
+        </div>
+        {!isAtBottom && messages.length > 0 && (
           <button
-            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })}
             className="sticky bottom-3 left-1/2 -translate-x-1/2 z-10 bg-accent text-[#0f172a] px-3 py-1 rounded-full text-sm shadow-lg hover:bg-accent/80 transition-colors"
           >
             ↓ 新消息
