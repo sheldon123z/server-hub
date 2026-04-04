@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/stores/chatStore'
 import type { TodoItem, UIComponentType, UIComponentData, UIAction, UIComponentMessage } from '@/types/agent'
 import { ensureArray } from '@/lib/utils'
+import { validateUIComponent } from '@/lib/ui-schema-validation'
 
 function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -241,16 +242,29 @@ export function useSSEChat() {
         })
         break
 
-      case 'ui.render':
-        store.pushMsg({
-          role: 'ui_component' as const,
-          componentType: data.component_type as UIComponentType,
-          data: data.data as UIComponentData,
-          uiActions: (data.actions as UIAction[]) ?? [],
-          content: '',
-          _serverId: data.id as string | undefined,
-        } as Parameters<typeof store.pushMsg>[0])
+      case 'ui.render': {
+        const validation = validateUIComponent(data.data)
+        if (validation.valid && validation.data) {
+          store.pushMsg({
+            role: 'ui_component' as const,
+            componentType: validation.data.type as UIComponentType,
+            data: validation.data as unknown as UIComponentData,
+            uiActions: (data.actions as UIAction[]) ?? [],
+            content: '',
+            _serverId: data.id as string | undefined,
+          } as Parameters<typeof store.pushMsg>[0])
+        } else {
+          const errDetail = validation.error?.issues
+            ?.map((i) => `${i.path.join('.')}: ${i.message}`)
+            .join('; ')
+          console.warn('[ui.render] Schema validation failed:', validation.error)
+          store.pushMsg({
+            role: 'assistant',
+            content: `UI 组件数据验证失败: ${errDetail ?? '未知错误'}`,
+          })
+        }
         break
+      }
 
       case 'ui.update': {
         const componentId = data.component_id as string

@@ -268,7 +268,7 @@ export const MessageBubble = React.memo(function MessageBubble({ message, onDele
           <ActionBar onCopy={handleCopy} onDelete={handleDelete} />
           <UIComponentErrorBoundary componentId={uiMsg.data?.id ?? 'unknown'}>
             <UICard
-              component={uiMsg.data as any}
+              component={uiMsg.data}
               onAction={handleUIAction}
             />
           </UIComponentErrorBoundary>
