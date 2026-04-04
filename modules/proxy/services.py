@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -593,10 +595,57 @@ async def _write_config_file(target_file: str, content: str) -> None:
             os.unlink(tmp_path)
 
 
+def _is_private_ip(addr: str) -> bool:
+    """检查 IP 地址是否为私网/保留地址 (RFC 1918, loopback, link-local 等)."""
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return True  # 无法解析的地址视为不安全
+    return ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local
+
+
+def _validate_url_not_private(url: str) -> None:
+    """校验 URL 目标不是私网地址，防止 SSRF 攻击.
+
+    同时检查主机名直接为 IP 的情况和 DNS 解析后为私网 IP 的情况
+    (防御 DNS rebinding)。
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("订阅 URL 缺少主机名")
+
+    # 1. 主机名本身就是 IP 的情况
+    try:
+        if _is_private_ip(hostname):
+            raise ValueError(f"订阅 URL 不允许访问私网地址: {hostname}")
+    except ValueError:
+        raise
+    except Exception:
+        logger.debug("主机名 %s 非 IP 格式，继续 DNS 解析检查", hostname)
+
+    # 2. DNS 解析后检查 (防止域名指向私网 IP)
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"订阅 URL 域名解析失败: {hostname} ({exc})")
+
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        resolved_ip = sockaddr[0]
+        if _is_private_ip(resolved_ip):
+            raise ValueError(f"订阅 URL 的域名 {hostname} 解析到私网地址 {resolved_ip}，已拒绝")
+
+
 async def _download_subscription_to_profile(instance: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
     subscription_url = str(profile.get("subscription_url", "")).strip()
     if not subscription_url:
         return _unsupported("update_subscription")
+
+    # SSRF 防护: 拒绝私网地址
+    try:
+        _validate_url_not_private(subscription_url)
+    except ValueError as exc:
+        return {"ok": False, "msg": f"订阅地址安全检查失败: {exc}"}
 
     headers = {"User-Agent": DEFAULT_USER_AGENT}
     try:
