@@ -4,69 +4,8 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
+import { getLanguage, isMarkdown } from "@/lib/file-utils";
 import { MarkdownContent } from "./MarkdownContent";
-
-// ---------------------------------------------------------------------------
-// Language map — 30+ extensions → Prism language identifiers
-// ---------------------------------------------------------------------------
-const LANGUAGE_MAP: Record<string, string> = {
-  js: "javascript",
-  jsx: "javascript",
-  ts: "typescript",
-  tsx: "typescript",
-  py: "python",
-  rb: "ruby",
-  go: "go",
-  rs: "rust",
-  java: "java",
-  cpp: "cpp",
-  c: "c",
-  cs: "csharp",
-  php: "php",
-  swift: "swift",
-  kt: "kotlin",
-  scala: "scala",
-  sh: "bash",
-  bash: "bash",
-  zsh: "bash",
-  json: "json",
-  xml: "xml",
-  html: "html",
-  css: "css",
-  scss: "scss",
-  sass: "sass",
-  less: "less",
-  sql: "sql",
-  yaml: "yaml",
-  yml: "yaml",
-  toml: "toml",
-  ini: "ini",
-  dockerfile: "dockerfile",
-  makefile: "makefile",
-  conf: "ini",
-  cfg: "ini",
-  log: "text",
-  txt: "text",
-  env: "bash",
-  service: "ini",
-  timer: "ini",
-  nginx: "nginx",
-};
-
-function getLanguage(fileName: string): string {
-  const lower = fileName.toLowerCase();
-  // Special case for files without extensions that are named keywords
-  const basename = lower.split("/").pop() ?? lower;
-  if (basename === "dockerfile") return "dockerfile";
-  if (basename === "makefile") return "makefile";
-  const ext = basename.split(".").pop() ?? "";
-  return LANGUAGE_MAP[ext] ?? "text";
-}
-
-function isMarkdown(fileName: string): boolean {
-  const ext = fileName.toLowerCase().split(".").pop() ?? "";
-  return ext === "md" || ext === "mdx";
-}
 
 // ---------------------------------------------------------------------------
 // Props

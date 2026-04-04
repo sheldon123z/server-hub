@@ -61,6 +61,25 @@ def _process_ai_message(
             }
             buf.buffer_run_event(run_id, conversation_id, "tool.call", payload)
             events.append({"event": "tool.call", "data": json.dumps(payload, ensure_ascii=False)})
+
+            # Artifact 事件: write_file/edit_file 工具调用时额外发射 artifact.update
+            if tc["name"] in ("write_file", "edit_file"):
+                file_path = tc["args"].get("file_path") or tc["args"].get("path", "")
+                raw_content = tc["args"].get("content", "")
+                # 截断内容预览，避免大文件撑爆 SSE 流和数据库；前端可按需 HTTP fetch 完整内容
+                max_preview = 2000
+                preview = raw_content[:max_preview] if isinstance(raw_content, str) else ""
+                artifact_payload = {
+                    "run_id": run_id,
+                    "conversation_id": conversation_id,
+                    "file_path": file_path,
+                    "action": tc["name"],
+                    "content": preview,
+                    "truncated": len(raw_content) > max_preview if isinstance(raw_content, str) else False,
+                }
+                buf.buffer_run_event(run_id, conversation_id, "artifact.update", artifact_payload)
+                events.append({"event": "artifact.update", "data": json.dumps(artifact_payload, ensure_ascii=False)})
+
             try:
                 from modules.agents.safety import TOOL_RISK_MAP
 

@@ -382,6 +382,8 @@ async def _create_agent_tables(db: aiosqlite.Connection):
         );
         CREATE INDEX IF NOT EXISTS idx_agent_run_events_run
             ON agent_run_events(run_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_run_events_conv_type
+            ON agent_run_events(conversation_id, event_type);
 
         CREATE TABLE IF NOT EXISTS agent_skills (
             id TEXT PRIMARY KEY,

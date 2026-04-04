@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, TodoItem } from '@/types/agent'
 import { ensureArray } from '@/lib/utils'
+import { useArtifactStore } from '@/stores/artifactStore'
 
 interface ChatState {
   conversationId: string | null
@@ -85,6 +86,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       _msgSeq: 0,
       _seenIds: new Set<string>(),
     })
+    // 联动清理 artifacts
+    useArtifactStore.getState().clear()
   },
 
   pushMsg: (msg) => {

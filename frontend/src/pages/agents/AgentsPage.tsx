@@ -6,14 +6,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useChatStore } from '@/stores/chatStore'
+import { useArtifactStore } from '@/stores/artifactStore'
 import { ConversationSidebar } from './ConversationSidebar'
 import { ChatPanel } from './ChatPanel'
 import { PatrolPanel } from './PatrolPanel'
 import { AdminPanel } from './AdminPanel'
+import { ArtifactsPanel } from './ArtifactsPanel'
 import { TerminalPanel } from './TerminalPanel'
 import { SafetyToggle } from './SafetyToggle'
 
-type RightTab = 'patrol' | 'admin'
+type RightTab = 'patrol' | 'admin' | 'files'
 
 const STORAGE_KEY = 'agents-sidebar-width'
 const DEFAULT_SIDEBAR = 200
@@ -25,8 +27,10 @@ export default function AgentsPage() {
   const { safetyMode, setSafetyMode } = useChatStore()
   const [tab, setTab] = useState<RightTab>(() => {
     const saved = localStorage.getItem('agents-tab')
-    return (saved === 'patrol' || saved === 'admin') ? saved : 'patrol'
+    return (saved === 'patrol' || saved === 'admin' || saved === 'files') ? saved : 'patrol'
   })
+  const artifactCount = useArtifactStore((s) => s.artifacts.length)
+  const autoOpenUsed = useArtifactStore((s) => s._autoOpenUsed)
   const [showTerminal, setShowTerminal] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -37,6 +41,15 @@ export default function AgentsPage() {
   useEffect(() => {
     localStorage.setItem('agents-tab', tab)
   }, [tab])
+
+  // 首次产出 artifact 时自动切到文件标签（仅触发一次）
+  useEffect(() => {
+    if (artifactCount > 0 && !autoOpenUsed) {
+      setTab('files')
+      setShowTerminal(false)
+      useArtifactStore.getState().markAutoOpenUsed()
+    }
+  }, [artifactCount, autoOpenUsed])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -100,12 +113,25 @@ export default function AgentsPage() {
                 巡检
               </button>
               <button
-                className={`px-2.5 py-1 rounded-r transition-colors ${
+                className={`px-2.5 py-1 transition-colors ${
                   tab === 'admin' ? 'bg-accent-dim text-accent' : 'text-text3 hover:text-text'
                 }`}
                 onClick={() => { setTab('admin'); setShowTerminal(false) }}
               >
                 管理
+              </button>
+              <button
+                className={`px-2.5 py-1 rounded-r transition-colors relative ${
+                  tab === 'files' ? 'bg-accent-dim text-accent' : 'text-text3 hover:text-text'
+                }`}
+                onClick={() => { setTab('files'); setShowTerminal(false) }}
+              >
+                文件
+                {artifactCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 rounded-full bg-accent text-[10px] font-bold text-[#0f172a] flex items-center justify-center px-1">
+                    {artifactCount}
+                  </span>
+                )}
               </button>
             </div>
           )}
@@ -137,6 +163,8 @@ export default function AgentsPage() {
               <TerminalPanel />
             ) : tab === 'patrol' ? (
               <PatrolPanel />
+            ) : tab === 'files' ? (
+              <ArtifactsPanel />
             ) : (
               <AdminPanel />
             )}

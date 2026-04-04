@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, X, Check, MessageSquare } from 'lucide-react'
 import { cn, ensureArray } from '@/lib/utils'
 import { useChatStore } from '@/stores/chatStore'
+import { useArtifactStore } from '@/stores/artifactStore'
 import client from '@/api/client'
 import type { Conversation, ChatMessage, TodoItem } from '@/types/agent'
 
@@ -128,6 +129,23 @@ export function ConversationSidebar() {
       setConversationId(detail.conversation_id)
       setMessages(msgs)
       setTodos(ensureArray<TodoItem>(detail.todos))
+
+      // 恢复 artifacts 列表
+      try {
+        const { data: artData } = await client.get('/api/agents/artifacts/list', {
+          params: { conversation_id: detail.conversation_id },
+        })
+        const items = ensureArray<{ file_path: string; action: string; created_at: string }>(artData?.items)
+        useArtifactStore.getState().setArtifacts(
+          items.map((a) => ({
+            filePath: a.file_path,
+            action: (a.action as 'write_file' | 'edit_file') ?? 'write_file',
+            timestamp: new Date(a.created_at).getTime(),
+          })),
+        )
+      } catch {
+        // Artifact 恢复失败不影响对话加载
+      }
     } catch {
       // Silently fail; user can retry
     }

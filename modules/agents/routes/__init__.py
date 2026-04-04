@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from modules.agents.routes.alerts import router as alerts_router
 from modules.agents.routes.approvals import router as approvals_router
+from modules.agents.routes.artifacts import router as artifacts_router
 from modules.agents.routes.async_tasks import router as async_tasks_router
 from modules.agents.routes.chat import router as chat_router
 from modules.agents.routes.config import router as config_router
@@ -31,3 +32,4 @@ router.include_router(runs_router)
 router.include_router(skills_router)
 router.include_router(teams_router)
 router.include_router(ui_router)
+router.include_router(artifacts_router)

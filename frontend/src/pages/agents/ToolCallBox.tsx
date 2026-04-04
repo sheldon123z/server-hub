@@ -2,8 +2,9 @@
  * ToolCallBox - compact card showing a tool invocation name, args summary, and status.
  */
 
-import { Wrench, Check, Loader2 } from 'lucide-react'
+import { Wrench, Check, Loader2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useArtifactStore } from '@/stores/artifactStore'
 
 interface ToolCall {
   id: string
@@ -18,6 +19,10 @@ interface ToolCallBoxProps {
 
 export function ToolCallBox({ toolCall }: ToolCallBoxProps) {
   const hasResult = toolCall.result !== undefined
+  const isFileOp = toolCall.name === 'write_file' || toolCall.name === 'edit_file'
+  const filePath = isFileOp
+    ? (toolCall.args.file_path as string) || (toolCall.args.path as string) || ''
+    : ''
   const argsPreview = Object.keys(toolCall.args)
     .filter((k) => k !== 'subagent_type' && k !== 'subagent_name')
     .slice(0, 3)
@@ -37,6 +42,17 @@ export function ToolCallBox({ toolCall }: ToolCallBoxProps) {
       <span className="font-medium text-text">{toolCall.name}</span>
       {argsPreview && (
         <span className="truncate max-w-[200px] text-text3">({argsPreview})</span>
+      )}
+      {isFileOp && filePath && (
+        <button
+          className="flex items-center gap-0.5 text-accent hover:underline shrink-0"
+          onClick={() => {
+            useArtifactStore.getState().select(filePath)
+          }}
+        >
+          <FileText size={11} />
+          <span>查看</span>
+        </button>
       )}
       <span className="ml-auto shrink-0">
         {hasResult ? (

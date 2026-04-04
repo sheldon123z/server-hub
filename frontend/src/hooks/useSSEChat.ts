@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useChatStore } from '@/stores/chatStore'
+import { useArtifactStore } from '@/stores/artifactStore'
 import type { TodoItem, UIComponentType, UIComponentData, UIAction, UIComponentMessage } from '@/types/agent'
 import { ensureArray } from '@/lib/utils'
 import { validateUIComponent } from '@/lib/ui-schema-validation'
@@ -177,15 +178,30 @@ export function useSSEChat() {
         break
 
       case 'tool.call':
-      case 'tool_call':
+      case 'tool_call': {
+        const toolName = (data.tool as string) ?? (data.name as string)
+        const toolArgs = (data.input as Record<string, unknown>) ?? (data.args as Record<string, unknown>)
         store.pushMsg({
           role: 'tool_call',
-          tool: (data.tool as string) ?? (data.name as string),
-          args: (data.input as Record<string, unknown>) ?? (data.args as Record<string, unknown>),
+          tool: toolName,
+          args: toolArgs,
           content: '',
           _serverId: data.id as string | undefined,
         })
+        // Fallback: 前端侧检测 write_file/edit_file，当后端未发送 artifact.update 时也能工作
+        if (toolName === 'write_file' || toolName === 'edit_file') {
+          const filePath = (toolArgs?.file_path as string) || (toolArgs?.path as string) || ''
+          if (filePath) {
+            useArtifactStore.getState().addArtifact({
+              filePath,
+              action: toolName as 'write_file' | 'edit_file',
+              content: toolArgs?.content as string | undefined,
+              timestamp: Date.now(),
+            })
+          }
+        }
         break
+      }
 
       case 'tool.result':
       case 'tool_result':
@@ -227,6 +243,20 @@ export function useSSEChat() {
           _serverId: 'approval_' + String(data.approval_id ?? ''),
         })
         break
+
+      case 'artifact.update': {
+        // 后端显式推送的 artifact 事件（去重由 store 处理）
+        const fp = data.file_path as string
+        if (fp) {
+          useArtifactStore.getState().addArtifact({
+            filePath: fp,
+            action: (data.action as 'write_file' | 'edit_file') ?? 'write_file',
+            content: data.content as string | undefined,
+            timestamp: Date.now(),
+          })
+        }
+        break
+      }
 
       case 'run.completed':
         if (data.run_id) {
