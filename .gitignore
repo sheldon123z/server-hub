@@ -32,6 +32,7 @@ data/serverhub-secret.key
 
 # OS
 .DS_Store
+._*
 Thumbs.db
 
 # Logs
@@ -44,6 +45,20 @@ modules/agents/graph.py
 # Worktrees
 .worktrees/
 .claude/worktrees/
+
+# OMC / workflow residue
+.omc/
+.workflow/
+.pr-review-*.md
+.github-issues-plan.md
+.full-review/
+.full-review-archive-*/
+
+# Runtime data
+data/enforcement-config.json
+data/agent-memory-*.md
+data/subagent_prompts/
+data/ssh_known_hosts
 
 # Node / Frontend
 node_modules/

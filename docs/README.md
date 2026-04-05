@@ -17,7 +17,7 @@
 
 | 模块 | 前缀 | 端点数 | 说明 |
 |------|------|--------|------|
-| [API 总览](api/README.md) | — | 190+ | 认证方式、权限模型、端点汇总 |
+| [API 总览](api/README.md) | — | 170+ | 认证方式、RBAC 权限模型、端点汇总 |
 | [认证](api/auth.md) | `/api/auth` | 5 | 登录、登出、刷新令牌 |
 | [仪表盘](api/dashboard.md) | `/api/dashboard` | 1 | 系统概览数据 |
 | [系统监控](api/monitoring.md) | `/api/monitoring` | 11 | 实时指标、历史数据、GPU |
@@ -28,7 +28,10 @@
 | [网络管理](api/network.md) | `/api/network` | 4 | 端口、连接、防火墙 |
 | [代理管理](api/proxy.md) | `/api/proxy` | 16 | Clash 代理节点切换 |
 | [日志查看](api/logs.md) | `/api/logs` | 4 | 日志文件搜索和实时流 |
-| [通知管理](api/notifications.md) | `/api/notifications` | 9 | Telegram 消息发送 |
+| [通知管理](api/notifications.md) | `/api/notifications` | 16 | 多渠道通知（Telegram/站内/Webhook） |
+| [告警管理](api/alerts.md) | `/api/alerts` | 10 | 告警规则引擎、评估器、状态机 |
+| [RBAC 权限](api/rbac.md) | `/api/rbac` | 11 | 角色管理、权限矩阵、用户分配 |
+| [文件管理](api/files.md) | `/api/files` | 10 | 文件浏览、读写、上传、搜索 |
 | [审计日志](api/audit.md) | `/api/audit` | 1 | 操作审计记录查询 |
 | [面板用户](api/panel-users.md) | `/api/panel-users` | 4 | Web 面板用户 CRUD |
 | [系统设置](api/settings.md) | `/api/settings` | 1 | 非敏感配置查看 |
@@ -58,7 +61,7 @@ ServerHub 的核心特色 — 基于 Deep Agents 框架的 AI 运维智能体。
 
 | 文档 | 说明 |
 |------|------|
-| [数据库 Schema](database.md) | 37 张表 + 1 FTS5 虚拟表、3 个数据库文件 |
+| [数据库 Schema](database.md) | 41 张表 + 1 FTS5 虚拟表、3 个数据库文件 |
 | [前端架构](frontend.md) | React 18 + TypeScript + Tailwind CSS |
 
 ---

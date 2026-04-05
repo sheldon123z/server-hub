@@ -18,7 +18,7 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 
 应用启动时由 `database.py:init_tables()` 自动创建所有表（`CREATE TABLE IF NOT EXISTS`）。
 
-共 37 个表 + 1 个 FTS5 虚拟表（共 38 个）。
+共 41 个表 + 1 个 FTS5 虚拟表（共 42 个）。
 
 > 注：`metrics_latest` 表在 `init_tables()` 中出现两次（初始创建 + 兼容性重建），属于同一张表。
 
@@ -462,6 +462,62 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 ### notification_channels — 通知渠道配置
 
 存储多通知渠道（Telegram、Webhook 等）的配置信息。
+
+---
+
+### inapp_notifications — 站内通知
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 自增 ID |
+| user_id | TEXT | 目标用户 |
+| type | TEXT | 通知类型（默认 `system`） |
+| title | TEXT | 通知标题 |
+| content | TEXT | 通知正文 |
+| severity | TEXT | 级别（`info`/`warning`/`critical`，默认 `info`） |
+| read | INTEGER | 是否已读（0/1，默认 0） |
+| related_alert_id | TEXT | 关联的告警 ID（可选） |
+| created_at | TIMESTAMP | 创建时间 |
+
+**索引**: `idx_inapp_user_read` — `(user_id, read, created_at)`，加速未读通知查询。
+
+---
+
+### roles — RBAC 角色
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | TEXT PK | 角色 ID（如 `super-admin`） |
+| name | TEXT UNIQUE | 角色标识名 |
+| display_name | TEXT | 显示名 |
+| description | TEXT | 说明 |
+| builtin | INTEGER | 是否内置角色（0/1，默认 0） |
+| created_at | TIMESTAMP | 创建时间 |
+
+---
+
+### role_permissions — 角色权限
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 自增 ID |
+| role_id | TEXT FK→roles | 所属角色 |
+| resource | TEXT | 资源类型（如 `servers`、`docker`、`*`） |
+| action | TEXT | 操作类型（`read`/`write`/`admin`/`*`） |
+| scope | TEXT | 范围（默认 `*`） |
+
+**唯一约束**: `(role_id, resource, action, scope)`
+
+---
+
+### user_roles — 用户角色分配
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| user_id | TEXT | 用户 ID |
+| role_id | TEXT FK→roles | 角色 ID |
+
+**主键**: `(user_id, role_id)`
 
 ---
 

@@ -270,6 +270,7 @@ make smoke-test     # 测试所有关键 API 端点 (需要服务运行中)
 - **运行时 agent 记忆位于 `data/agent-memory.md`**: 该文件是 AI 运维助手的长期记忆，由 Deep Agents MemoryMiddleware 加载到系统提示词。Agent 通过 `edit_file()` 自动更新。仓库根目录 `AGENTS.md` 留给外部编码助手/仓库协作说明使用
 - **SubAgent 规范**: 创建新 SubAgent 必须使用 `/create-subagent` skill，遵循 LangChain 官方 SubAgent 规范（4 个 Required 字段 + 最小工具集 + 500 词输出限制）。详见 `~/.claude/skills/create-subagent/`
 - **配置持久化**: 自定义配置存 `data/` 目录（.gitignore 已排除），不修改源码文件。优先读自定义文件，不存在则用源码默认值
+- **Worktree 隔离修复铁律**: 修复 Issue 必须在独立的 git worktree 中进行（`git worktree add`），**严禁在主工作目录切换分支**。每个 Issue 分配独立的 agent 在隔离 worktree 中开发，主 agent 仅负责审查与合并（review → merge → cleanup）。这避免了分支切换导致的文件冲突、未提交修改丢失、以及多任务交叉污染。工作流：`agent worktree 开发 → push → 创建 PR → 主 agent 审查 → 合并 → 删除 worktree`
 
 ## 必须遵循的开发规范
 

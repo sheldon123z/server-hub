@@ -290,3 +290,27 @@ async def trigger_reindex(user=Depends(require_role("admin"))):
         return {"ok": True, "stats": stats}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ─── 工具元数据 API ───
+
+
+@router.get("/admin/tools/metadata")
+async def get_tools_metadata(user=Depends(require_role("admin"))):
+    """获取所有工具的元数据（供前端 Tool 展示使用）"""
+    from modules.agents.tools.registry import get_registered_tools
+
+    registry = get_registered_tools()
+    return {
+        "tools": [
+            {
+                "name": name,
+                "risk": meta.risk,
+                "group": meta.group,
+                "icon": meta.icon,
+                "label": meta.label,
+                "description": meta.tool.description[:200] if meta.tool.description else "",
+            }
+            for name, meta in registry.items()
+        ]
+    }

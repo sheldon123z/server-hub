@@ -15,16 +15,26 @@ ServerHub 使用 **JWT Cookie 认证**。登录成功后，服务端通过 `Set-
 
 ## 权限模型
 
-系统采用两级 RBAC：
+系统采用细粒度 RBAC（详见 [RBAC 权限管理](rbac.md)），同时向后兼容旧版两级角色。
+
+### 内置角色
 
 | 角色 | 权限范围 |
 |------|---------|
-| `admin` | 完全控制：读取 + 写入 + 危险操作（重启服务、终止进程、删除资源等） |
-| `user` | 只读监控：查看系统状态、指标、日志，不可执行写操作 |
+| `super-admin` | 拥有所有权限（`*:*:*`） |
+| `operator` | 可执行操作但不可管理用户和 RBAC |
+| `viewer` | 只读权限 |
+| `agent-user` | 仅可使用 Agent 对话功能 |
 
-依赖注入方式：
+### 向后兼容
+
+旧版 `admin`/`user` 角色在启动时自动迁移：`admin` → `super-admin`，`user` → `viewer`。
+
+### 依赖注入方式
+
 - `get_current_user` — 验证已登录（任意角色均可）
-- `require_role("admin")` — 验证 admin 角色
+- `require_role("admin")` — 向后兼容，等价于 `require_permission("*", "*")`
+- `require_permission("servers", "write")` — 细粒度资源权限守卫（推荐）
 
 ## 通用响应格式
 
@@ -89,14 +99,17 @@ ServerHub 使用 **JWT Cookie 认证**。登录成功后，服务端通过 `Set-
 | [网络管理](network.md) | `/api/network` | 4 | admin |
 | [代理管理](proxy.md) | `/api/proxy` | 7 | admin |
 | [日志查看](logs.md) | `/api/logs` | 4 | admin |
-| [通知管理](notifications.md) | `/api/notifications` | 3 | admin |
+| [通知管理](notifications.md) | `/api/notifications` | 16 | user（站内）/ admin（管理） |
+| [告警管理](alerts.md) | `/api/alerts` | 10 | user（读）/ admin（写） |
+| [RBAC 权限](rbac.md) | `/api/rbac` | 11 | rbac:admin / user（自查） |
+| [文件管理](files.md) | `/api/files` | 10 | files:read / files:write |
 | [审计日志](audit.md) | `/api/audit` | 1 | admin |
 | [面板用户](panel-users.md) | `/api/panel-users` | 4 | admin |
 | [系统设置](settings.md) | `/api/settings` | 1 | admin |
 | [资产台账](assets.md) | `/api/assets` | 7 | admin |
 | [AI Agent](agents.md) | `/api/agents` | 35（含 1 WS） | admin |
 
-**合计**: 16 个模块，约 123 个端点（含 1 个 WebSocket）。
+**合计**: 19 个模块，约 170 个端点（含 1 个 WebSocket）。
 
 ### GET /api/sidebar
 - **说明**: 返回按用户角色过滤的侧边栏菜单项（React 前端使用）
