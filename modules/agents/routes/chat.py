@@ -348,7 +348,7 @@ async def _run_agent(
             await bridge.publish(run_id, ev["event"], ev["data"])
 
     try:
-        from modules.agents.deep_agent import build_agent
+        from modules.agents.deep_agent import build_agent, load_user_memory_context
 
         agent = await build_agent(safety_mode=safety_mode, user_role=user_role)
         config = {"configurable": {"thread_id": conversation_id}}
@@ -365,6 +365,11 @@ async def _run_agent(
             page_ctx = await get_page_context(page_context)
             if page_ctx:
                 input_messages.insert(0, {"role": "system", "content": page_ctx})
+
+        # 注入用户专属记忆上下文（按用户隔离，防止多用户记忆污染）
+        user_memory_ctx = load_user_memory_context(username)
+        if user_memory_ctx:
+            input_messages.insert(0, {"role": "system", "content": user_memory_ctx})
 
         input_state = {"messages": input_messages}
         prev_todos = None
