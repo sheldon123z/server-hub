@@ -34,7 +34,7 @@ interface ApprovalItem {
   created_at: string
 }
 
-type StudioTab = 'overview' | 'skills' | 'install' | 'subagents' | 'memory' | 'runs'
+type StudioTab = 'overview' | 'skills' | 'install' | 'subagents' | 'memory' | 'runs' | 'async-tasks'
 
 const TABS: Array<{ id: StudioTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -43,6 +43,7 @@ const TABS: Array<{ id: StudioTab; label: string }> = [
   { id: 'subagents', label: 'SubAgents' },
   { id: 'memory', label: 'Memory & Prompts' },
   { id: 'runs', label: 'Runs & Approvals' },
+  { id: 'async-tasks', label: 'Async Tasks' },
 ]
 
 function TabButton({
@@ -91,6 +92,7 @@ export default function AgentStudioPage() {
       {tab === 'subagents' && <SubagentsTab />}
       {tab === 'memory' && <MemoryAndPromptsTab />}
       {tab === 'runs' && <RunsAndApprovalsTab />}
+      {tab === 'async-tasks' && <AsyncTasksTab />}
     </div>
   )
 }
@@ -106,7 +108,7 @@ function OverviewTab() {
   })
   const { data: approvals } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray<ApprovalItem>(r.data)),
   })
 
   const enabledSkills = useMemo(() => skills?.filter((item) => item.enabled).length ?? 0, [skills])
@@ -677,6 +679,11 @@ function MemoryAndPromptsTab() {
     queryKey: ['admin-memory'],
     queryFn: () => client.get('/api/agents/admin/memory').then((r) => r.data),
   })
+  const { data: ragData, refetch: refetchRag } = useQuery({
+    queryKey: ['rag-stats'],
+    queryFn: () => client.get('/api/agents/admin/rag').then((r) => r.data as { ok: boolean; stats: Record<string, unknown> }),
+    staleTime: 60_000,
+  })
 
   const savePromptMut = useMutation({
     mutationFn: async (content: string) => client.put('/api/agents/admin/prompt', { content }),
@@ -690,101 +697,379 @@ function MemoryAndPromptsTab() {
     mutationFn: async (content: string) => client.put('/api/agents/admin/memory', { content }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-memory'] }),
   })
+  const reindexMut = useMutation({
+    mutationFn: () => client.post('/api/agents/admin/rag/reindex'),
+    onSuccess: () => { toast.success('RAG 索引重建完成'); refetchRag() },
+    onError: () => toast.error('重建失败'),
+  })
 
   const currentPrompt = promptDraft || prompt?.content || ''
   const currentMemory = memoryDraft || memory?.content || ''
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <section className="rounded-xl border border-border bg-bg p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-text">系统 Prompt</div>
-          <div className="flex gap-2">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-text">系统 Prompt</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => resetPromptMut.mutate()}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text"
+              >
+                恢复默认
+              </button>
+              <button
+                type="button"
+                onClick={() => savePromptMut.mutate(currentPrompt)}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[#0f172a]"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+          <textarea
+            value={currentPrompt}
+            onChange={(e) => setPromptDraft(e.target.value)}
+            className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
+          />
+        </section>
+
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-text">长期记忆</div>
             <button
               type="button"
-              onClick={() => resetPromptMut.mutate()}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs text-text"
-            >
-              恢复默认
-            </button>
-            <button
-              type="button"
-              onClick={() => savePromptMut.mutate(currentPrompt)}
+              onClick={() => saveMemoryMut.mutate(currentMemory)}
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[#0f172a]"
             >
               保存
             </button>
           </div>
-        </div>
-        <textarea
-          value={currentPrompt}
-          onChange={(e) => setPromptDraft(e.target.value)}
-          className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
-        />
-      </section>
+          <textarea
+            value={currentMemory}
+            onChange={(e) => setMemoryDraft(e.target.value)}
+            className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
+          />
+        </section>
+      </div>
 
       <section className="rounded-xl border border-border bg-bg p-4">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-text">长期记忆</div>
+          <div className="text-sm font-medium text-text">RAG 知识库</div>
           <button
             type="button"
-            onClick={() => saveMemoryMut.mutate(currentMemory)}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[#0f172a]"
+            onClick={() => reindexMut.mutate()}
+            disabled={reindexMut.isPending}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/40 disabled:opacity-50"
           >
-            保存
+            {reindexMut.isPending ? '重建中...' : '重建索引'}
           </button>
         </div>
-        <textarea
-          value={currentMemory}
-          onChange={(e) => setMemoryDraft(e.target.value)}
-          className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
-        />
+        {ragData?.ok && ragData.stats ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {Object.entries(ragData.stats).map(([k, v]) => (
+              <div key={k} className="rounded-lg bg-bg2 px-3 py-2 text-xs">
+                <div className="text-text3 capitalize">{k.replace(/_/g, ' ')}</div>
+                <div className="mt-1 font-mono text-text">{String(v)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 text-xs text-text3">
+            {ragData?.ok === false ? '不可用' : '加载中...'}
+          </div>
+        )}
       </section>
     </div>
   )
 }
 
+interface AgentEvent {
+  id: number
+  timestamp: string
+  event_type: string
+  tool_name: string | null
+  tool_input: string | null
+  risk_level: string | null
+  username: string | null
+  details: string | null
+}
+
 function RunsAndApprovalsTab() {
+  const qc = useQueryClient()
+
   const { data: runs = [] } = useQuery({
     queryKey: ['agent-runs'],
     queryFn: () => client.get('/api/agents/runs').then((r) => ensureArray<AgentRun>(r.data)),
+    refetchInterval: 10_000,
   })
   const { data: approvals = [] } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray<ApprovalItem>(r.data)),
+    refetchInterval: 10_000,
+  })
+  const { data: events = [] } = useQuery({
+    queryKey: ['agent-events'],
+    queryFn: () =>
+      client.get('/api/agents/events', { params: { limit: 30 } }).then((r) => ensureArray<AgentEvent>(r.data)),
+    refetchInterval: 20_000,
+  })
+
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+
+  const cancelRunMut = useMutation({
+    mutationFn: async (runId: string) => {
+      setCancellingId(runId)
+      return client.post(`/api/agents/runs/${runId}/cancel`)
+    },
+    onSuccess: () => {
+      setCancellingId(null)
+      qc.invalidateQueries({ queryKey: ['agent-runs'] })
+    },
+    onError: () => {
+      setCancellingId(null)
+    },
   })
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="text-sm font-medium text-text">最近运行</div>
+          <div className="mt-3 space-y-2">
+            {runs.map((run) => (
+              <div key={run.id} className="rounded-lg border border-border bg-bg2 p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1 truncate text-sm text-text">{run.user_message}</div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs text-text3">{run.status}</span>
+                    {(run.status === 'running' || run.status === 'pending') && (
+                      <button
+                        onClick={() => cancelRunMut.mutate(run.id)}
+                        disabled={cancellingId === run.id}
+                        className="rounded px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        取消
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-text3">
+                  {run.page_context || '无页面上下文'} · {run.skill_id || '未选技能'}
+                </div>
+              </div>
+            ))}
+            {runs.length === 0 && <EmptyState text="暂无运行记录。" />}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="text-sm font-medium text-text">待处理审批</div>
+          <div className="mt-3 space-y-2">
+            {approvals.map((item: ApprovalItem) => (
+              <div key={item.id} className="rounded-lg border border-border bg-bg2 p-3">
+                <div className="text-sm text-text">{item.description || item.tool_name}</div>
+                <div className="mt-1 text-xs text-text3">{item.created_at}</div>
+              </div>
+            ))}
+            {approvals.length === 0 && <EmptyState text="当前没有待处理审批。" />}
+          </div>
+        </section>
+      </div>
+
       <section className="rounded-xl border border-border bg-bg p-4">
-        <div className="text-sm font-medium text-text">最近运行</div>
-        <div className="mt-3 space-y-2">
-          {runs.map((run) => (
-            <div key={run.id} className="rounded-lg border border-border bg-bg2 p-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="text-sm text-text">{run.user_message}</div>
-                <div className="text-xs text-text3">{run.status}</div>
+        <div className="text-sm font-medium text-text">Agent 事件日志</div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-xs text-text3">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="pb-2 pr-3 font-medium">时间</th>
+                <th className="pb-2 pr-3 font-medium">类型</th>
+                <th className="pb-2 pr-3 font-medium">工具</th>
+                <th className="pb-2 pr-3 font-medium">风险</th>
+                <th className="pb-2 pr-3 font-medium">用户</th>
+                <th className="pb-2 font-medium">详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((ev) => (
+                <tr key={ev.id} className="border-b border-border/50 last:border-0">
+                  <td className="py-1.5 pr-3 tabular-nums">{ev.timestamp.slice(0, 19).replace('T', ' ')}</td>
+                  <td className="py-1.5 pr-3">{ev.event_type}</td>
+                  <td className="py-1.5 pr-3">{ev.tool_name ?? '—'}</td>
+                  <td className="py-1.5 pr-3">
+                    {ev.risk_level ? (
+                      <span
+                        className={
+                          ev.risk_level === 'high'
+                            ? 'text-red-400'
+                            : ev.risk_level === 'medium'
+                              ? 'text-yellow-400'
+                              : 'text-text3'
+                        }
+                      >
+                        {ev.risk_level}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">{ev.username ?? '—'}</td>
+                  <td className="max-w-xs truncate py-1.5">{ev.details ?? '—'}</td>
+                </tr>
+              ))}
+              {events.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-text3">
+                    暂无事件记录。
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+interface AsyncTask {
+  id: string
+  task_type: string
+  instruction: string
+  status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+  created_at: string
+  completed_at: string | null
+  result?: string
+}
+
+const ASYNC_TASK_STATUS_STYLES: Record<string, string> = {
+  pending: 'bg-yellow/10 text-yellow',
+  running: 'bg-accent/10 text-accent',
+  done: 'bg-green/10 text-green',
+  failed: 'bg-red/10 text-red',
+  cancelled: 'bg-text3/10 text-text3',
+}
+
+function AsyncTasksTab() {
+  const qc = useQueryClient()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const { data: tasks = [], isFetching } = useQuery({
+    queryKey: ['async-tasks'],
+    queryFn: () => client.get('/api/agents/async-tasks').then((r) => ensureArray<AsyncTask>(r.data)),
+    refetchInterval: 10_000,
+  })
+
+  const { data: detail } = useQuery({
+    queryKey: ['async-task-detail', selectedId],
+    queryFn: () => client.get(`/api/agents/async-tasks/${selectedId}`).then((r) => r.data as AsyncTask),
+    enabled: !!selectedId,
+    refetchInterval: selectedId ? 5_000 : false,
+  })
+
+  const cancelMut = useMutation({
+    mutationFn: (id: string) => client.delete(`/api/agents/async-tasks/${id}`),
+    onSuccess: () => {
+      toast.success('任务已取消')
+      qc.invalidateQueries({ queryKey: ['async-tasks'] })
+      qc.invalidateQueries({ queryKey: ['async-task-detail', selectedId] })
+    },
+    onError: () => toast.error('取消失败'),
+  })
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section className="rounded-xl border border-border bg-bg p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-medium text-text">后台异步任务</div>
+          {isFetching && <div className="animate-pulse text-[10px] text-text3">刷新中...</div>}
+        </div>
+        <div className="space-y-2">
+          {tasks.map((t) => (
+            <div
+              key={t.id}
+              onClick={() => setSelectedId(t.id === selectedId ? null : t.id)}
+              className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                selectedId === t.id ? 'border-accent/50 bg-bg2' : 'border-border hover:bg-bg2'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                    ASYNC_TASK_STATUS_STYLES[t.status] ?? 'bg-text3/10 text-text3'
+                  }`}
+                >
+                  {t.status}
+                </span>
+                <span className="font-mono text-[10px] text-text3">{t.task_type}</span>
               </div>
-              <div className="mt-1 text-xs text-text3">
-                {run.page_context || '无页面上下文'} · {run.skill_id || '未选技能'}
+              <div className="mt-1 truncate text-xs text-text2" title={t.instruction}>
+                {t.instruction}
               </div>
+              <div className="mt-1 text-[10px] text-text3">{t.created_at}</div>
             </div>
           ))}
-          {runs.length === 0 && <EmptyState text="暂无运行记录。" />}
+          {tasks.length === 0 && <EmptyState text="暂无异步任务。" />}
         </div>
       </section>
 
       <section className="rounded-xl border border-border bg-bg p-4">
-        <div className="text-sm font-medium text-text">待处理审批</div>
-        <div className="mt-3 space-y-2">
-          {approvals.map((item: ApprovalItem) => (
-            <div key={item.id} className="rounded-lg border border-border bg-bg2 p-3">
-              <div className="text-sm text-text">{item.description || item.tool_name}</div>
-              <div className="mt-1 text-xs text-text3">{item.created_at}</div>
+        <div className="mb-3 text-sm font-medium text-text">任务详情</div>
+        {detail ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-medium ${
+                  ASYNC_TASK_STATUS_STYLES[detail.status] ?? ''
+                }`}
+              >
+                {detail.status}
+              </span>
+              {(detail.status === 'pending' || detail.status === 'running') && (
+                <button
+                  type="button"
+                  onClick={() => cancelMut.mutate(detail.id)}
+                  disabled={cancelMut.isPending}
+                  className="rounded bg-red/10 px-2 py-1 text-xs text-red transition-colors hover:bg-red/20 disabled:opacity-50"
+                >
+                  取消任务
+                </button>
+              )}
             </div>
-          ))}
-          {approvals.length === 0 && <EmptyState text="当前没有待处理审批。" />}
-        </div>
+            <div className="space-y-1 text-xs text-text3">
+              <div>
+                <span className="text-text2">类型:</span> {detail.task_type}
+              </div>
+              <div>
+                <span className="text-text2">创建:</span> {detail.created_at}
+              </div>
+              {detail.completed_at && (
+                <div>
+                  <span className="text-text2">完成:</span> {detail.completed_at}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-text3">指令</div>
+              <pre className="whitespace-pre-wrap break-all rounded bg-bg2 p-2 font-mono text-xs text-text2">
+                {detail.instruction}
+              </pre>
+            </div>
+            {detail.result && (
+              <div>
+                <div className="mb-1 text-xs text-text3">结果</div>
+                <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-all rounded bg-bg2 p-2 font-mono text-xs text-text2">
+                  {detail.result}
+                </pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <EmptyState text="点击左侧任务查看详情。" />
+        )}
       </section>
     </div>
   )

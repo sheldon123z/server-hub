@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts/core'
 import client from '@/api/client'
@@ -175,6 +175,7 @@ type TabKey = (typeof TABS)[number]['key']
  * 标签状态通过 URL searchParams 持久化。
  */
 export default function FleetDashboardPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = (searchParams.get('tab') as TabKey) || 'overview'
 
@@ -216,13 +217,13 @@ export default function FleetDashboardPage() {
             </button>
           ))}
         </div>
-        <Link
-          to="/fleet/batch"
+        <button
+          onClick={() => navigate('/fleet/batch')}
           className="flex items-center gap-1.5 px-3 py-1.5 mb-1 text-xs bg-accent text-[#0f172a] rounded-md font-medium hover:opacity-90 transition-opacity"
         >
           <i className="ti ti-bolt" />
           批量操作
-        </Link>
+        </button>
       </div>
 
       {/* Tab content */}
