@@ -820,6 +820,24 @@ async def _create_batch_tables(db: aiosqlite.Connection):
     """)
 
 
+async def _create_agent_audit_tables(db: aiosqlite.Connection):
+    """Agent 命令审计表 — 记录 Sandbox Shell 操作及风险等级"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS agent_command_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            command TEXT NOT NULL,
+            risk_level TEXT NOT NULL DEFAULT 'low',
+            result_length INTEGER DEFAULT 0,
+            duration_ms INTEGER DEFAULT 0,
+            blocked INTEGER DEFAULT 0,
+            conversation_id TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_cmd_audit_ts ON agent_command_audit(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_cmd_audit_risk ON agent_command_audit(risk_level);
+    """)
+
+
 async def init_tables(db: aiosqlite.Connection):
     """初始化所有数据库表 — 按领域分组调用子函数"""
     await _create_auth_tables(db)
@@ -830,6 +848,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_other_tables(db)
     await _create_rbac_tables(db)
     await _create_batch_tables(db)
+    await _create_agent_audit_tables(db)
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:
