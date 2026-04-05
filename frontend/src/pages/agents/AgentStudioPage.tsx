@@ -786,46 +786,138 @@ function MemoryAndPromptsTab() {
   )
 }
 
+interface AgentEvent {
+  id: number
+  timestamp: string
+  event_type: string
+  tool_name: string | null
+  tool_input: string | null
+  risk_level: string | null
+  username: string | null
+  details: string | null
+}
+
 function RunsAndApprovalsTab() {
+  const qc = useQueryClient()
+
   const { data: runs = [] } = useQuery({
     queryKey: ['agent-runs'],
     queryFn: () => client.get('/api/agents/runs').then((r) => ensureArray<AgentRun>(r.data)),
+    refetchInterval: 10_000,
   })
   const { data: approvals = [] } = useQuery({
     queryKey: ['agent-approvals'],
     queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
+    refetchInterval: 10_000,
+  })
+  const { data: events = [] } = useQuery({
+    queryKey: ['agent-events'],
+    queryFn: () =>
+      client.get('/api/agents/events', { params: { limit: 30 } }).then((r) => ensureArray<AgentEvent>(r.data)),
+    refetchInterval: 20_000,
+  })
+
+  const cancelRunMut = useMutation({
+    mutationFn: (runId: string) => client.post(`/api/agents/runs/${runId}/cancel`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-runs'] }),
   })
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <section className="rounded-xl border border-border bg-bg p-4">
-        <div className="text-sm font-medium text-text">最近运行</div>
-        <div className="mt-3 space-y-2">
-          {runs.map((run) => (
-            <div key={run.id} className="rounded-lg border border-border bg-bg2 p-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="text-sm text-text">{run.user_message}</div>
-                <div className="text-xs text-text3">{run.status}</div>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="text-sm font-medium text-text">最近运行</div>
+          <div className="mt-3 space-y-2">
+            {runs.map((run) => (
+              <div key={run.id} className="rounded-lg border border-border bg-bg2 p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1 truncate text-sm text-text">{run.user_message}</div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs text-text3">{run.status}</span>
+                    {(run.status === 'running' || run.status === 'pending') && (
+                      <button
+                        onClick={() => cancelRunMut.mutate(run.id)}
+                        disabled={cancelRunMut.isPending}
+                        className="rounded px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        取消
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-text3">
+                  {run.page_context || '无页面上下文'} · {run.skill_id || '未选技能'}
+                </div>
               </div>
-              <div className="mt-1 text-xs text-text3">
-                {run.page_context || '无页面上下文'} · {run.skill_id || '未选技能'}
+            ))}
+            {runs.length === 0 && <EmptyState text="暂无运行记录。" />}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="text-sm font-medium text-text">待处理审批</div>
+          <div className="mt-3 space-y-2">
+            {approvals.map((item: ApprovalItem) => (
+              <div key={item.id} className="rounded-lg border border-border bg-bg2 p-3">
+                <div className="text-sm text-text">{item.description || item.tool_name}</div>
+                <div className="mt-1 text-xs text-text3">{item.created_at}</div>
               </div>
-            </div>
-          ))}
-          {runs.length === 0 && <EmptyState text="暂无运行记录。" />}
-        </div>
-      </section>
+            ))}
+            {approvals.length === 0 && <EmptyState text="当前没有待处理审批。" />}
+          </div>
+        </section>
+      </div>
 
       <section className="rounded-xl border border-border bg-bg p-4">
-        <div className="text-sm font-medium text-text">待处理审批</div>
-        <div className="mt-3 space-y-2">
-          {approvals.map((item: ApprovalItem) => (
-            <div key={item.id} className="rounded-lg border border-border bg-bg2 p-3">
-              <div className="text-sm text-text">{item.description || item.tool_name}</div>
-              <div className="mt-1 text-xs text-text3">{item.created_at}</div>
-            </div>
-          ))}
-          {approvals.length === 0 && <EmptyState text="当前没有待处理审批。" />}
+        <div className="text-sm font-medium text-text">Agent 事件日志</div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-xs text-text3">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="pb-2 pr-3 font-medium">时间</th>
+                <th className="pb-2 pr-3 font-medium">类型</th>
+                <th className="pb-2 pr-3 font-medium">工具</th>
+                <th className="pb-2 pr-3 font-medium">风险</th>
+                <th className="pb-2 pr-3 font-medium">用户</th>
+                <th className="pb-2 font-medium">详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((ev) => (
+                <tr key={ev.id} className="border-b border-border/50 last:border-0">
+                  <td className="py-1.5 pr-3 tabular-nums">{ev.timestamp.slice(0, 19).replace('T', ' ')}</td>
+                  <td className="py-1.5 pr-3">{ev.event_type}</td>
+                  <td className="py-1.5 pr-3">{ev.tool_name ?? '—'}</td>
+                  <td className="py-1.5 pr-3">
+                    {ev.risk_level ? (
+                      <span
+                        className={
+                          ev.risk_level === 'high'
+                            ? 'text-red-400'
+                            : ev.risk_level === 'medium'
+                              ? 'text-yellow-400'
+                              : 'text-text3'
+                        }
+                      >
+                        {ev.risk_level}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">{ev.username ?? '—'}</td>
+                  <td className="max-w-xs truncate py-1.5">{ev.details ?? '—'}</td>
+                </tr>
+              ))}
+              {events.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-text3">
+                    暂无事件记录。
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
