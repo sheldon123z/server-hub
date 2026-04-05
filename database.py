@@ -282,9 +282,7 @@ async def _create_notification_tables(db: aiosqlite.Connection):
         );
     """)
     await _ensure_column(db, "notifications", "channel_id", "TEXT")
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_inapp_user_read ON inapp_notifications(user_id, read, created_at)"
-    )
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_inapp_user_read ON inapp_notifications(user_id, read, created_at)")
 
 
 async def _create_agent_tables(db: aiosqlite.Connection):

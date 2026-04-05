@@ -3,6 +3,8 @@
 # ─── 澄清 ───
 # ─── 系统 ───
 # ─── 资产与故障案例 ───
+# ─── 用户 ───
+from modules.agents.tools.alerts import acknowledge_alert, list_active_alerts
 from modules.agents.tools.assets import (
     get_asset_inventory,
     get_asset_topology,
@@ -89,8 +91,6 @@ from modules.agents.tools.ui_tools import (
     render_form,
     render_table,
 )
-
-# ─── 用户 ───
 from modules.agents.tools.users import (
     check_quota_violations,
     get_active_sessions_tool,
@@ -177,6 +177,9 @@ def get_server_tools(user_role: str = "admin") -> list:
         render_table,
         render_form,
         render_card,
+        # 告警管理
+        list_active_alerts,
+        acknowledge_alert,
     ]
 
     if user_role == "admin":
@@ -189,6 +192,21 @@ def get_server_tools(user_role: str = "admin") -> list:
     return [
         t for t in all_tools if TOOL_RISK_MAP.get(t.name, RiskLevel.DANGER) == RiskLevel.SAFE and t.name not in excluded
     ]
+
+
+async def get_server_tools_for_user(user_id: str, fallback_role: str = "user") -> list:
+    """基于 RBAC 权限为指定用户返回可用工具列表。
+
+    通过检查 has_permission("*", "*") 判断是否拥有完整管理权限，
+    否则降级为只读工具集。fallback_role 在 RBAC 不可用时生效。
+    """
+    try:
+        from modules.rbac.services import has_permission as _has_perm
+
+        effective_role = "admin" if await _has_perm(user_id, "*", "*") else fallback_role
+    except Exception:
+        effective_role = fallback_role
+    return get_server_tools(effective_role)
 
 
 # 向后兼容
