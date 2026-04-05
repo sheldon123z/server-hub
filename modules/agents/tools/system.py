@@ -2,10 +2,10 @@
 
 import json
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="system:read", icon="Activity", label="系统概览")
 async def get_system_overview(server_id: str = "local") -> str:
     """获取系统状态概览：CPU使用率、内存、Swap、磁盘、GPU、负载、运行时间。
 
@@ -42,7 +42,7 @@ async def get_system_overview(server_id: str = "local") -> str:
     )
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="system:read", icon="HardDrive", label="磁盘信息")
 async def get_disk_info(server_id: str = "local") -> str:
     """获取所有磁盘挂载点的使用情况。
 
@@ -76,7 +76,7 @@ async def get_disk_info(server_id: str = "local") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="system:read", icon="TrendingUp", label="资源趋势")
 async def analyze_resource_trend(metric: str = "all", hours: int = 168) -> str:
     """分析系统资源的历史趋势。从监控数据库查询指定时间范围的指标历史，计算统计量和趋势预测。
 

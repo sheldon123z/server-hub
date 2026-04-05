@@ -2,10 +2,10 @@
 
 import asyncio
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="knowledge:read", icon="BookOpen", label="知识检索")
 async def retrieve_knowledge(query: str, source: str = "", top_k: int = 5) -> str:
     """从知识库检索相关信息。使用语义搜索+关键词搜索混合检索运维文档、故障案例、巡检报告、API文档等。
 
@@ -32,7 +32,7 @@ async def retrieve_knowledge(query: str, source: str = "", top_k: int = 5) -> st
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="knowledge:write", icon="RefreshCw", label="重建索引")
 async def reindex_knowledge_base() -> str:
     """手动触发知识库全量重建索引。管理员在更新了运维文档或导入新故障案例后使用。"""
     from modules.agents.rag import build_full_index

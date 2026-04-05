@@ -1,9 +1,9 @@
 """通知工具"""
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="notifications:write", icon="Send", label="发送通知")
 async def send_notification(message: str) -> str:
     """发送通知到所有启用的通知渠道（Telegram、企业微信、钉钉等）。
 

@@ -2,12 +2,12 @@
 
 import logging
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 logger = logging.getLogger(__name__)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="assets:read", icon="Package", label="资产清单")
 async def get_asset_inventory(asset_type: str = "") -> str:
     """查询服务器资产清单。返回所有已发现的服务、容器、端口、存储等资产。
 
@@ -47,7 +47,7 @@ async def get_asset_inventory(asset_type: str = "") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="assets:read", icon="Network", label="资产拓扑")
 async def get_asset_topology() -> str:
     """生成服务器资产拓扑关系图（Mermaid 格式）并分析潜在风险（单点故障、冗余不足等）。"""
     from modules.assets.services import generate_topology_mermaid, get_assets
@@ -77,7 +77,7 @@ async def get_asset_topology() -> str:
     return f"## 资产拓扑图\n\n```mermaid\n{mermaid}\n```\n\n## 风险分析\n{risk_text}\n\n共 {len(assets)} 项资产"
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="assets:write", icon="Save", label="保存故障案例")
 async def save_fault_case(
     title: str, category: str, symptoms: str, root_cause: str, solution: str, tags: str = ""
 ) -> str:
@@ -119,7 +119,7 @@ async def save_fault_case(
         return f"保存案例失败: {e}"
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="assets:read", icon="Search", label="故障案例搜索")
 async def search_fault_cases(query: str) -> str:
     """搜索故障案例库。从历史故障案例中检索匹配的问题和解决方案。
 
