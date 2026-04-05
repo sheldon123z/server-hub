@@ -256,13 +256,6 @@ export default function PanelUsersPage() {
                     </div>
                   </td>
                 </tr>
-                {rolesPanelUser === user.username && (
-                  <UserRolePanel
-                    username={user.username}
-                    onClose={() => setRolesPanelUser(null)}
-                  />
-                )}
-                </React.Fragment>
               ))
             )}
           </tbody>

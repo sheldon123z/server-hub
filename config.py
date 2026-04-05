@@ -115,6 +115,9 @@ class Settings:
         self.agent_shell_timeout: int = 30
         self.agent_shell_max_output: int = 8000
 
+        # 技能系统
+        self.skill_auto_update: str = os.getenv("SERVERHUB_SKILL_AUTO_UPDATE", "manual")  # manual/notify/auto
+
         # RAG 知识库配置
         self.rag_embedding_model: str = os.getenv("SERVERHUB_RAG_EMBEDDING_MODEL", "bge-m3")
         self.rag_ollama_url: str = os.getenv("SERVERHUB_RAG_OLLAMA_URL", "http://localhost:11434")

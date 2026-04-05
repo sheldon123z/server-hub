@@ -178,15 +178,60 @@ async def _get_store() -> AsyncSqliteStore:
     return _store
 
 
-async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", user_role: str = "admin"):
+async def _get_skill_sources(user: dict | None, data_dir: Path) -> list[str]:
+    """按用户身份返回技能目录列表。
+
+    Args:
+        user: 当前用户信息 dict（含 username），为 None 时仅返回系统+共享目录
+        data_dir: data/ 目录路径
+
+    Returns:
+        技能目录路径列表
+    """
+    skills_dir = data_dir / "skills"
+    sources: list[str] = []
+
+    # 系统内置技能
+    system_dir = skills_dir / "system"
+    if system_dir.is_dir():
+        sources.append(str(system_dir))
+
+    # 共享已安装技能
+    installed_dir = skills_dir / "installed"
+    if installed_dir.is_dir():
+        sources.append(str(installed_dir))
+
+    # 兜底：如果 system/installed 都不存在，回退到 skills 根目录
+    if not sources and skills_dir.is_dir():
+        sources.append(str(skills_dir))
+
+    # 用户私有技能
+    if user:
+        username = user.get("username", "")
+        if username:
+            user_skills = skills_dir / "users" / username
+            if user_skills.is_dir():
+                sources.append(str(user_skills))
+
+    return sources
+
+
+async def build_agent(
+    safety_mode: str = "supervised",
+    purpose: str = "chat",
+    user_role: str = "admin",
+    user: dict | None = None,
+):
     """构建 Deep Agent 实例
 
     Args:
         safety_mode: "supervised"(危险操作需审批) 或 "autonomous"(全自动)
         purpose: "chat"(对话) 或 "patrol"(巡检, 用便宜模型)
         user_role: "admin"(完全控制) 或 "user"(只读)
+        user: 当前用户信息（含 username），用于加载用户私有技能
     """
-    cache_key = f"{safety_mode}:{purpose}:{user_role}"
+    username = user.get("username", "") if user else ""
+    cache_key = f"{safety_mode}:{purpose}:{user_role}:{username}"
     if cache_key in _agent_cache:
         logger.debug("Agent cache hit: %s", cache_key)
         return _agent_cache[cache_key]
@@ -254,9 +299,8 @@ async def build_agent(safety_mode: str = "supervised", purpose: str = "chat", us
     if memory_path.exists():
         memory_paths.append(str(memory_path))
 
-    # Skills — 按需加载的专业工作流
-    skills_dir = data_dir / "skills"
-    skills_paths = [str(skills_dir)] if skills_dir.is_dir() else []
+    # Skills — 按需加载的专业工作流（按用户身份动态获取目录列表）
+    skills_paths = await _get_skill_sources(user, data_dir)
 
     system_prompt = get_system_prompt(safety_mode, user_role)
     # 注入延迟工具列表到系统提示词

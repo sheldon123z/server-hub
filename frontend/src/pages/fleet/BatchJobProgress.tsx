@@ -186,7 +186,7 @@ export default function BatchJobProgress({ jobId, onClose }: BatchJobProgressPro
               const evt = JSON.parse(dataStr) as SSEEvent
               // 注入 type from SSE event field if missing
               if (!evt.type && currentEvent) {
-                ;(evt as Record<string, unknown>).type = currentEvent
+                ;(evt as unknown as Record<string, unknown>).type = currentEvent
               }
               handleSSEEvent(evt)
             } catch { /* ignore */ }

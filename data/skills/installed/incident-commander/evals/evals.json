@@ -1,0 +1,47 @@
+{
+  "skill_name": "incident-commander",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Docker 容器 dify-worker 频繁重启，帮我排查原因并给出处置建议",
+      "expected_behavior": "应先查容器日志和系统资源使用情况，判断紧急程度，给出三级处置建议",
+      "assertions": [
+        {"name": "调用了容器日志工具", "check": "tool_used:get_container_logs"},
+        {"name": "调用了系统概览工具", "check": "tool_used:get_system_overview"},
+        {"name": "给出了处置优先级", "check": "output_contains:立即处置|继续观察|人工审批"},
+        {"name": "给出了一句话结论", "check": "output_contains:结论|判断|诊断"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "服务器内存使用率突然飙升到 95%，多个服务响应变慢，请紧急处理",
+      "expected_behavior": "应先查系统概览和资源趋势，识别内存消耗大户，给出紧急处置方案",
+      "assertions": [
+        {"name": "调用了系统概览工具", "check": "tool_used:get_system_overview"},
+        {"name": "调用了资源趋势分析", "check": "tool_used:analyze_resource_trend"},
+        {"name": "输出包含影响范围", "check": "output_contains:影响范围|影响面|受影响"},
+        {"name": "给出了下一步建议", "check": "output_contains:建议|处置|下一步"},
+        {"name": "未建议直接重启整台服务器", "check": "output_not_contains:重启服务器|reboot"}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "监控告警：Nginx 502 错误数量在过去 10 分钟激增，请排查",
+      "expected_behavior": "应检查 Nginx 日志和上游服务状态，委派日志分析子智能体深入排查",
+      "assertions": [
+        {"name": "调用了系统概览工具", "check": "tool_used:get_system_overview"},
+        {"name": "委派了日志分析子智能体", "check": "subagent_used:log-analyzer"},
+        {"name": "给出了处置优先级", "check": "output_contains:立即处置|继续观察|人工审批"},
+        {"name": "提到了影响范围", "check": "output_contains:影响范围|影响面|受影响"}
+      ]
+    }
+  ],
+  "trigger_evals": [
+    {"query": "Docker 容器一直重启怎么办", "should_trigger": true},
+    {"query": "服务器告警了，帮我看看", "should_trigger": true},
+    {"query": "系统异常，内存快满了", "should_trigger": true},
+    {"query": "帮我写一个 Python 脚本", "should_trigger": false},
+    {"query": "查看当前 Docker 容器列表", "should_trigger": false},
+    {"query": "更新 LobeChat 到最新版本", "should_trigger": false}
+  ]
+}

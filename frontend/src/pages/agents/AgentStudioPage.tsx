@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import client from '@/api/client'
 import type { AgentRun, InstalledSkill } from '@/types/agent'
 import { ensureArray, ensureRecord } from '@/lib/utils'

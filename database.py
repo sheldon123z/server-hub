@@ -542,6 +542,11 @@ async def _create_agent_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "agent_patrol_history", "report_json", "TEXT")
     await _ensure_column(db, "agent_patrol_history", "triggered_by", "TEXT DEFAULT 'scheduler'")
     await _ensure_column(db, "agent_approvals", "run_id", "TEXT")
+    # 技能系统扩展列
+    await _ensure_column(db, "agent_skills", "owner", "TEXT DEFAULT 'system'")
+    await _ensure_column(db, "agent_skill_versions", "snapshot_path", "TEXT")
+    # owner 列就绪后创建索引
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_agent_skills_owner ON agent_skills(owner)")
 
 
 async def _create_rbac_tables(db: aiosqlite.Connection):
