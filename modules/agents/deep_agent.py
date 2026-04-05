@@ -8,7 +8,8 @@ Middleware 栈 (13 个):
 
 记忆系统:
   短期: AsyncSqliteSaver checkpoint（per-conversation state 持久化）
-  长期: data/agent-memory.md（MemoryMiddleware 注入系统提示词，agent 通过 edit_file 更新）
+  长期全局: data/agent-memory.md（MemoryMiddleware 注入系统提示词，管理员维护的运维知识）
+  长期用户: data/agent-memory-{user_id}.md（按用户隔离，防止多用户记忆污染）
   存储: AsyncSqliteStore（namespace+key-value 结构化数据）
 """
 
@@ -53,8 +54,50 @@ _store: AsyncSqliteStore | None = None
 
 
 def get_memory_path() -> Path:
-    """运行时长期记忆文件路径。与仓库根 AGENTS.md 分离。"""
+    """全局运行时长期记忆文件路径。与仓库根 AGENTS.md 分离。"""
     return Path(settings.db_path).parent / "agent-memory.md"
+
+
+def get_user_memory_path(user_id: str) -> Path:
+    """用户专属长期记忆文件路径。
+
+    Args:
+        user_id: 用户标识（username）
+
+    Returns:
+        Path to data/agent-memory-{user_id}.md
+    """
+    return Path(settings.db_path).parent / f"agent-memory-{user_id}.md"
+
+
+def load_user_memory_context(user_id: str) -> str:
+    """加载用户专属记忆，格式化为可注入的系统消息。
+
+    Args:
+        user_id: 用户标识（username）
+
+    Returns:
+        格式化的用户记忆文本，为空时返回空字符串
+    """
+    if not user_id:
+        return ""
+    user_mem_path = get_user_memory_path(user_id)
+    if not user_mem_path.exists():
+        return ""
+    try:
+        content = user_mem_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        return (
+            f"## 个人记忆（用户: {user_id}）\n"
+            f"以下是你与当前用户的历史交互记忆，请结合这些信息提供个性化服务。\n\n"
+            f"{content}\n\n"
+            f"**注意**: 当你通过 edit_file 更新记忆时，请写入用户专属文件 "
+            f"`{user_mem_path}` 而非全局记忆文件。"
+        )
+    except Exception as e:
+        logger.warning("加载用户记忆失败 (user=%s): %s", user_id, e)
+        return ""
 
 
 def _create_backend() -> SafeLocalShellBackend:

@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 class TeamStore:
     """团队数据存取层"""
 
+    async def get_member_team_id(self, member_id: str) -> str | None:
+        """根据成员 ID 查询其所属团队 ID"""
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT team_id FROM agent_team_members WHERE id = ?",
+            (member_id,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
     # ─── 团队 CRUD ───
 
     async def create_team(self, data: dict) -> dict:
@@ -357,3 +367,13 @@ class TeamStore:
         """刷新未提交的消息到数据库"""
         db = await get_db()
         await db.commit()
+
+
+# ─── 模块单例 ───
+
+_team_store = TeamStore()
+
+
+def get_team_store() -> TeamStore:
+    """返回模块级 TeamStore 单例，可用于 FastAPI Depends 注入"""
+    return _team_store

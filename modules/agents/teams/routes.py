@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from auth.dependencies import get_current_user, require_role
+from modules.agents.teams.store import TeamStore, get_team_store
 
 logger = logging.getLogger(__name__)
 
@@ -92,11 +93,9 @@ class ExecuteRequest(BaseModel):
 async def list_teams(
     enabled_only: bool = Query(default=False, description="仅返回已启用的团队"),
     user=Depends(get_current_user),
+    store: TeamStore = Depends(get_team_store),
 ):
     """列出所有团队"""
-    from modules.agents.teams.store import TeamStore
-
-    store = TeamStore()
     teams = await store.list_teams(enabled_only=enabled_only)
 
     # 为每个团队附加成员数量
@@ -113,12 +112,9 @@ async def list_teams(
 async def create_team(
     body: TeamCreateRequest,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """创建新团队"""
-    from modules.agents.teams.store import TeamStore
-
-    store = TeamStore()
-
     data = body.model_dump(exclude_none=True)
     data["created_by"] = user["username"]
 
@@ -130,7 +126,8 @@ async def create_team(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"团队名称 '{body.name}' 已存在",
             )
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("创建团队失败: %s", e)
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
     return {"ok": True, "team": team}
 
@@ -147,16 +144,14 @@ async def list_templates(user=Depends(get_current_user)):
 async def instantiate_template(
     template_id: str,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """从模板创建团队（复制模板数据到新团队）"""
-    from modules.agents.teams.store import TeamStore
     from modules.agents.teams.templates import get_template_by_id
 
     tmpl = get_template_by_id(template_id)
     if not tmpl:
         raise HTTPException(status_code=404, detail=f"模板 {template_id} 不存在")
-
-    store = TeamStore()
 
     # 检查同名团队是否已存在
     existing = await store.get_team(tmpl["id"])
@@ -191,18 +186,17 @@ async def instantiate_template(
     except Exception as e:
         if "UNIQUE" in str(e):
             raise HTTPException(status_code=409, detail="模板团队已存在")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("实例化模板失败: %s", e)
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.get("/executions/{execution_id}")
 async def get_execution_detail(
     execution_id: str,
     user=Depends(get_current_user),
+    store: TeamStore = Depends(get_team_store),
 ):
     """获取执行详情 + 消息流"""
-    from modules.agents.teams.store import TeamStore
-
-    store = TeamStore()
     execution = await store.get_execution(execution_id)
     if not execution:
         raise HTTPException(status_code=404, detail="执行记录不存在")
@@ -238,11 +232,9 @@ async def cancel_execution(
 async def get_team_detail(
     team_id: str,
     user=Depends(get_current_user),
+    store: TeamStore = Depends(get_team_store),
 ):
     """获取团队详情 + 成员列表"""
-    from modules.agents.teams.store import TeamStore
-
-    store = TeamStore()
     team = await store.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="团队不存在")
@@ -264,12 +256,11 @@ async def update_team(
     team_id: str,
     body: TeamUpdateRequest,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """更新团队配置"""
     from modules.agents.teams.engine import get_team_engine
-    from modules.agents.teams.store import TeamStore
 
-    store = TeamStore()
     team = await store.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="团队不存在")
@@ -283,7 +274,8 @@ async def update_team(
     except Exception as e:
         if "UNIQUE" in str(e):
             raise HTTPException(status_code=409, detail="团队名称已存在")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("更新团队失败: %s", e)
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
     # 清除图缓存
     engine = get_team_engine()
@@ -296,12 +288,11 @@ async def update_team(
 async def delete_team(
     team_id: str,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """删除团队（内置团队不可删除）"""
     from modules.agents.teams.engine import get_team_engine
-    from modules.agents.teams.store import TeamStore
 
-    store = TeamStore()
     team = await store.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="团队不存在")
@@ -326,12 +317,11 @@ async def add_member(
     team_id: str,
     body: MemberCreateRequest,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """添加团队成员"""
     from modules.agents.teams.engine import get_team_engine
-    from modules.agents.teams.store import TeamStore
 
-    store = TeamStore()
     team = await store.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="团队不存在")
@@ -346,7 +336,8 @@ async def add_member(
                 status_code=409,
                 detail=f"成员名称 '{body.name}' 在该团队中已存在",
             )
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("添加成员失败: %s", e)
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
     # 清除图缓存
     engine = get_team_engine()
@@ -360,12 +351,10 @@ async def update_member(
     member_id: str,
     body: MemberUpdateRequest,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """更新团队成员"""
     from modules.agents.teams.engine import get_team_engine
-    from modules.agents.teams.store import TeamStore
-
-    store = TeamStore()
 
     data = body.model_dump(exclude_none=True)
     if not data:
@@ -376,7 +365,8 @@ async def update_member(
     except Exception as e:
         if "UNIQUE" in str(e):
             raise HTTPException(status_code=409, detail="成员名称已存在")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("更新成员失败: %s", e)
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
     if not member:
         raise HTTPException(status_code=404, detail="成员不存在")
@@ -394,23 +384,16 @@ async def update_member(
 async def remove_member(
     member_id: str,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """移除团队成员"""
     from modules.agents.teams.engine import get_team_engine
-    from modules.agents.teams.store import TeamStore
 
-    store = TeamStore()
-
-    # 先查到 team_id 以便清缓存
-    from database import get_db
-
-    db = await get_db()
-    row = await (await db.execute("SELECT team_id FROM agent_team_members WHERE id = ?", (member_id,))).fetchone()
-
-    if not row:
+    # 先通过 Store 查到 team_id 以便清缓存
+    team_id = await store.get_member_team_id(member_id)
+    if not team_id:
         raise HTTPException(status_code=404, detail="成员不存在")
 
-    team_id = row[0]
     await store.remove_member(member_id)
 
     engine = get_team_engine()
@@ -427,6 +410,7 @@ async def execute_team(
     team_id: str,
     body: ExecuteRequest,
     user=Depends(require_role("admin")),
+    store: TeamStore = Depends(get_team_store),
 ):
     """启动团队执行，返回 SSE 事件流
 
@@ -441,9 +425,7 @@ async def execute_team(
     - team_complete: 团队完成
     """
     from modules.agents.teams.engine import get_team_engine
-    from modules.agents.teams.store import TeamStore
 
-    store = TeamStore()
     team = await store.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="团队不存在")
@@ -491,11 +473,9 @@ async def list_team_executions(
     team_id: str,
     limit: int = Query(default=20, ge=1, le=100),
     user=Depends(get_current_user),
+    store: TeamStore = Depends(get_team_store),
 ):
     """获取团队的执行历史"""
-    from modules.agents.teams.store import TeamStore
-
-    store = TeamStore()
     team = await store.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="团队不存在")
