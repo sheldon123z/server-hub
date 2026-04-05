@@ -16,6 +16,8 @@ import json
 import logging
 from pathlib import Path
 
+from config import settings
+
 from ._async_specs import get_async_subagent_specs, load_async_subagent_specs
 from ._config import (
     _build_subagent_middleware,
@@ -43,7 +45,35 @@ from .security_auditor import PROMPT as SECURITY_AUDITOR_PROMPT
 
 logger = logging.getLogger(__name__)
 
-_ALL_DEFINITIONS = [
+# ---------- SubAgent Prompt 加载 ----------
+
+_PROMPTS_DIR = Path(settings.db_path).parent / "subagent_prompts"
+
+
+def load_subagent_prompt(name: str, default: str) -> str:
+    """从 data/subagent_prompts/{name}.md 加载提示词，不存在则回退到默认值。"""
+    prompt_file = _PROMPTS_DIR / f"{name}.md"
+    if prompt_file.exists():
+        try:
+            content = prompt_file.read_text(encoding="utf-8").strip()
+            if content:
+                return content
+        except Exception as e:
+            logger.warning("加载 SubAgent 提示词文件失败 (%s): %s", prompt_file, e)
+    return default
+
+
+# SubAgent name → prompt 文件名映射（name 中的 - 转为 _ 作为文件名）
+_PROMPT_FILE_MAP = {
+    "researcher": "researcher",
+    "log-analyzer": "log_analyzer",
+    "security-auditor": "security_auditor",
+    "correlation-analyzer": "correlation_analyzer",
+    "ops-scheduler": "ops_scheduler",
+    "knowledge-retriever": "knowledge_retriever",
+}
+
+_ALL_DEFINITIONS_RAW = [
     _RESEARCHER_DEF,
     _LOG_ANALYZER_DEF,
     _SECURITY_AUDITOR_DEF,
@@ -51,6 +81,16 @@ _ALL_DEFINITIONS = [
     _OPS_SCHEDULER_DEF,
     _KNOWLEDGE_RETRIEVER_DEF,
 ]
+
+# 构建最终定义列表：用文件提示词覆盖源码默认值
+_ALL_DEFINITIONS = []
+for _defn in _ALL_DEFINITIONS_RAW:
+    _file_key = _PROMPT_FILE_MAP.get(_defn["name"])
+    if _file_key:
+        _loaded = load_subagent_prompt(_file_key, _defn["system_prompt"])
+        if _loaded != _defn["system_prompt"]:
+            _defn = {**_defn, "system_prompt": _loaded}
+    _ALL_DEFINITIONS.append(_defn)
 
 
 def get_subagents() -> list[dict]:
@@ -117,6 +157,7 @@ __all__ = [
     "get_subagents",
     "get_subagents_config",
     "load_async_subagent_specs",
+    "load_subagent_prompt",
     "load_subagents",
     "save_subagents_config",
     "think",
