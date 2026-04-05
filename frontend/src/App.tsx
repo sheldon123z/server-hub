@@ -30,6 +30,7 @@ const TeamsPage = lazy(() => import('@/pages/TeamsPage'))
 const RolesPage = lazy(() => import('@/pages/settings/RolesPage'))
 const AlertsPage = lazy(() => import('@/pages/AlertsPage'))
 const AlertRulesPage = lazy(() => import('@/pages/AlertRulesPage'))
+const FileBrowserPage = lazy(() => import('@/pages/files/FileBrowserPage'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore()
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/settings/roles" element={<RolesPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/alerts/rules" element={<AlertRulesPage />} />
+          <Route path="/files" element={<FileBrowserPage />} />
           <Route path="/monitoring" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

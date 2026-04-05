@@ -20,6 +20,7 @@ const FALLBACK_ITEMS: SidebarItem[] = [
   { name: 'notifications', display_name: '通知管理', icon: 'bell', category: '管理', required_role: 'admin', order: 15 },
   { name: 'network', display_name: '网络状态', icon: 'network', category: '网络', required_role: 'admin', order: 20 },
   { name: 'proxy', display_name: '代理管理', icon: 'shield', category: '网络', required_role: 'admin', order: 21 },
+  { name: 'files', display_name: '文件管理', icon: 'folder', category: '资产', required_role: 'admin', order: 35 },
   { name: 'assets', display_name: '资产管理', icon: 'database', category: '资产', required_role: 'admin', order: 30 },
   { name: 'settings', display_name: '系统设置', icon: 'settings', category: '系统', required_role: 'admin', order: 40 },
   { name: 'audit', display_name: '审计日志', icon: 'list-search', category: '系统', required_role: 'admin', order: 41 },
