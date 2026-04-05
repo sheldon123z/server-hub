@@ -49,6 +49,33 @@ _active_agent_tasks: set[asyncio.Task] = set()
 
 
 # ---------------------------------------------------------------------------
+# 悬空 ToolCall 修复 (#324)
+# ---------------------------------------------------------------------------
+
+
+def _find_dangling_tool_calls(messages: list) -> list[ToolMessage]:
+    """检测中断导致的悬空 tool_calls，返回需要补入的 ToolMessage 列表。
+
+    当 Agent 执行被中断时，AIMessage.tool_calls 中可能存在没有对应
+    ToolMessage 的条目，导致 LangGraph 恢复对话时状态不一致。
+    """
+    tool_msg_ids = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+    patches: list[ToolMessage] = []
+    for msg in messages:
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            for tc in msg.tool_calls:
+                tc_id = tc.get("id", "")
+                if tc_id and tc_id not in tool_msg_ids:
+                    patches.append(
+                        ToolMessage(
+                            content="[操作已中断，未获得结果]",
+                            tool_call_id=tc_id,
+                        )
+                    )
+    return patches
+
+
+# ---------------------------------------------------------------------------
 # 消息处理辅助函数 (不变)
 # ---------------------------------------------------------------------------
 
@@ -344,7 +371,19 @@ async def _run_agent(
         emitted_ids: set[str] = set()
         try:
             snapshot = await agent.aget_state(config)
-            emitted_count = len(snapshot.values.get("messages", []))
+            existing_msgs = snapshot.values.get("messages", [])
+            emitted_count = len(existing_msgs)
+
+            # 修复悬空 ToolCall (#324): 中断后恢复时自动补全缺失的 ToolMessage
+            dangling_patches = _find_dangling_tool_calls(existing_msgs)
+            if dangling_patches:
+                logger.warning(
+                    "检测到 %d 个悬空 ToolCall (conversation=%s)，自动补全 ToolMessage",
+                    len(dangling_patches),
+                    conversation_id,
+                )
+                await agent.aupdate_state(config, {"messages": dangling_patches})
+                emitted_count += len(dangling_patches)
         except Exception:
             emitted_count = 0
 
