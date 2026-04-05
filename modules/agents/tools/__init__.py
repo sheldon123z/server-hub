@@ -10,6 +10,7 @@ from modules.agents.tools.alerts import acknowledge_alert, list_active_alerts
 # ─── 澄清 ───
 # ─── 系统 ───
 # ─── 资产与故障案例 ───
+# ─── 用户 ───
 from modules.agents.tools.assets import (
     get_asset_inventory,
     get_asset_topology,
@@ -96,8 +97,6 @@ from modules.agents.tools.ui_tools import (
     render_form,
     render_table,
 )
-
-# ─── 用户 ───
 from modules.agents.tools.users import (
     check_quota_violations,
     get_active_sessions_tool,
@@ -186,6 +185,9 @@ def get_server_tools(user_role: str = "admin") -> list:
         render_table,
         render_form,
         render_card,
+        # 告警管理
+        list_active_alerts,
+        acknowledge_alert,
     ]
 
     if user_role == "admin":
