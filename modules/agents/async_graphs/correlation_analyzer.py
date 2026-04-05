@@ -1,5 +1,6 @@
 """异步 Graph 定义 — 多源关联分析专家"""
 
+from modules.agents.subagents._shared_context import read_shared_findings, share_finding
 from modules.agents.subagents._tools import _get_tools_by_names
 from modules.agents.subagents.correlation_analyzer import PROMPT
 
@@ -13,18 +14,22 @@ SPEC = {
 
 
 def get_tools():
-    return _get_tools_by_names(
-        [
-            "analyze_resource_trend",
-            "get_system_overview",
-            "list_docker_containers",
-            "get_container_logs",
-            "list_systemd_services",
-            "get_service_logs",
-            "search_fault_cases",
-            "get_user_login_history_tool",
-            "get_active_sessions_tool",
-            "list_docker_networks",
-            "get_service_dependencies_tool",
-        ]
-    )
+    return [
+        *_get_tools_by_names(
+            [
+                "analyze_resource_trend",
+                "get_system_overview",
+                "list_docker_containers",
+                "get_container_logs",
+                "list_systemd_services",
+                "get_service_logs",
+                "search_fault_cases",
+                "get_user_login_history_tool",
+                "get_active_sessions_tool",
+                "list_docker_networks",
+                "get_service_dependencies_tool",
+            ]
+        ),
+        share_finding,
+        read_shared_findings,
+    ]

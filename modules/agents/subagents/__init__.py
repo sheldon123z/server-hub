@@ -27,6 +27,7 @@ from ._config import (
     get_subagents_config,
     save_subagents_config,
 )
+from ._shared_context import read_shared_findings, set_conversation_id, share_finding
 from ._tools import TOOL_REGISTRY, _get_tools_by_names, think, web_search
 from .correlation_analyzer import DEFINITION as _CORRELATION_ANALYZER_DEF
 from .correlation_analyzer import PROMPT as CORRELATION_ANALYZER_PROMPT
@@ -159,7 +160,10 @@ __all__ = [
     "load_async_subagent_specs",
     "load_subagent_prompt",
     "load_subagents",
+    "read_shared_findings",
     "save_subagents_config",
+    "set_conversation_id",
+    "share_finding",
     "think",
     "web_search",
 ]
