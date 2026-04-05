@@ -1,9 +1,13 @@
 """认证依赖注入"""
 
+import logging
+
 from fastapi import HTTPException, Request, status
 
 from auth.jwt_handler import verify_token
 from auth.user_store import get_token_version, get_user_by_name
+
+logger = logging.getLogger(__name__)
 
 
 def extract_bearer_token(request: Request) -> str | None:
@@ -65,13 +69,55 @@ async def get_current_user(request: Request) -> dict:
     return user
 
 
-def require_role(*roles: str):
-    """角色校验依赖工厂"""
+def require_permission(resource: str, action: str = "read"):
+    """权限校验依赖工厂 — 基于 RBAC 角色权限矩阵。
+
+    用法: user=Depends(require_permission("docker", "write"))
+    降级策略: RBAC 不可用时仅允许 role="admin" 的用户通过。
+    """
 
     async def checker(request: Request) -> dict:
         user = await get_current_user(request)
-        if user["role"] not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
+        try:
+            from modules.rbac.services import has_permission as _has_perm
+
+            if not await _has_perm(str(user["id"]), resource, action):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"缺少权限: {resource}:{action}",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.debug("RBAC 不可用，降级到 role 字段检查", exc_info=True)
+            if user.get("role") != "admin":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
         return user
+
+    return checker
+
+
+def require_role(*roles: str):
+    """角色校验依赖工厂 — 向后兼容，内部委托 RBAC 检查。
+
+    require_role("admin") 映射为 has_permission("*", "admin")，
+    RBAC 不可用时降级到旧 role 字段检查。
+    """
+
+    async def checker(request: Request) -> dict:
+        user = await get_current_user(request)
+        # RBAC 优先: 角色名映射为 has_permission("*", role_name)
+        try:
+            from modules.rbac.services import has_permission as _has_perm
+
+            for role in roles:
+                if await _has_perm(str(user["id"]), "*", role):
+                    return user
+        except Exception:
+            logger.debug("RBAC 不可用，降级到旧 role 字段检查", exc_info=True)
+        # 降级兜底: 旧 role 字段检查
+        if user.get("role") in roles:
+            return user
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
 
     return checker

@@ -1,5 +1,12 @@
 """运维工具集 — 封装现有 services 为 LangChain @tool"""
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ─── 告警管理 ───
+from modules.agents.tools.alerts import acknowledge_alert, list_active_alerts
+
 # ─── 澄清 ───
 # ─── 系统 ───
 # ─── 资产与故障案例 ───
@@ -124,6 +131,8 @@ def get_server_tools(user_role: str = "admin") -> list:
         list_systemd_services,
         get_service_logs,
         send_notification,
+        list_active_alerts,
+        acknowledge_alert,
         docker_container_action,
         docker_compose_action,
         service_control,
@@ -189,6 +198,22 @@ def get_server_tools(user_role: str = "admin") -> list:
     return [
         t for t in all_tools if TOOL_RISK_MAP.get(t.name, RiskLevel.DANGER) == RiskLevel.SAFE and t.name not in excluded
     ]
+
+
+async def get_server_tools_for_user(user_id: str, fallback_role: str = "user") -> list:
+    """基于 RBAC 权限为指定用户返回可用工具列表。
+
+    检查 has_permission("*", "*") 判断是否拥有完整管理权限；
+    RBAC 不可用时降级使用 fallback_role。
+    """
+    try:
+        from modules.rbac.services import has_permission as _has_perm
+
+        effective_role = "admin" if await _has_perm(user_id, "*", "*") else fallback_role
+    except Exception:
+        logger.debug("RBAC 不可用，工具列表使用 fallback_role=%s", fallback_role, exc_info=True)
+        effective_role = fallback_role
+    return get_server_tools(effective_role)
 
 
 # 向后兼容
