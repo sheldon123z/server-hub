@@ -135,8 +135,6 @@ export function UICard({ component, onAction, loadingActions }: UICardProps) {
         return (
           <ChartRenderer
             component={component as Parameters<typeof ChartRenderer>[0]['component']}
-            onAction={onAction}
-            loadingActions={loadingActions}
           />
         )
       case 'table': {
@@ -151,8 +149,6 @@ export function UICard({ component, onAction, loadingActions }: UICardProps) {
               data: Array.isArray(tableData) ? tableData : [],
               features: component.features,
             }}
-            onAction={onAction}
-            loadingActions={loadingActions}
           />
         )
       }
@@ -181,8 +177,6 @@ export function UICard({ component, onAction, loadingActions }: UICardProps) {
               metrics: component.metrics ?? [],
               details: component.details,
             }}
-            onAction={onAction}
-            loadingActions={loadingActions}
           />
         )
       default:

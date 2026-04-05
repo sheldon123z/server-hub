@@ -24,8 +24,6 @@ interface CardComponent {
 
 interface StatusCardProps {
   component: CardComponent
-  onAction: (actionId: string, payload?: Record<string, unknown>) => void
-  loadingActions?: Set<string>
 }
 
 /* ── Status config ─────────────────────────────── */
