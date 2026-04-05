@@ -5,6 +5,7 @@ import { useServerStore } from '@/stores/serverStore'
 import { authApi } from '@/api/auth'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import NotificationBell from './NotificationBell'
 
 /**
  * 顶部栏组件属性
@@ -119,6 +120,7 @@ export default function TopBar({ title }: TopBarProps) {
         </div>
 
         <span className="text-xs text-text3">每 15s 自动刷新</span>
+        <NotificationBell />
         {user && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-text2">{user.display_name || user.username}</span>

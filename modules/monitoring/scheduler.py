@@ -38,6 +38,14 @@ async def _collect_and_store():
         )
         await db.commit()
 
+        # 告警规则评估（不阻塞采集流程）
+        try:
+            from modules.alerts.evaluator import evaluate
+
+            await evaluate(snapshot, server_id="local")
+        except Exception as e:
+            logger.debug("告警评估跳过: %s", e)
+
         # 基线偏离检测（不阻塞采集流程）
         try:
             from modules.agents.alert_engine import check_baseline_deviation

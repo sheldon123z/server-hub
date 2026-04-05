@@ -15,6 +15,8 @@ const NetworkPage = lazy(() => import('@/pages/NetworkPage'))
 const ProxyPage = lazy(() => import('@/pages/ProxyPage'))
 const LogsPage = lazy(() => import('@/pages/LogsPage'))
 const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'))
+const NotificationCenterPage = lazy(() => import('@/pages/notifications/NotificationCenterPage'))
+const ChannelManagementPage = lazy(() => import('@/pages/settings/ChannelManagementPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const AuditPage = lazy(() => import('@/pages/AuditPage'))
 const PanelUsersPage = lazy(() => import('@/pages/PanelUsersPage'))
@@ -26,6 +28,8 @@ const ServersPage = lazy(() => import('@/pages/ServersPage'))
 const FleetDashboardPage = lazy(() => import('@/pages/FleetDashboardPage'))
 const TeamsPage = lazy(() => import('@/pages/TeamsPage'))
 const RolesPage = lazy(() => import('@/pages/settings/RolesPage'))
+const AlertsPage = lazy(() => import('@/pages/AlertsPage'))
+const AlertRulesPage = lazy(() => import('@/pages/AlertRulesPage'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore()
@@ -65,7 +69,9 @@ export default function App() {
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/proxy" element={<ProxyPage />} />
           <Route path="/logs" element={<LogsPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/notifications" element={<NotificationCenterPage />} />
+          <Route path="/notifications/channels" element={<NotificationsPage />} />
+          <Route path="/settings/channels" element={<ChannelManagementPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/panel_users" element={<PanelUsersPage />} />
@@ -77,6 +83,8 @@ export default function App() {
           <Route path="/fleet" element={<FleetDashboardPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/settings/roles" element={<RolesPage />} />
+          <Route path="/alerts" element={<AlertsPage />} />
+          <Route path="/alerts/rules" element={<AlertRulesPage />} />
           <Route path="/monitoring" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>

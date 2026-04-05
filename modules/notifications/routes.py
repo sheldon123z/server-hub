@@ -3,19 +3,68 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from auth.dependencies import require_role
+from auth.dependencies import get_current_user, require_role
 from modules.notifications.channels import CHANNEL_TYPES
 from modules.notifications.services import (
     create_channel,
     delete_channel,
     get_channels,
     get_notification_history,
+    get_unread_count,
+    list_inapp_notifications,
+    mark_all_read,
+    mark_read,
     send_notification,
     test_channel,
     update_channel,
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["通知管理"])
+
+
+# ---------------------------------------------------------------------------
+# 站内通知 (inapp)
+# ---------------------------------------------------------------------------
+
+
+@router.get("")
+@router.get("/")
+async def list_inapp(
+    unread_only: bool = Query(False),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user=Depends(get_current_user),
+):
+    """站内通知列表（分页，支持 unread_only）"""
+    return await list_inapp_notifications(
+        user_id=user.username,
+        unread_only=unread_only,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/unread-count")
+async def unread_count(user=Depends(get_current_user)):
+    """未读通知数（TopBar badge 用）"""
+    count = await get_unread_count(user_id=user.username)
+    return {"count": count}
+
+
+@router.put("/read-all")
+async def read_all(user=Depends(get_current_user)):
+    """全部标记已读"""
+    updated = await mark_all_read(user_id=user.username)
+    return {"ok": True, "updated": updated}
+
+
+@router.put("/{notification_id}/read")
+async def read_one(notification_id: int, user=Depends(get_current_user)):
+    """标记单条已读"""
+    ok = await mark_read(notification_id, user_id=user.username)
+    if not ok:
+        raise HTTPException(404, "通知不存在")
+    return {"ok": True}
 
 
 class SendMessageRequest(BaseModel):

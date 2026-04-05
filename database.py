@@ -210,12 +210,31 @@ async def _create_monitoring_tables(db: aiosqlite.Connection):
             collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
-    # _ensure_column 迁移
+    # _ensure_column 迁移 — 旧字段
     await _ensure_column(db, "alert_rules", "rule_type", "TEXT DEFAULT 'threshold'")
     await _ensure_column(db, "alert_rules", "baseline_window_hours", "INTEGER DEFAULT 168")
     await _ensure_column(db, "alert_rules", "stddev_multiplier", "REAL DEFAULT 3.0")
     await _ensure_column(db, "metrics", "server_id", "TEXT DEFAULT 'local'")
     await _ensure_column(db, "alert_history", "server_id", "TEXT DEFAULT 'local'")
+    # _ensure_column 迁移 — Phase 2 告警引擎新字段
+    await _ensure_column(db, "alert_rules", "resource", "TEXT DEFAULT 'system'")
+    await _ensure_column(db, "alert_rules", "server_scope", "TEXT DEFAULT '*'")
+    await _ensure_column(db, "alert_rules", "threshold", "REAL")
+    await _ensure_column(db, "alert_rules", "duration_seconds", "INTEGER DEFAULT 60")
+    await _ensure_column(db, "alert_rules", "severity", "TEXT DEFAULT 'warning'")
+    await _ensure_column(db, "alert_rules", "cooldown_seconds", "INTEGER DEFAULT 300")
+    await _ensure_column(db, "alert_rules", "auto_action", "TEXT")
+    await _ensure_column(db, "alert_rules", "auto_action_config", "TEXT")
+    await _ensure_column(db, "alert_rules", "notification_channels", "TEXT")
+    await _ensure_column(db, "alert_rules", "notification_template", "TEXT")
+    await _ensure_column(db, "alert_rules", "created_by", "TEXT")
+    await _ensure_column(db, "alert_rules", "updated_at", "TIMESTAMP")
+    await _ensure_column(db, "alert_history", "status", "TEXT DEFAULT 'firing'")
+    await _ensure_column(db, "alert_history", "value", "REAL")
+    await _ensure_column(db, "alert_history", "fired_at", "TIMESTAMP")
+    await _ensure_column(db, "alert_history", "resolved_at", "TIMESTAMP")
+    await _ensure_column(db, "alert_history", "acknowledged_by", "TEXT")
+    await _ensure_column(db, "alert_history", "acknowledged_at", "TIMESTAMP")
     # server_id 列就绪后才能创建复合索引
     # idx_metrics_server_time: 清理路径 DELETE WHERE server_id=? AND timestamp<? 使用
     await db.execute("CREATE INDEX IF NOT EXISTS idx_metrics_server_time ON metrics(server_id, timestamp)")
