@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts/core'
 import client from '@/api/client'
@@ -195,25 +195,34 @@ export default function FleetDashboardPage() {
 
   return (
     <div className="space-y-4">
-      {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-border pb-0" role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              'px-4 py-2 text-sm transition-colors border-b-2 -mb-px',
-              'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2',
-              tab === t.key
-                ? 'border-accent text-accent'
-                : 'border-transparent text-text3 hover:text-text2',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Tab bar + 批量操作入口 */}
+      <div className="flex items-center justify-between border-b border-border pb-0">
+        <div className="flex items-center gap-1" role="tablist">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'px-4 py-2 text-sm transition-colors border-b-2 -mb-px',
+                'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2',
+                tab === t.key
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-text3 hover:text-text2',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <Link
+          to="/fleet/batch"
+          className="flex items-center gap-1.5 px-3 py-1.5 mb-1 text-xs bg-accent text-[#0f172a] rounded-md font-medium hover:opacity-90 transition-opacity"
+        >
+          <i className="ti ti-bolt" />
+          批量操作
+        </Link>
       </div>
 
       {/* Tab content */}
