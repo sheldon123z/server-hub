@@ -25,6 +25,8 @@ from modules.agents.run_service import (
     append_run_event,
     create_run,
     ensure_conversation,
+    extract_content,
+    generate_conversation_title,
     register_active_run,
     unregister_active_run,
     update_run_status,
@@ -430,6 +432,31 @@ async def _run_agent(
             logger.debug("记忆更新入队失败", exc_info=True)
 
         unregister_active_run(run_id)
+
+        # 异步生成对话标题（仅首次对话）
+        try:
+            db_title = await get_db()
+            title_cursor = await db_title.execute(
+                "SELECT COUNT(*) FROM agent_runs WHERE conversation_id = ?",
+                (conversation_id,),
+            )
+            run_count_row = await title_cursor.fetchone()
+            if run_count_row and run_count_row[0] <= 1:
+                # 首次对话，提取助手回复用于生成标题
+                assistant_reply = ""
+                try:
+                    snapshot_for_title = await agent.aget_state(config)
+                    for m in reversed(snapshot_for_title.values.get("messages", [])):
+                        if isinstance(m, AIMessage) and m.content:
+                            assistant_reply = extract_content(m.content)[:300]
+                            break
+                except Exception:
+                    logger.debug("提取助手回复失败", exc_info=True)
+                title_task = asyncio.create_task(generate_conversation_title(conversation_id, message, assistant_reply))
+                _active_agent_tasks.add(title_task)
+                title_task.add_done_callback(_active_agent_tasks.discard)
+        except Exception:
+            logger.debug("标题生成调度失败", exc_info=True)
 
         # 发布 done 事件 + END sentinel
         done_payload = json.dumps({"conversation_id": conversation_id, "run_id": run_id}, ensure_ascii=False)
