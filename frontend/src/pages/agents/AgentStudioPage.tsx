@@ -677,6 +677,11 @@ function MemoryAndPromptsTab() {
     queryKey: ['admin-memory'],
     queryFn: () => client.get('/api/agents/admin/memory').then((r) => r.data),
   })
+  const { data: ragData, refetch: refetchRag } = useQuery({
+    queryKey: ['rag-stats'],
+    queryFn: () => client.get('/api/agents/admin/rag').then((r) => r.data as { ok: boolean; stats: Record<string, unknown> }),
+    staleTime: 60_000,
+  })
 
   const savePromptMut = useMutation({
     mutationFn: async (content: string) => client.put('/api/agents/admin/prompt', { content }),
@@ -690,55 +695,90 @@ function MemoryAndPromptsTab() {
     mutationFn: async (content: string) => client.put('/api/agents/admin/memory', { content }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-memory'] }),
   })
+  const reindexMut = useMutation({
+    mutationFn: () => client.post('/api/agents/admin/rag/reindex'),
+    onSuccess: () => { toast.success('RAG 索引重建完成'); refetchRag() },
+    onError: () => toast.error('重建失败'),
+  })
 
   const currentPrompt = promptDraft || prompt?.content || ''
   const currentMemory = memoryDraft || memory?.content || ''
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <section className="rounded-xl border border-border bg-bg p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-text">系统 Prompt</div>
-          <div className="flex gap-2">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-text">系统 Prompt</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => resetPromptMut.mutate()}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text"
+              >
+                恢复默认
+              </button>
+              <button
+                type="button"
+                onClick={() => savePromptMut.mutate(currentPrompt)}
+                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[#0f172a]"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+          <textarea
+            value={currentPrompt}
+            onChange={(e) => setPromptDraft(e.target.value)}
+            className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
+          />
+        </section>
+
+        <section className="rounded-xl border border-border bg-bg p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-text">长期记忆</div>
             <button
               type="button"
-              onClick={() => resetPromptMut.mutate()}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs text-text"
-            >
-              恢复默认
-            </button>
-            <button
-              type="button"
-              onClick={() => savePromptMut.mutate(currentPrompt)}
+              onClick={() => saveMemoryMut.mutate(currentMemory)}
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[#0f172a]"
             >
               保存
             </button>
           </div>
-        </div>
-        <textarea
-          value={currentPrompt}
-          onChange={(e) => setPromptDraft(e.target.value)}
-          className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
-        />
-      </section>
+          <textarea
+            value={currentMemory}
+            onChange={(e) => setMemoryDraft(e.target.value)}
+            className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
+          />
+        </section>
+      </div>
 
       <section className="rounded-xl border border-border bg-bg p-4">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-medium text-text">长期记忆</div>
+          <div className="text-sm font-medium text-text">RAG 知识库</div>
           <button
             type="button"
-            onClick={() => saveMemoryMut.mutate(currentMemory)}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-[#0f172a]"
+            onClick={() => reindexMut.mutate()}
+            disabled={reindexMut.isPending}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-text transition-colors hover:border-accent/40 disabled:opacity-50"
           >
-            保存
+            {reindexMut.isPending ? '重建中...' : '重建索引'}
           </button>
         </div>
-        <textarea
-          value={currentMemory}
-          onChange={(e) => setMemoryDraft(e.target.value)}
-          className="mt-3 h-80 w-full rounded-lg border border-border bg-bg2 px-3 py-2 font-mono text-sm text-text"
-        />
+        {ragData?.ok && ragData.stats ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {Object.entries(ragData.stats).map(([k, v]) => (
+              <div key={k} className="rounded-lg bg-bg2 px-3 py-2 text-xs">
+                <div className="text-text3 capitalize">{k.replace(/_/g, ' ')}</div>
+                <div className="mt-1 font-mono text-text">{String(v)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 text-xs text-text3">
+            {ragData?.ok === false ? '不可用' : '加载中...'}
+          </div>
+        )}
       </section>
     </div>
   )
