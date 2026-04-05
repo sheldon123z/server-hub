@@ -245,7 +245,7 @@ async def _create_monitoring_tables(db: aiosqlite.Connection):
 
 
 async def _create_notification_tables(db: aiosqlite.Connection):
-    """通知记录、通知渠道配置相关表"""
+    """通知记录、通知渠道配置、站内通知相关表"""
     await db.executescript("""
         CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -268,8 +268,23 @@ async def _create_notification_tables(db: aiosqlite.Connection):
             last_test_at TIMESTAMP,
             last_test_ok INTEGER
         );
+
+        CREATE TABLE IF NOT EXISTS inapp_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            type TEXT NOT NULL DEFAULT 'system',
+            title TEXT NOT NULL,
+            content TEXT,
+            severity TEXT NOT NULL DEFAULT 'info',
+            read INTEGER NOT NULL DEFAULT 0,
+            related_alert_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     await _ensure_column(db, "notifications", "channel_id", "TEXT")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_inapp_user_read ON inapp_notifications(user_id, read, created_at)"
+    )
 
 
 async def _create_agent_tables(db: aiosqlite.Connection):
@@ -531,6 +546,39 @@ async def _create_agent_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "agent_approvals", "run_id", "TEXT")
 
 
+async def _create_rbac_tables(db: aiosqlite.Connection):
+    """RBAC 角色权限相关表"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS roles (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            display_name TEXT,
+            description TEXT,
+            builtin INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role_id TEXT REFERENCES roles(id) ON DELETE CASCADE,
+            resource TEXT NOT NULL,
+            action TEXT NOT NULL,
+            scope TEXT DEFAULT '*',
+            UNIQUE(role_id, resource, action, scope)
+        );
+        CREATE INDEX IF NOT EXISTS idx_role_permissions_role
+            ON role_permissions(role_id);
+
+        CREATE TABLE IF NOT EXISTS user_roles (
+            user_id TEXT NOT NULL,
+            role_id TEXT REFERENCES roles(id) ON DELETE CASCADE,
+            PRIMARY KEY (user_id, role_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_roles_user
+            ON user_roles(user_id);
+    """)
+
+
 async def _create_server_tables(db: aiosqlite.Connection):
     """多服务器管理相关表"""
     await db.executescript("""
@@ -734,6 +782,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_agent_tables(db)
     await _create_server_tables(db)
     await _create_other_tables(db)
+    await _create_rbac_tables(db)
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:
