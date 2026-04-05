@@ -126,6 +126,7 @@ async def lifespan(app: FastAPI):
         """后台初始化 — 并发执行，单个子系统超时不拖后续"""
         task_defs: list[tuple[str, object]] = [
             ("通知渠道", _init_notifications()),
+            ("告警规则", _init_alerts()),
             ("指标采集", _init_monitoring()),
             ("RAG 知识库", _init_rag()),
             ("异步任务清理", _init_stale_cleanup()),
@@ -187,6 +188,12 @@ async def _init_notifications():
     from modules.notifications.services import ensure_default_channels
 
     await ensure_default_channels()
+
+
+async def _init_alerts():
+    from modules.alerts.seed import seed_builtin_rules
+
+    await seed_builtin_rules()
 
 
 async def _init_monitoring():

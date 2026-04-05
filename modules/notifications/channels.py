@@ -300,6 +300,139 @@ class EmailChannel(NotificationChannel):
             server.quit()
 
 
+class TelegramBotChannel(NotificationChannel):
+    """Telegram 渠道 — 原生 httpx 调用 Bot API（读取 ~/.telegram_config）"""
+
+    channel_type = "telegram_bot"
+    display_name_template = "Telegram Bot"
+
+    @classmethod
+    def config_schema(cls) -> list[dict]:
+        return [
+            {
+                "name": "bot_token",
+                "label": "Bot Token",
+                "type": "password",
+                "required": False,
+                "sensitive": True,
+                "placeholder": "留空则从 ~/.telegram_config 读取",
+            },
+            {
+                "name": "chat_id",
+                "label": "Chat ID",
+                "type": "text",
+                "required": False,
+                "sensitive": False,
+                "placeholder": "留空则从 ~/.telegram_config 读取",
+            },
+        ]
+
+    def _load_config_from_file(self) -> tuple[str, str]:
+        """从 ~/.telegram_config 读取 BOT_TOKEN 和 CHAT_ID"""
+        import os
+
+        config_path = os.path.expanduser("~/.telegram_config")
+        bot_token = ""
+        chat_id = ""
+        try:
+            with open(config_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("BOT_TOKEN="):
+                        bot_token = line[len("BOT_TOKEN=") :].strip().strip('"').strip("'")
+                    elif line.startswith("CHAT_ID="):
+                        chat_id = line[len("CHAT_ID=") :].strip().strip('"').strip("'")
+        except Exception:
+            logger.debug("读取 ~/.telegram_config 失败，跳过")
+        return bot_token, chat_id
+
+    async def send(self, message: str) -> dict:
+        try:
+            bot_token = self.config.get("bot_token", "").strip()
+            chat_id = self.config.get("chat_id", "").strip()
+            if not bot_token or not chat_id:
+                file_token, file_chat_id = self._load_config_from_file()
+                bot_token = bot_token or file_token
+                chat_id = chat_id or file_chat_id
+            if not bot_token or not chat_id:
+                return {"success": False, "error": "未配置 Bot Token 或 Chat ID"}
+
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
+                )
+                data = resp.json()
+                if not data.get("ok"):
+                    return {"success": False, "error": data.get("description", "Telegram API 错误")}
+                return {"success": True, "error": None}
+        except Exception as e:
+            logger.exception("Telegram Bot 发送失败")
+            return {"success": False, "error": str(e)}
+
+
+class WebhookChannel(NotificationChannel):
+    """Webhook 渠道 — POST JSON 到自定义 URL"""
+
+    channel_type = "webhook"
+    display_name_template = "Webhook"
+
+    @classmethod
+    def config_schema(cls) -> list[dict]:
+        return [
+            {"name": "url", "label": "Webhook URL", "type": "text", "required": True, "sensitive": False},
+            {
+                "name": "secret_header",
+                "label": "签名 Header (可选)",
+                "type": "text",
+                "required": False,
+                "sensitive": False,
+                "placeholder": "X-Webhook-Secret",
+            },
+            {
+                "name": "secret_value",
+                "label": "签名值 (可选)",
+                "type": "password",
+                "required": False,
+                "sensitive": True,
+            },
+        ]
+
+    async def send(self, message: str) -> dict:
+        try:
+            url = self.config.get("url", "").strip()
+            if not url:
+                return {"success": False, "error": "未配置 Webhook URL"}
+            headers: dict[str, str] = {"Content-Type": "application/json"}
+            secret_header = self.config.get("secret_header", "").strip()
+            secret_value = self.config.get("secret_value", "").strip()
+            if secret_header and secret_value:
+                headers[secret_header] = secret_value
+            payload = {"source": "ServerHub", "channel": self.display_name, "message": message}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code >= 400:
+                    return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+                return {"success": True, "error": None}
+        except Exception as e:
+            logger.exception("Webhook 发送失败")
+            return {"success": False, "error": str(e)}
+
+
+class InAppChannel(NotificationChannel):
+    """站内通知渠道 — 占位渠道，实际由 dispatcher 写入 inapp_notifications 表"""
+
+    channel_type = "inapp"
+    display_name_template = "站内通知"
+
+    @classmethod
+    def config_schema(cls) -> list[dict]:
+        return []
+
+    async def send(self, message: str) -> dict:
+        return {"success": True, "error": None}
+
+
 def mask_sensitive(value: str) -> str:
     """掩码敏感值，保留最后 4 字符"""
     if not value or len(value) <= 4:
@@ -309,6 +442,9 @@ def mask_sensitive(value: str) -> str:
 
 CHANNEL_TYPES: dict[str, type[NotificationChannel]] = {
     "telegram": TelegramChannel,
+    "telegram_bot": TelegramBotChannel,
+    "webhook": WebhookChannel,
+    "inapp": InAppChannel,
     "wecom": WeComChannel,
     "dingtalk": DingtalkChannel,
     "qqbot": QQBotChannel,

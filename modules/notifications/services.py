@@ -283,6 +283,118 @@ async def get_notification_history(limit: int = 50, channel_id: str | None = Non
     ]
 
 
+# ---------------------------------------------------------------------------
+# 站内通知 (inapp_notifications)
+# ---------------------------------------------------------------------------
+
+
+async def create_inapp_notification(
+    title: str,
+    content: str | None = None,
+    severity: str = "info",
+    user_id: str | None = None,
+    type: str = "system",
+    related_alert_id: str | None = None,
+) -> dict:
+    """写入一条站内通知，返回记录字典。"""
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO inapp_notifications (user_id, type, title, content, severity, related_alert_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, type, title, content, severity, related_alert_id),
+    )
+    await db.commit()
+    row = await (await db.execute("SELECT * FROM inapp_notifications WHERE id=?", (cursor.lastrowid,))).fetchone()
+    return _inapp_row_to_dict(row)
+
+
+def _inapp_row_to_dict(row) -> dict:
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "type": row[2],
+        "title": row[3],
+        "content": row[4],
+        "severity": row[5],
+        "read": bool(row[6]),
+        "related_alert_id": row[7],
+        "created_at": row[8],
+    }
+
+
+async def list_inapp_notifications(
+    user_id: str | None = None,
+    unread_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """分页查询站内通知列表。"""
+    limit = min(max(1, limit), 200)
+    db = await get_db()
+    conditions = []
+    params: list = []
+    if user_id is not None:
+        conditions.append("(user_id IS NULL OR user_id=?)")
+        params.append(user_id)
+    if unread_only:
+        conditions.append("read=0")
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    count_row = await (
+        await db.execute(f"SELECT COUNT(*) FROM inapp_notifications {where}", params)  # noqa: S608
+    ).fetchone()
+    total = count_row[0]
+    rows = await (
+        await db.execute(
+            f"SELECT * FROM inapp_notifications {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",  # noqa: S608
+            [*params, limit, offset],
+        )
+    ).fetchall()
+    return {"items": [_inapp_row_to_dict(r) for r in rows], "total": total}
+
+
+async def get_unread_count(user_id: str | None = None) -> int:
+    """查询未读站内通知数量。"""
+    db = await get_db()
+    if user_id is not None:
+        row = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM inapp_notifications WHERE (user_id IS NULL OR user_id=?) AND read=0",
+                (user_id,),
+            )
+        ).fetchone()
+    else:
+        row = await (await db.execute("SELECT COUNT(*) FROM inapp_notifications WHERE read=0")).fetchone()
+    return row[0]
+
+
+async def mark_read(notification_id: int, user_id: str | None = None) -> bool:
+    """标记单条站内通知为已读。"""
+    db = await get_db()
+    if user_id is not None:
+        cursor = await db.execute(
+            "UPDATE inapp_notifications SET read=1 WHERE id=? AND (user_id IS NULL OR user_id=?)",
+            (notification_id, user_id),
+        )
+    else:
+        cursor = await db.execute("UPDATE inapp_notifications SET read=1 WHERE id=?", (notification_id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def mark_all_read(user_id: str | None = None) -> int:
+    """全部标记为已读，返回影响行数。"""
+    db = await get_db()
+    if user_id is not None:
+        cursor = await db.execute(
+            "UPDATE inapp_notifications SET read=1 WHERE (user_id IS NULL OR user_id=?) AND read=0",
+            (user_id,),
+        )
+    else:
+        cursor = await db.execute("UPDATE inapp_notifications SET read=1 WHERE read=0")
+    await db.commit()
+    return cursor.rowcount
+
+
 async def ensure_default_channels():
     """启动时确保至少有默认渠道。如果 notification_channels 表为空且 telegram 脚本已配置，自动创建。"""
     db = await get_db()
