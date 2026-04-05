@@ -108,7 +108,7 @@ function OverviewTab() {
   })
   const { data: approvals } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray<ApprovalItem>(r.data)),
   })
 
   const enabledSkills = useMemo(() => skills?.filter((item) => item.enabled).length ?? 0, [skills])
@@ -807,7 +807,7 @@ function RunsAndApprovalsTab() {
   })
   const { data: approvals = [] } = useQuery({
     queryKey: ['agent-approvals'],
-    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray(r.data) as ApprovalItem[]),
+    queryFn: () => client.get('/api/agents/approvals').then((r) => ensureArray<ApprovalItem>(r.data)),
     refetchInterval: 10_000,
   })
   const { data: events = [] } = useQuery({
@@ -817,9 +817,20 @@ function RunsAndApprovalsTab() {
     refetchInterval: 20_000,
   })
 
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+
   const cancelRunMut = useMutation({
-    mutationFn: (runId: string) => client.post(`/api/agents/runs/${runId}/cancel`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-runs'] }),
+    mutationFn: async (runId: string) => {
+      setCancellingId(runId)
+      return client.post(`/api/agents/runs/${runId}/cancel`)
+    },
+    onSuccess: () => {
+      setCancellingId(null)
+      qc.invalidateQueries({ queryKey: ['agent-runs'] })
+    },
+    onError: () => {
+      setCancellingId(null)
+    },
   })
 
   return (
@@ -837,7 +848,7 @@ function RunsAndApprovalsTab() {
                     {(run.status === 'running' || run.status === 'pending') && (
                       <button
                         onClick={() => cancelRunMut.mutate(run.id)}
-                        disabled={cancelRunMut.isPending}
+                        disabled={cancellingId === run.id}
                         className="rounded px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
                       >
                         取消
