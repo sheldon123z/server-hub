@@ -16,6 +16,52 @@ from database import get_db
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# 对话标题自动生成 (LLM 摘要)
+# ---------------------------------------------------------------------------
+
+_TITLE_PROMPT = (
+    "请用不超过10个中文字（或等量英文词）为以下对话生成一个简短标题，"
+    "直接输出标题文本，不要加引号、标点或解释。\n\n"
+    "用户消息: {user_message}\n"
+    "助手回复: {assistant_reply}"
+)
+
+
+async def generate_conversation_title(conversation_id: str, user_message: str, assistant_reply: str) -> None:
+    """异步调用 LLM 生成对话标题并更新数据库。
+
+    使用最便宜的 fast 模型，失败时静默降级（保留原始截断标题）。
+    """
+    try:
+        from modules.agents.llm import get_chat_model
+
+        llm = get_chat_model("fast")
+        # 截断输入避免浪费 token
+        prompt = _TITLE_PROMPT.format(
+            user_message=user_message[:200],
+            assistant_reply=assistant_reply[:300],
+        )
+        resp = await llm.ainvoke(prompt)
+        raw_title = extract_content(resp.content).strip()
+        # 去除 LLM 可能输出的引号包裹
+        for ch in ('"', "'", "\u201c", "\u201d", "\u2018", "\u2019"):
+            raw_title = raw_title.strip(ch)
+        title = raw_title.strip()
+        if not title or len(title) > 50:
+            # 生成失败或过长，放弃更新
+            return
+        db = await get_db()
+        await db.execute(
+            "UPDATE agent_conversations SET title = ? WHERE id = ?",
+            (title, conversation_id),
+        )
+        await db.commit()
+        logger.debug("对话 %s 标题已更新: %s", conversation_id, title)
+    except Exception:
+        logger.debug("生成对话标题失败 (conversation_id=%s)", conversation_id, exc_info=True)
+
+
 _active_run_tasks: dict[str, asyncio.Task] = {}
 
 
