@@ -838,6 +838,37 @@ async def _create_agent_audit_tables(db: aiosqlite.Connection):
     """)
 
 
+async def _create_changelog_tables(db: aiosqlite.Connection):
+    """变更日历表 — 变更记录 + 冻结窗口"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS changelog_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            event_type TEXT NOT NULL DEFAULT 'other',
+            title TEXT NOT NULL,
+            description TEXT,
+            operator TEXT,
+            affected_services TEXT,
+            risk_level TEXT NOT NULL DEFAULT 'low',
+            duration_minutes INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_changelog_events_ts ON changelog_events(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_changelog_events_type ON changelog_events(event_type);
+        CREATE INDEX IF NOT EXISTS idx_changelog_events_operator ON changelog_events(operator);
+
+        CREATE TABLE IF NOT EXISTS changelog_freeze_windows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            start_time TIMESTAMP NOT NULL,
+            end_time TIMESTAMP NOT NULL,
+            reason TEXT,
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_changelog_freeze_time ON changelog_freeze_windows(start_time, end_time);
+    """)
+
+
 async def init_tables(db: aiosqlite.Connection):
     """初始化所有数据库表 — 按领域分组调用子函数"""
     await _create_auth_tables(db)
@@ -849,6 +880,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_rbac_tables(db)
     await _create_batch_tables(db)
     await _create_agent_audit_tables(db)
+    await _create_changelog_tables(db)
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:
