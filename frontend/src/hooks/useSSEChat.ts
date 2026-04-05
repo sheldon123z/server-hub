@@ -376,6 +376,13 @@ export function useSSEChat() {
         }
         store.setStreamingMessageId(null)
         break
+
+      default:
+        if (event) {
+          const dataSummary = JSON.stringify(data).slice(0, 200)
+          console.warn(`[SSE] 未知事件类型: "${event}"`, dataSummary)
+        }
+        break
     }
   }
 
