@@ -36,6 +36,7 @@
 | [面板用户](api/panel-users.md) | `/api/panel-users` | 4 | Web 面板用户 CRUD |
 | [系统设置](api/settings.md) | `/api/settings` | 1 | 非敏感配置查看 |
 | [资产台账](api/assets.md) | `/api/assets` | 7 | 资产发现、拓扑图 |
+| [变更日历](api/changelog.md) | `/api/changelog` | 9 | 变更记录、冻结窗口、统计 |
 | [服务器管理](api/servers.md) | `/api/servers` | 17 | 服务器注册、分组、心跳 |
 | [运维剧本](api/playbooks.md) | `/api/playbooks` | 5 | 剧本 CRUD、执行、凭证 |
 | [AI Agent](api/agents.md) | `/api/agents` | 59+WS | 对话、巡检、告警、诊断、案例库、Skill |
@@ -48,7 +49,7 @@ ServerHub 的核心特色 — 基于 Deep Agents 框架的 AI 运维智能体。
 |------|------|
 | [智能体总览](agents/README.md) | 架构、Middleware 栈、组件清单 |
 | [Agent Studio 与 Skill Runtime](agents/studio-runtime.md) | run 生命周期、Skill 安装、Studio 入口 |
-| [Agent 工具](agents/tools.md) | 49 个自定义工具 + 9 个内置工具 |
+| [Agent 工具](agents/tools.md) | 49+ 个自定义工具（@register_tool 装饰器注册） + 9 个内置工具 |
 | [子智能体](agents/subagents.md) | 6 个 SubAgent 定义和使用 |
 | [巡检系统](agents/patrol.md) | 8 个任务、11 个模板、调度机制 |
 | [告警系统](agents/alerts.md) | 阈值规则 + 基线偏离检测 |

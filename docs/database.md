@@ -18,7 +18,7 @@ ServerHub 使用三个 SQLite 数据库文件，均在 `data/` 目录下（`.git
 
 应用启动时由 `database.py:init_tables()` 自动创建所有表（`CREATE TABLE IF NOT EXISTS`）。
 
-共 41 个表 + 1 个 FTS5 虚拟表（共 42 个）。
+共 43 个表 + 1 个 FTS5 虚拟表（共 44 个）。
 
 > 注：`metrics_latest` 表在 `init_tables()` 中出现两次（初始创建 + 兼容性重建），属于同一张表。
 
@@ -584,6 +584,47 @@ Agent Teams 团队定义。
 ### agent_team_messages — 团队消息
 
 团队内 Agent 间的通信消息。
+
+---
+
+### changelog_events — 变更记录
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK AUTOINCREMENT | 自增主键 |
+| timestamp | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | 变更时间 |
+| event_type | TEXT NOT NULL DEFAULT 'other' | 事件类型（deploy / config / restart / maintenance / other）|
+| title | TEXT NOT NULL | 变更标题 |
+| description | TEXT | 变更描述 |
+| operator | TEXT | 操作人 |
+| affected_services | TEXT | 受影响服务，逗号分隔 |
+| risk_level | TEXT NOT NULL DEFAULT 'low' | 风险等级（low / medium / high / critical）|
+| duration_minutes | INTEGER | 持续时长（分钟）|
+
+**索引**：
+- `idx_changelog_events_ts`（timestamp）
+- `idx_changelog_events_type`（event_type）
+- `idx_changelog_events_operator`（operator）
+
+**用途**：变更日历模块的核心表，记录所有运维变更事件。`event_type` 和 `risk_level` 字段与 Pydantic 模型 `EventType` / `RiskLevel` 枚举对应。
+
+---
+
+### changelog_freeze_windows — 冻结窗口
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK AUTOINCREMENT | 自增主键 |
+| title | TEXT NOT NULL | 窗口标题 |
+| start_time | TIMESTAMP NOT NULL | 开始时间 |
+| end_time | TIMESTAMP NOT NULL | 结束时间 |
+| reason | TEXT | 冻结原因 |
+| created_by | TEXT | 创建人 |
+| created_at | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+
+**索引**：`idx_changelog_freeze_time`（start_time, end_time）
+
+**用途**：定义禁止变更的冻结时间段（如考试周、假期）。`/api/changelog/freeze-windows/active` 端点实时检查当前是否处于冻结窗口。
 
 ---
 

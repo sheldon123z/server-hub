@@ -107,9 +107,10 @@ ServerHub 使用 **JWT Cookie 认证**。登录成功后，服务端通过 `Set-
 | [面板用户](panel-users.md) | `/api/panel-users` | 4 | admin |
 | [系统设置](settings.md) | `/api/settings` | 1 | admin |
 | [资产台账](assets.md) | `/api/assets` | 7 | admin |
+| [变更日历](changelog.md) | `/api/changelog` | 9 | user（读）/ admin（写） |
 | [AI Agent](agents.md) | `/api/agents` | 35（含 1 WS） | admin |
 
-**合计**: 19 个模块，约 170 个端点（含 1 个 WebSocket）。
+**合计**: 20 个模块，约 179 个端点（含 1 个 WebSocket）。
 
 ### GET /api/sidebar
 - **说明**: 返回按用户角色过滤的侧边栏菜单项（React 前端使用）

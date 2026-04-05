@@ -1,10 +1,11 @@
 # Agent 工具详细说明
 
-工具按功能领域拆分为 14 个子模块，存放在 `modules/agents/tools/` 目录下：
+工具按功能领域拆分为 17 个子模块，存放在 `modules/agents/tools/` 目录下：
 
 ```
 modules/agents/tools/
-├── __init__.py          # 导出入口：get_server_tools(user_role)
+├── __init__.py          # 导出入口：get_server_tools(user_role)，触发 _ensure_tools_loaded()
+├── registry.py          # @register_tool 装饰器 + 全局注册表 + ToolMeta 元数据
 ├── system.py            # 系统监控（3 个工具）
 ├── docker.py            # Docker 管理（7 个工具）
 ├── services.py          # Systemd 服务（5 个工具）
@@ -17,14 +18,43 @@ modules/agents/tools/
 ├── scripts.py           # 运维脚本桥接（1 个工具）
 ├── playbook.py          # 运维剧本 + SSH（5 个工具）
 ├── servers.py           # 服务器舰队管理（2 个工具）
+├── alerts.py            # 告警管理（3 个工具）
+├── clarification.py     # 澄清追问（1 个工具）
+├── ui_tools.py          # UI 渲染工具（3 个工具）
 └── page_context_tool.py # 页面上下文数据查询（1 个工具）
 ```
 
-通过 `get_server_tools(user_role)` 注册到主 Agent：
-- **admin**: 返回全部 49 个自定义工具
-- **user**: 仅返回 SAFE 级别的只读工具
+## 工具注册机制
 
-工具使用 LangChain `@tool` 装饰器，分布在 14 个子模块中。框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
+所有工具通过 `@register_tool` 装饰器声明元数据并自动注册到全局注册表（`registry.py`）：
+
+```python
+from modules.agents.tools.registry import register_tool, RiskLevel
+
+@register_tool(risk=RiskLevel.DANGER, group="docker:write", icon="Trash2")
+async def docker_prune(...): ...
+```
+
+**注册流程**：
+1. `@register_tool(risk, group, icon, label, category)` 应用 `LangChain @tool` 装饰器
+2. 创建 `ToolMeta` 元数据（风险等级、分组、图标、显示名、分类）
+3. 自动注册到 `_TOOL_REGISTRY: dict[str, ToolMeta]` 全局注册表
+
+**注册表 API**（`registry.py`）：
+- `get_registered_tools()` → 返回全部工具元数据
+- `get_tool_meta(name)` → 按名获取元数据
+- `get_tools_by_risk(risk)` → 按风险等级筛选
+- `get_tools_by_group(prefix)` → 按分组前缀筛选（如 `'docker'` 匹配 `'docker:read'` 和 `'docker:write'`）
+- `build_tool_risk_map()` → 构建 `{name: risk}` 映射（`safety.py` 使用）
+- `build_tool_display_map()` → 构建前端显示映射（API 端点使用）
+
+**延迟加载**：`__init__.py` 的 `_TOOL_MODULES` 列表包含所有子模块名。首次调用 `get_server_tools()` 时触发 `_ensure_tools_loaded()`，通过 `importlib.import_module` 批量导入，触发各模块的 `@register_tool` 注册。
+
+通过 `get_server_tools(user_role)` 注册到主 Agent：
+- **admin**: 返回全部自定义工具
+- **user**: 仅返回 SAFE 级别的只读工具（排除 `send_notification` 和 `save_fault_case`）
+
+框架通过 Filesystem / TodoList middleware 额外注入 9 个内置工具。
 
 ---
 
@@ -550,7 +580,7 @@ modules/agents/tools/
 | danger | 7 | 1 | 0 | 8 |
 | **合计** | **47** | **8** | **2** | **57** |
 
-> 注：自定义工具 49 个（含 5 个剧本工具 + 2 个服务器工具 + 1 个页面上下文工具），部分工具未在 TOOL_RISK_MAP 中注册但默认为 safe。框架通过 Middleware 注入 8 个内置工具（不含 execute 的 9 个），SubAgent 专属工具 2 个（web_search, think）。
+> 注：自定义工具 49+ 个（含 5 个剧本工具 + 2 个服务器工具 + 3 个告警工具 + 3 个 UI 工具 + 1 个页面上下文工具 + 1 个澄清工具），全部通过 `@register_tool` 装饰器声明风险等级。框架通过 Middleware 注入 8 个内置工具（不含 execute 的 9 个），SubAgent 专属工具 2 个（web_search, think）。
 
 ---
 
