@@ -542,6 +542,7 @@ async def _create_agent_tables(db: aiosqlite.Connection):
     await _ensure_column(db, "agent_patrol_history", "report_json", "TEXT")
     await _ensure_column(db, "agent_patrol_history", "triggered_by", "TEXT DEFAULT 'scheduler'")
     await _ensure_column(db, "agent_approvals", "run_id", "TEXT")
+    await _ensure_column(db, "agent_team_executions", "usage_json", "TEXT")
     # 技能系统扩展列
     await _ensure_column(db, "agent_skills", "owner", "TEXT DEFAULT 'system'")
     await _ensure_column(db, "agent_skill_versions", "snapshot_path", "TEXT")
@@ -874,6 +875,33 @@ async def _create_changelog_tables(db: aiosqlite.Connection):
     """)
 
 
+async def _create_task_tables(db: aiosqlite.Connection):
+    """Agent Task Management — DAG 依赖 + SubAgent 委派的任务表"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS agent_tasks (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            run_id TEXT,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            task_type TEXT NOT NULL DEFAULT 'agent',
+            status TEXT NOT NULL DEFAULT 'pending',
+            assignee TEXT,
+            blocked_by TEXT DEFAULT '[]',
+            output TEXT,
+            output_offset INTEGER DEFAULT 0,
+            notified INTEGER DEFAULT 0,
+            start_time TEXT,
+            end_time TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_tasks_conv
+            ON agent_tasks(conversation_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_agent_tasks_status
+            ON agent_tasks(conversation_id, status);
+    """)
+
+
 async def init_tables(db: aiosqlite.Connection):
     """初始化所有数据库表 — 按领域分组调用子函数"""
     await _create_auth_tables(db)
@@ -886,6 +914,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_batch_tables(db)
     await _create_agent_audit_tables(db)
     await _create_changelog_tables(db)
+    await _create_task_tables(db)
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:

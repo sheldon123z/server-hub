@@ -71,7 +71,8 @@ export function ExecuteTab({ team }: { team: Team }) {
                 const failStatuses = ['failed', 'timeout', 'cancelled']
                 const msgType = status === 'success' ? 'complete' : failStatuses.includes(status) ? 'error' : 'complete'
                 const label = status === 'success' ? '完成' : failStatuses.includes(status) ? `${status} — 执行未成功` : `完成 (${status})`
-                setMessages((prev) => [...prev, { agent: 'system', content: `${label} — 耗时: ${data.duration ?? '-'}s, 步数: ${data.steps ?? '-'}`, type: msgType }])
+                const tokens = data.usage?.total_tokens ? `, tokens: ${data.usage.total_tokens}` : ''
+                setMessages((prev) => [...prev, { agent: 'system', content: `${label} — 耗时: ${data.duration ?? '-'}s, 步数: ${data.steps ?? '-'}${tokens}`, type: msgType }])
               }
               // 'done' is stream-end marker only, no UI message needed
             } catch { /* ignore parse errors */ }

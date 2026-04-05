@@ -68,6 +68,8 @@ export function normalizeExecutions(value: unknown): TeamExecution[] {
     completed_at: item.completed_at ? String(item.completed_at) : null,
     duration_seconds: item.duration_seconds != null ? Number(item.duration_seconds) : null,
     total_steps: item.total_steps != null ? Number(item.total_steps) : null,
+    total_tokens: item.total_tokens != null ? Number(item.total_tokens) : null,
+    usage_json: item.usage_json ? String(item.usage_json) : null,
     error: item.error ? String(item.error) : null,
   }))
 }

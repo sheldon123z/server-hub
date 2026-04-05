@@ -92,6 +92,8 @@ export interface TeamExecution {
   completed_at: string | null
   duration_seconds: number | null
   total_steps: number | null
+  total_tokens: number | null
+  usage_json: string | null
   error: string | null
 }
 

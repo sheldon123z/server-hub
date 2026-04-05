@@ -11,13 +11,70 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 
 from langchain_core.messages import AIMessage, HumanMessage
 
 from config import settings
 from modules.agents.teams.state import TeamState
+from modules.agents.teams.store import ConcurrentExecutionError
 
 logger = logging.getLogger(__name__)
+
+# ─── Supervisor 综合强制规则（借鉴 Claude Code Coordinator 设计） ───
+
+_SUPERVISOR_ENFORCEMENT = """
+
+## 行为规则（严格遵守）
+
+### 禁止行为
+- 禁止直接执行工具来解决问题 — 你必须将工作委派给成员
+- 禁止在未收到成员结果前给出最终答案
+- 禁止简单转发成员的原始输出 — 你必须综合理解后再呈现
+- 禁止对成员说"根据你的发现，修复X" — 你必须明确描述需要做什么
+
+### 正确工作流
+1. 分析用户需求，拆解为具体子任务
+2. 给每个成员清晰的、具体的指令（包含文件路径、参数等）
+3. 等待成员返回结果
+4. 综合所有结果，交叉验证，生成你自己的判断
+5. 如果结果不完整，追加分配补充任务
+"""
+
+
+@dataclass
+class AgentUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    tool_calls: int = 0
+    llm_calls: int = 0
+
+
+@dataclass
+class ExecutionUsage:
+    agents: dict[str, AgentUsage] = field(default_factory=dict)
+
+    @property
+    def total_tokens(self) -> int:
+        return sum(a.total_tokens for a in self.agents.values())
+
+    def to_dict(self) -> dict:
+        return {
+            "total_tokens": self.total_tokens,
+            "total_input_tokens": sum(a.input_tokens for a in self.agents.values()),
+            "total_output_tokens": sum(a.output_tokens for a in self.agents.values()),
+            "agents": {
+                name: {
+                    "input_tokens": u.input_tokens,
+                    "output_tokens": u.output_tokens,
+                    "total_tokens": u.total_tokens,
+                    "tool_calls": u.tool_calls,
+                    "llm_calls": u.llm_calls,
+                }
+                for name, u in self.agents.items()
+            },
+        }
 
 
 # ─── 延迟导入辅助 ───
@@ -93,7 +150,7 @@ class TeamEngine:
         Args:
             store: TeamStore 实例，用于数据读写
         """
-        from modules.agents.teams.store import TeamStore  # noqa: TC001 — 运行时注解需要此导入
+        from modules.agents.teams.store import TeamStore
 
         self.store: TeamStore = store
         # team_id → (compiled_graph, build_timestamp)
@@ -103,12 +160,13 @@ class TeamEngine:
 
     # ─── 图构建 ───
 
-    async def build_team_graph(self, team_id: str, user_role: str = "admin"):
+    async def build_team_graph(self, team_id: str, user_role: str = "admin", exec_id: str | None = None):
         """构建团队图，带缓存（团队配置变更时自动 invalidate）
 
         Args:
             team_id: 团队 ID
             user_role: 当前用户角色，用于过滤工具权限
+            exec_id: 执行 ID，非空时注入 scratchpad 工具（此时跳过缓存）
 
         Returns:
             CompiledStateGraph 实例
@@ -124,38 +182,42 @@ class TeamEngine:
         if not members:
             raise ValueError(f"团队 {team_id} 无成员")
 
-        # 缓存检查: team.updated_at 变化时重建；不同 user_role 分别缓存
-        cache_key = f"{team_id}:{user_role}"
-        if cache_key in self._graph_cache:
-            cached_graph, cached_time_str = self._graph_cache[cache_key]
-            team_updated = team.get("updated_at", "")
-            if cached_time_str and cached_time_str >= team_updated:
-                logger.debug("使用缓存的团队图: %s (role=%s)", team_id, user_role)
-                return cached_graph
+        # scratchpad 模式: 工具包含 exec_id 闭包，不可缓存
+        if not exec_id:
+            cache_key = f"{team_id}:{user_role}"
+            if cache_key in self._graph_cache:
+                cached_graph, cached_time_str = self._graph_cache[cache_key]
+                team_updated = team.get("updated_at", "")
+                if cached_time_str and cached_time_str >= team_updated:
+                    logger.debug("使用缓存的团队图: %s (role=%s)", team_id, user_role)
+                    return cached_graph
 
         topology = team["topology"]
         logger.info("构建团队图: %s (拓扑=%s, 成员=%d, role=%s)", team["name"], topology, len(members), user_role)
 
         if topology == "supervisor":
-            graph = self._build_supervisor(team, members, user_role)
+            graph = self._build_supervisor(team, members, user_role, exec_id=exec_id)
         elif topology == "swarm":
-            graph = self._build_swarm(team, members, user_role)
+            graph = self._build_swarm(team, members, user_role, exec_id=exec_id)
         elif topology == "pipeline":
-            graph = self._build_pipeline(team, members, user_role)
+            graph = self._build_pipeline(team, members, user_role, exec_id=exec_id)
         else:
             raise ValueError(f"未知拓扑类型: {topology}")
 
-        # 使用 team 的 updated_at 作为缓存标记
-        self._graph_cache[cache_key] = (graph, team.get("updated_at", ""))
+        # 仅在非 scratchpad 模式时缓存
+        if not exec_id:
+            cache_key = f"{team_id}:{user_role}"
+            self._graph_cache[cache_key] = (graph, team.get("updated_at", ""))
         return graph
 
-    def _build_member_agent(self, member: dict, team: dict, user_role: str = "admin"):
+    def _build_member_agent(self, member: dict, team: dict, user_role: str = "admin", exec_id: str | None = None):
         """为单个团队成员构建 react agent
 
         Args:
             member: 成员配置字典
             team: 团队配置字典
             user_role: 当前用户角色，用于过滤工具权限
+            exec_id: 执行 ID，非空时注入 scratchpad 工具
 
         Returns:
             CompiledStateGraph (react agent)
@@ -169,6 +231,15 @@ class TeamEngine:
         raw_tools = _resolve_tools_safe(tool_names, user_role)
         safe_tools = _wrap_tools_safe(raw_tools, team.get("safety_mode", "supervised"), member["name"])
 
+        prompt = member.get("system_prompt", "")
+
+        # 1.5 注入 scratchpad 工具（如果启用）
+        if exec_id:
+            from modules.agents.teams.scratchpad import SCRATCHPAD_PROMPT_SUFFIX, create_scratchpad_tools
+
+            safe_tools = list(safe_tools) + create_scratchpad_tools(exec_id)
+            prompt += SCRATCHPAD_PROMPT_SUFFIX
+
         # 2. 选择模型 (成员 > 团队 > 全局默认)
         model_id = member.get("model_id") or team.get("default_model") or settings.agent_default_model
         model = _get_chat_model_by_id(model_id)
@@ -178,18 +249,19 @@ class TeamEngine:
             model=model,
             tools=safe_tools,
             name=member["name"],
-            prompt=member.get("system_prompt", ""),
+            prompt=prompt,
         )
 
         return agent
 
-    def _build_supervisor(self, team: dict, members: list[dict], user_role: str = "admin"):
+    def _build_supervisor(self, team: dict, members: list[dict], user_role: str = "admin", exec_id: str | None = None):
         """Supervisor 拓扑: leader 通过 handoff tools 调度 workers
 
         Args:
             team: 团队配置
             members: 成员列表
             user_role: 当前用户角色，用于过滤工具权限
+            exec_id: 执行 ID，非空时注入 scratchpad 工具
 
         Returns:
             CompiledStateGraph
@@ -206,15 +278,17 @@ class TeamEngine:
         # 构建 worker agents
         worker_agents = []
         for w in workers:
-            agent = self._build_member_agent(w, team, user_role)
+            agent = self._build_member_agent(w, team, user_role, exec_id=exec_id)
             worker_agents.append(agent)
 
         # Supervisor 模型
         model_id = leader.get("model_id") or team.get("default_model") or settings.agent_default_model
         supervisor_model = _get_chat_model_by_id(model_id)
 
-        # Supervisor 提示词
+        # Supervisor 提示词 + 综合强制规则自动注入
         prompt = leader.get("system_prompt") or f"你是团队 '{team['name']}' 的组长。根据任务需求分配给合适的成员执行。"
+        if "禁止" not in prompt and "Prohibited" not in prompt:
+            prompt += _SUPERVISOR_ENFORCEMENT
 
         # create_supervisor 返回 StateGraph，需要 .compile()
         workflow = create_supervisor(
@@ -226,13 +300,14 @@ class TeamEngine:
         )
         return workflow.compile()
 
-    def _build_swarm(self, team: dict, members: list[dict], user_role: str = "admin"):
+    def _build_swarm(self, team: dict, members: list[dict], user_role: str = "admin", exec_id: str | None = None):
         """Swarm 拓扑: 成员间自主 handoff 协作
 
         Args:
             team: 团队配置
             members: 成员列表
             user_role: 当前用户角色，用于过滤工具权限
+            exec_id: 执行 ID，非空时注入 scratchpad 工具
 
         Returns:
             CompiledStateGraph
@@ -264,6 +339,15 @@ class TeamEngine:
             raw_tools = _resolve_tools_safe(tool_names, user_role)
             safe_tools = _wrap_tools_safe(raw_tools, team.get("safety_mode", "supervised"), m["name"])
 
+            prompt = m.get("system_prompt", "")
+
+            # 注入 scratchpad 工具
+            if exec_id:
+                from modules.agents.teams.scratchpad import SCRATCHPAD_PROMPT_SUFFIX, create_scratchpad_tools
+
+                safe_tools = list(safe_tools) + create_scratchpad_tools(exec_id)
+                prompt += SCRATCHPAD_PROMPT_SUFFIX
+
             # 选择模型
             model_id = m.get("model_id") or team.get("default_model") or settings.agent_default_model
             model = _get_chat_model_by_id(model_id)
@@ -272,7 +356,7 @@ class TeamEngine:
                 model=model,
                 tools=safe_tools + handoff_tools,
                 name=m["name"],
-                prompt=m.get("system_prompt", ""),
+                prompt=prompt,
             )
             agents.append(agent)
 
@@ -281,13 +365,14 @@ class TeamEngine:
         workflow = create_swarm(agents, default_active_agent=default_active)
         return workflow.compile()
 
-    def _build_pipeline(self, team: dict, members: list[dict], user_role: str = "admin"):
+    def _build_pipeline(self, team: dict, members: list[dict], user_role: str = "admin", exec_id: str | None = None):
         """Pipeline 拓扑: 按 position 顺序依次执行，上游输出注入下游上下文
 
         Args:
             team: 团队配置
             members: 成员列表
             user_role: 当前用户角色，用于过滤工具权限
+            exec_id: 执行 ID，非空时注入 scratchpad 工具和阶段目录
 
         Returns:
             CompiledStateGraph
@@ -299,7 +384,7 @@ class TeamEngine:
         graph = StateGraph(TeamState)
 
         for i, member in enumerate(sorted_members):
-            agent = self._build_member_agent(member, team, user_role)
+            agent = self._build_member_agent(member, team, user_role, exec_id=exec_id)
             node_name = member["name"]
 
             # 用闭包捕获当前 agent 和位置，避免 late-binding 问题
@@ -309,12 +394,20 @@ class TeamEngine:
                 _agent=agent,
                 _name=node_name,
                 _pos=i,
+                _exec_id=exec_id,
             ) -> dict:
                 """Pipeline 节点: 将上游输出作为上下文注入，执行当前 agent"""
                 # 构建上游输出上下文
                 context_parts = []
                 for prev_name, prev_output in state.get("agent_outputs", {}).items():
                     context_parts.append(f"## {prev_name} 的输出:\n{prev_output}")
+
+                # Pipeline 阶段隔离: 为每个阶段创建独立工作目录
+                if _exec_id:
+                    from modules.agents.teams.scratchpad import get_stage_dir
+
+                    stage_dir = get_stage_dir(_exec_id, _name)
+                    context_parts.append(f"你的阶段工作目录: {stage_dir}")
 
                 messages = list(state["messages"])
                 if context_parts and _pos > 0:
@@ -374,14 +467,30 @@ class TeamEngine:
             yield {"event": "team_error", "data": {"error": f"团队 '{team['name']}' 已禁用"}}
             return
 
+        # 并发保护: 先创建执行记录（原子锁），再构建图
+        team_config = json.loads(team.get("config_json", "{}"))
         try:
-            graph = await self.build_team_graph(team_id, user_role)
+            execution = await self.store.create_execution(
+                team_id,
+                instruction,
+                username,
+                team["topology"],
+                allow_concurrent=team_config.get("allow_concurrent", False),
+            )
+        except ConcurrentExecutionError as e:
+            yield {"event": "team_error", "data": {"error": str(e)}}
+            return
+        exec_id = execution["id"]
+
+        # Scratchpad: 默认启用，exec_id 传入后工具自动注入
+        use_scratchpad = team_config.get("scratchpad", True)
+
+        try:
+            graph = await self.build_team_graph(team_id, user_role, exec_id=exec_id if use_scratchpad else None)
         except ValueError as e:
             yield {"event": "team_error", "data": {"error": str(e)}}
             return
 
-        execution = await self.store.create_execution(team_id, instruction, username, team["topology"])
-        exec_id = execution["id"]
         start_time = time.time()
 
         yield {
@@ -396,6 +505,7 @@ class TeamEngine:
         timeout = team.get("timeout_seconds", 300)
         max_steps = team.get("max_steps", 50)
         agent_outputs: dict[str, str] = {}
+        usage = ExecutionUsage()
         step_count = 0
         error_msg = None
         final_status = "success"
@@ -407,13 +517,41 @@ class TeamEngine:
             async def _consume_with_timeout():
                 nonlocal step_count, agent_outputs
                 async for event in event_gen:
+                    # 拦截内部 usage 事件，不向 SSE 发送
+                    if event.get("event") == "_usage_update":
+                        d = event["data"]
+                        agent_name = d["agent"]
+                        if agent_name not in usage.agents:
+                            usage.agents[agent_name] = AgentUsage()
+                        au = usage.agents[agent_name]
+                        au.input_tokens += d.get("input_tokens", 0)
+                        au.output_tokens += d.get("output_tokens", 0)
+                        au.total_tokens += d.get("total_tokens", 0)
+                        au.llm_calls += 1
+                        continue
+
                     step_count += 1
+
+                    # 统计工具调用
+                    if event.get("event") == "agent_tool_call":
+                        an = event.get("data", {}).get("agent", "")
+                        if an in usage.agents:
+                            usage.agents[an].tool_calls += 1
+
                     yield event
 
                     # 收集各 agent 输出
                     if event.get("event") == "agent_complete":
                         data = event.get("data", {})
-                        agent_outputs[data.get("agent", "")] = data.get("output", "")
+                        an = data.get("agent", "")
+                        agent_outputs[an] = data.get("output", "")
+                        if an in usage.agents:
+                            data["usage"] = {
+                                "input_tokens": usage.agents[an].input_tokens,
+                                "output_tokens": usage.agents[an].output_tokens,
+                                "total_tokens": usage.agents[an].total_tokens,
+                                "tool_calls": usage.agents[an].tool_calls,
+                            }
 
             # 带超时的事件消费
             deadline = time.time() + timeout
@@ -444,7 +582,15 @@ class TeamEngine:
 
         try:
             await self.store.complete_execution(
-                exec_id, final_status, result_text, agent_outputs, duration, step_count, error_msg
+                exec_id,
+                final_status,
+                result_text,
+                agent_outputs,
+                duration,
+                step_count,
+                error_msg,
+                total_tokens=usage.total_tokens,
+                usage_json=json.dumps(usage.to_dict(), ensure_ascii=False),
             )
         except Exception as e:
             logger.error("保存执行结果失败: %s", e)
@@ -457,8 +603,18 @@ class TeamEngine:
                 "result": result_text,
                 "duration": round(duration, 1),
                 "steps": step_count,
+                "usage": usage.to_dict(),
             },
         }
+
+        # Scratchpad 清理
+        if use_scratchpad and team_config.get("scratchpad_cleanup", True):
+            try:
+                from modules.agents.teams.scratchpad import cleanup_scratchpad
+
+                cleanup_scratchpad(exec_id)
+            except Exception as e:
+                logger.debug("清理 scratchpad 失败: %s", e)
 
     async def _stream_events(
         self, graph, instruction: str, exec_id: str, team: dict, max_steps: int
@@ -576,6 +732,21 @@ class TeamEngine:
                         "output": output,
                     },
                 }
+
+            # Token 使用统计
+            elif kind == "on_chat_model_end":
+                output_msg = event.get("data", {}).get("output")
+                if output_msg and hasattr(output_msg, "usage_metadata") and output_msg.usage_metadata:
+                    meta = output_msg.usage_metadata
+                    yield {
+                        "event": "_usage_update",
+                        "data": {
+                            "agent": current_agent,
+                            "input_tokens": meta.get("input_tokens", 0),
+                            "output_tokens": meta.get("output_tokens", 0),
+                            "total_tokens": meta.get("total_tokens", 0),
+                        },
+                    }
 
             step += 1
             if step >= max_steps:

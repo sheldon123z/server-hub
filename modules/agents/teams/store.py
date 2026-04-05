@@ -12,6 +12,16 @@ from database import get_db
 logger = logging.getLogger(__name__)
 
 
+class ConcurrentExecutionError(Exception):
+    """同一团队并发执行冲突"""
+
+
+_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "running": {"success", "failed", "timeout", "cancelled"},
+    "pending": {"running", "cancelled"},
+}
+
+
 class TeamStore:
     """团队数据存取层"""
 
@@ -250,17 +260,37 @@ class TeamStore:
         instruction: str,
         username: str,
         topology: str,
+        allow_concurrent: bool = False,
     ) -> dict:
-        """创建执行记录，初始状态为 running"""
+        """创建执行记录，初始状态为 running。
+
+        allow_concurrent=False 时若已有 running 执行则 raise ConcurrentExecutionError。
+        """
         db = await get_db()
         exec_id = str(uuid.uuid4())[:12]
-        await db.execute(
-            "INSERT INTO agent_team_executions "
-            "(id, team_id, instruction, status, topology, started_by) "
-            "VALUES (?, ?, ?, 'running', ?, ?)",
-            (exec_id, team_id, instruction, topology, username),
-        )
-        await db.commit()
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            if not allow_concurrent:
+                cursor = await db.execute(
+                    "SELECT id FROM agent_team_executions WHERE team_id = ? AND status = 'running' LIMIT 1",
+                    (team_id,),
+                )
+                row = await cursor.fetchone()
+                if row:
+                    await db.execute("ROLLBACK")
+                    raise ConcurrentExecutionError(f"团队 {team_id} 已有正在执行的任务 ({row[0]})，请等待完成后再试")
+            await db.execute(
+                "INSERT INTO agent_team_executions "
+                "(id, team_id, instruction, status, topology, started_by) "
+                "VALUES (?, ?, ?, 'running', ?, ?)",
+                (exec_id, team_id, instruction, topology, username),
+            )
+            await db.execute("COMMIT")
+        except ConcurrentExecutionError:
+            raise
+        except Exception:
+            await db.execute("ROLLBACK")
+            raise
         return {
             "id": exec_id,
             "team_id": team_id,
@@ -278,14 +308,32 @@ class TeamStore:
         duration: float,
         steps: int,
         error: str | None = None,
+        total_tokens: int = 0,
+        usage_json: str | None = None,
     ) -> None:
-        """标记执行完成并记录结果"""
+        """标记执行完成并记录结果（含状态机校验）"""
         db = await get_db()
+        cursor = await db.execute(
+            "SELECT status FROM agent_team_executions WHERE id = ?",
+            (exec_id,),
+        )
+        row = await cursor.fetchone()
+        if row:
+            current_status = row[0]
+            allowed = _VALID_TRANSITIONS.get(current_status, set())
+            if status not in allowed:
+                logger.warning(
+                    "非法状态转换 exec_id=%s: %s -> %s，跳过 UPDATE",
+                    exec_id,
+                    current_status,
+                    status,
+                )
+                return
         await db.execute(
             "UPDATE agent_team_executions SET "
             "status = ?, result = ?, agent_outputs = ?, "
-            "duration_seconds = ?, total_steps = ?, error = ?, "
-            "completed_at = CURRENT_TIMESTAMP "
+            "duration_seconds = ?, total_steps = ?, total_tokens = ?, usage_json = ?, "
+            "error = ?, completed_at = CURRENT_TIMESTAMP "
             "WHERE id = ?",
             (
                 status,
@@ -293,6 +341,8 @@ class TeamStore:
                 json.dumps(agent_outputs, ensure_ascii=False),
                 duration,
                 steps,
+                total_tokens,
+                usage_json,
                 error,
                 exec_id,
             ),
