@@ -148,6 +148,7 @@ async def lifespan(app: FastAPI):
             ("心跳监控", _init_heartbeat()),
             ("远程指标采集", _init_remote_scheduler()),
             ("智能体团队", _init_agent_teams()),
+            ("批量操作模板", _init_batch_templates()),
         ]
         for name, _ in task_defs:
             _subsystem_status[name] = "starting"
@@ -311,6 +312,12 @@ async def _init_remote_scheduler():
     from modules.monitoring.scheduler import start_remote_scheduler
 
     await start_remote_scheduler()
+
+
+async def _init_batch_templates():
+    from modules.servers.batch.seed import seed_batch_templates
+
+    await seed_batch_templates()
 
 
 app = FastAPI(title="ServerHub", lifespan=lifespan)

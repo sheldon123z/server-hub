@@ -772,6 +772,54 @@ async def _create_other_tables(db: aiosqlite.Connection):
     await _migrate_assets_composite_pk(db)
 
 
+async def _create_batch_tables(db: aiosqlite.Connection):
+    """Fleet 批量操作任务表"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS batch_jobs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            server_ids TEXT NOT NULL,
+            strategy TEXT DEFAULT 'parallel',
+            rolling_batch_size INTEGER DEFAULT 1,
+            stop_on_failure INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            progress TEXT,
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_batch_jobs_status ON batch_jobs(status, created_at);
+
+        CREATE TABLE IF NOT EXISTS batch_job_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT REFERENCES batch_jobs(id) ON DELETE CASCADE,
+            server_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            output TEXT,
+            error TEXT,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            duration_ms INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_batch_results_job ON batch_job_results(job_id);
+
+        CREATE TABLE IF NOT EXISTS batch_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            strategy TEXT DEFAULT 'parallel',
+            rolling_batch_size INTEGER DEFAULT 1,
+            stop_on_failure INTEGER DEFAULT 0,
+            is_builtin INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+
 async def init_tables(db: aiosqlite.Connection):
     """初始化所有数据库表 — 按领域分组调用子函数"""
     await _create_auth_tables(db)
@@ -781,6 +829,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_server_tables(db)
     await _create_other_tables(db)
     await _create_rbac_tables(db)
+    await _create_batch_tables(db)
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:

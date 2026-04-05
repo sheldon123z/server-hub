@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from auth.dependencies import require_role
+from modules.servers.batch.routes import router as _batch_router
 from modules.servers.schemas import (
     ServerCreateRequest,
     ServerDeployRequest,
@@ -36,6 +37,9 @@ from modules.servers.services import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/servers", tags=["服务器管理"])
+
+# 批量操作子路由（在通配符 /{server_id} 之前注册，避免路由冲突）
+router.include_router(_batch_router, prefix="/batch")
 
 
 # ─── 舰队概览 ───
