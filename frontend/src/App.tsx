@@ -26,6 +26,7 @@ const AgentStudioPage = lazy(() => import('@/pages/agents/AgentStudioPage'))
 const PlaybooksPage = lazy(() => import('@/pages/PlaybooksPage'))
 const ServersPage = lazy(() => import('@/pages/ServersPage'))
 const FleetDashboardPage = lazy(() => import('@/pages/FleetDashboardPage'))
+const BatchOperationPage = lazy(() => import('@/pages/fleet/BatchOperationPage'))
 const TeamsPage = lazy(() => import('@/pages/TeamsPage'))
 const RolesPage = lazy(() => import('@/pages/settings/RolesPage'))
 const AlertsPage = lazy(() => import('@/pages/AlertsPage'))
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/playbooks" element={<PlaybooksPage />} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/fleet" element={<FleetDashboardPage />} />
+          <Route path="/fleet/batch" element={<BatchOperationPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/settings/roles" element={<RolesPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
