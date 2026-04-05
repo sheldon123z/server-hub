@@ -204,7 +204,7 @@ async def get_alert_history(
     count_row = await (
         await db.execute(
             f"SELECT COUNT(*) FROM alert_history h {where}",
-            params,  # noqa: S608
+            params,
         )
     ).fetchone()
     total = count_row[0] if count_row else 0
