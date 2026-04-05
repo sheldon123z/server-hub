@@ -24,6 +24,7 @@ const FALLBACK_ITEMS: SidebarItem[] = [
   { name: 'settings', display_name: '系统设置', icon: 'settings', category: '系统', required_role: 'admin', order: 40 },
   { name: 'audit', display_name: '审计日志', icon: 'list-search', category: '系统', required_role: 'admin', order: 41 },
   { name: 'panel_users', display_name: '面板用户', icon: 'user-cog', category: '系统', required_role: 'admin', order: 42 },
+  { name: 'settings/roles', display_name: '权限管理', icon: 'shield-lock', category: '系统', required_role: 'admin', order: 43 },
 ]
 
 /**
