@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
 import type { AgentRun, InstalledSkill } from '@/types/agent'
 import { ensureArray, ensureRecord } from '@/lib/utils'
+import TabErrorBoundary from '@/components/TabErrorBoundary'
 
 interface DiscoveredSkill {
   path: string
@@ -86,13 +87,41 @@ export default function AgentStudioPage() {
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab />}
-      {tab === 'skills' && <SkillsTab />}
-      {tab === 'install' && <InstallTab />}
-      {tab === 'subagents' && <SubagentsTab />}
-      {tab === 'memory' && <MemoryAndPromptsTab />}
-      {tab === 'runs' && <RunsAndApprovalsTab />}
-      {tab === 'async-tasks' && <AsyncTasksTab />}
+      {tab === 'overview' && (
+        <TabErrorBoundary tabName="Overview">
+          <OverviewTab />
+        </TabErrorBoundary>
+      )}
+      {tab === 'skills' && (
+        <TabErrorBoundary tabName="Skills">
+          <SkillsTab />
+        </TabErrorBoundary>
+      )}
+      {tab === 'install' && (
+        <TabErrorBoundary tabName="Install">
+          <InstallTab />
+        </TabErrorBoundary>
+      )}
+      {tab === 'subagents' && (
+        <TabErrorBoundary tabName="SubAgents">
+          <SubagentsTab />
+        </TabErrorBoundary>
+      )}
+      {tab === 'memory' && (
+        <TabErrorBoundary tabName="Memory & Prompts">
+          <MemoryAndPromptsTab />
+        </TabErrorBoundary>
+      )}
+      {tab === 'runs' && (
+        <TabErrorBoundary tabName="Runs & Approvals">
+          <RunsAndApprovalsTab />
+        </TabErrorBoundary>
+      )}
+      {tab === 'async-tasks' && (
+        <TabErrorBoundary tabName="Async Tasks">
+          <AsyncTasksTab />
+        </TabErrorBoundary>
+      )}
     </div>
   )
 }
