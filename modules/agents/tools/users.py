@@ -1,9 +1,9 @@
 """用户资源与管理工具"""
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="users:read", icon="User", label="用户资源")
 async def get_user_resources(server_id: str = "local") -> str:
     """获取所有用户的资源使用情况：内存、进程数、GPU显存。
 
@@ -36,7 +36,7 @@ async def get_user_resources(server_id: str = "local") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="users:read", icon="Gauge", label="用户配额")
 def get_user_quotas() -> str:
     """获取所有用户资源配额配置。"""
     from modules.users.services import read_quotas
@@ -50,7 +50,7 @@ def get_user_quotas() -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="users:write", icon="Settings", label="更新配额")
 def update_user_quotas(key: str, mem_gb: int, proc_limit: int, comment: str = "") -> str:
     """修改用户资源配额。
 
@@ -78,7 +78,7 @@ def update_user_quotas(key: str, mem_gb: int, proc_limit: int, comment: str = ""
     return f"配额已更新: {key} → 内存 {mem_gb}GB, 进程 {proc_limit}"
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="users:write", icon="XOctagon", label="终止用户所有进程")
 async def kill_user_processes(username: str, server_id: str = "local") -> str:
     """终止指定用户的所有进程。不能终止管理员用户的进程。
 
@@ -102,7 +102,7 @@ async def kill_user_processes(username: str, server_id: str = "local") -> str:
     return f"操作失败: {result.get('error', '未知错误')}"
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="users:read", icon="Clock", label="登录历史")
 def get_user_login_history_tool(username: str = "", count: int = 10) -> str:
     """查询 Linux 用户登录历史。"""
     from modules.users.services import get_user_login_history
@@ -117,7 +117,7 @@ def get_user_login_history_tool(username: str = "", count: int = 10) -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="users:read", icon="Users", label="活跃会话")
 def get_active_sessions_tool() -> str:
     """获取当前服务器上的活跃登录会话。"""
     from modules.users.services import get_active_sessions
@@ -132,7 +132,7 @@ def get_active_sessions_tool() -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="users:write", icon="UserCog", label="管理Linux用户")
 def manage_linux_user(action: str, username: str, groups: str = "", shell: str = "/bin/bash") -> str:
     """管理 Linux 用户：创建、删除或修改。"""
     from modules.users.services import create_linux_user, delete_linux_user, modify_linux_user
@@ -150,7 +150,7 @@ def manage_linux_user(action: str, username: str, groups: str = "", shell: str =
     return f"操作失败: {result['error']}"
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="users:write", icon="XCircle", label="终止进程")
 def kill_single_process_tool(pid: int, username: str) -> str:
     """终止指定用户的单个进程。"""
     from modules.users.services import kill_single_process
@@ -161,7 +161,7 @@ def kill_single_process_tool(pid: int, username: str) -> str:
     return f"终止失败: {result['error']}"
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="users:read", icon="List", label="用户进程")
 def get_user_full_processes(username: str) -> str:
     """获取指定用户的完整进程列表，包含 PID、命令、CPU%、内存、运行时长。"""
     from modules.users.services import get_user_processes
@@ -179,7 +179,7 @@ def get_user_full_processes(username: str) -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="users:read", icon="AlertTriangle", label="配额违规检查")
 def check_quota_violations() -> str:
     """检查所有用户的配额使用情况，返回超配额和接近配额的用户列表。"""
     from modules.users.services import get_quota_status

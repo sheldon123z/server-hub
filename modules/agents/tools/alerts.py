@@ -1,9 +1,9 @@
 """告警管理工具"""
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="alerts:read", icon="Bell", label="活跃告警")
 async def list_active_alerts(server_id: str = "local") -> str:
     """列出当前所有活跃（firing）告警。
 
@@ -26,7 +26,7 @@ async def list_active_alerts(server_id: str = "local") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="alerts:write", icon="BellOff", label="确认告警")
 async def acknowledge_alert(alert_id: int, username: str = "agent") -> str:
     """确认（acknowledge）一条活跃告警。
 

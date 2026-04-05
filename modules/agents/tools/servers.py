@@ -2,10 +2,10 @@
 
 import json
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="servers:read", icon="Server", label="服务器列表")
 async def server_list() -> str:
     """列出所有已注册的服务器，包括状态和基本信息。
 
@@ -28,7 +28,7 @@ async def server_list() -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="servers:read", icon="Wifi", label="连通性测试")
 async def server_test_connectivity(server_id: str) -> str:
     """测试指定服务器的连通性（Ping + SSH + Agent API）。
 

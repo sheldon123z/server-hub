@@ -1,11 +1,10 @@
 """Systemd 服务管理工具"""
 
-from langchain_core.tools import tool
-
 from config import settings
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="services:read", icon="Server", label="服务列表")
 async def list_systemd_services(server_id: str = "local") -> str:
     """列出所有管理的 systemd 服务及其状态。
 
@@ -36,7 +35,7 @@ async def list_systemd_services(server_id: str = "local") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="services:read", icon="FileText", label="服务日志")
 async def get_service_logs(name: str, lines: int = 50, server_id: str = "local") -> str:
     """获取指定 systemd 服务的日志。
 
@@ -65,7 +64,7 @@ async def get_service_logs(name: str, lines: int = 50, server_id: str = "local")
     return f"## {name} 日志\n```\n{journal[-3000:]}\n```"
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="services:write", icon="Settings", label="服务控制")
 async def service_control(name: str, action: str, server_id: str = "local") -> str:
     """管理 systemd 服务。
 
@@ -94,7 +93,7 @@ async def service_control(name: str, action: str, server_id: str = "local") -> s
     return f"服务 {name} 已执行 {action}。{result}"
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="services:write", icon="ToggleLeft", label="自启管理")
 async def service_enable_disable_tool(name: str, action: str) -> str:
     """启用或禁用 systemd 服务的自启动。"""
     from modules.services.services import service_enable_disable
@@ -107,7 +106,7 @@ async def service_enable_disable_tool(name: str, action: str) -> str:
         return f"操作失败: {e}"
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="services:read", icon="GitBranch", label="服务依赖")
 async def get_service_dependencies_tool(name: str) -> str:
     """获取 systemd 服务的依赖关系树。"""
     from modules.services.services import service_dependencies

@@ -9,10 +9,10 @@
 import json
 from typing import Literal
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="core:interaction", icon="HelpCircle", label="结构化澄清")
 def ask_clarification(
     question: str,
     clarification_type: Literal[

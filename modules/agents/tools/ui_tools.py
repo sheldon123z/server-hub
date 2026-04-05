@@ -5,10 +5,10 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="ui:render", icon="BarChart2", label="渲染图表")
 def render_chart(
     title: str,
     chart_type: Literal["line", "bar", "pie", "gauge", "heatmap"],
@@ -43,7 +43,7 @@ def render_chart(
     }
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="ui:render", icon="Table", label="渲染表格")
 def render_table(
     title: str,
     columns: list[dict],
@@ -91,7 +91,7 @@ def render_table(
     }
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="ui:render", icon="FormInput", label="渲染表单")
 def render_form(
     title: str,
     fields: list[dict],
@@ -124,7 +124,7 @@ def render_form(
     }
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="ui:render", icon="CreditCard", label="渲染卡片")
 def render_card(
     title: str,
     status: Literal["healthy", "warning", "error", "unknown"],

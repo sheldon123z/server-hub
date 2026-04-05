@@ -5,7 +5,7 @@ import json
 import logging
 import re
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def _check_ssh_command_safety(cmd: str) -> str | None:
     return None
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="playbook:execute", icon="Terminal", label="SSH执行")
 async def ssh_execute_command(
     host: str,
     username: str,
@@ -117,7 +117,7 @@ async def ssh_execute_command(
     return f"# SSH 执行结果 ({host})\n\n" + "\n".join(results)
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="playbook:write", icon="FilePlus", label="创建剧本")
 async def playbook_create(
     id: str,
     name: str,
@@ -170,7 +170,7 @@ async def playbook_create(
         return f"创建失败: {e}"
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="playbook:execute", icon="Play", label="执行剧本")
 async def playbook_execute(playbook_id: str, parameters: str = "{}") -> str:
     """Execute a saved ops playbook with the given parameters.
 
@@ -195,7 +195,7 @@ async def playbook_execute(playbook_id: str, parameters: str = "{}") -> str:
         return f"执行出错: {e}"
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="playbook:read", icon="List", label="剧本列表")
 async def playbook_list(category: str = "") -> str:
     """List available ops playbooks, optionally filtered by category.
 
@@ -214,7 +214,7 @@ async def playbook_list(category: str = "") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="playbook:read", icon="Search", label="剧本搜索")
 async def playbook_search(keyword: str) -> str:
     """Search playbooks by keyword in name, description, or tags.
 

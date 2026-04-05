@@ -1,11 +1,10 @@
 """Docker 容器管理工具"""
 
-from langchain_core.tools import tool
-
 from config import settings
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="docker:read", icon="Box", label="容器列表")
 async def list_docker_containers(server_id: str = "local") -> str:
     """列出所有 Docker 容器及其运行状态。
 
@@ -37,7 +36,7 @@ async def list_docker_containers(server_id: str = "local") -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="docker:read", icon="FileText", label="容器日志")
 async def get_container_logs(name: str, tail: int = 50, server_id: str = "local") -> str:
     """获取指定 Docker 容器的最近日志。
 
@@ -66,7 +65,7 @@ async def get_container_logs(name: str, tail: int = 50, server_id: str = "local"
     return f"## {name} 日志 (最后{tail}行)\n```\n{logs[-3000:]}\n```"
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="docker:write", icon="Play", label="容器操作")
 async def docker_container_action(name: str, action: str, server_id: str = "local") -> str:
     """对 Docker 容器执行操作。
 
@@ -93,7 +92,7 @@ async def docker_container_action(name: str, action: str, server_id: str = "loca
     return f"容器 {name} 已执行 {action}。{result}"
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="docker:write", icon="Layers", label="Compose操作")
 async def docker_compose_action(stack_name: str, action: str) -> str:
     """对 Docker Compose 堆栈执行操作。
 
@@ -111,7 +110,7 @@ async def docker_compose_action(stack_name: str, action: str) -> str:
     return f"堆栈 {stack_name} 已执行 {action}。{result}"
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="docker:read", icon="Network", label="网络列表")
 async def list_docker_networks() -> str:
     """列出 Docker 网络，包含名称、驱动和范围。"""
     from modules.docker.services import list_networks
@@ -125,7 +124,7 @@ async def list_docker_networks() -> str:
     return "\n".join(lines)
 
 
-@tool
+@register_tool(risk=RiskLevel.MODERATE, group="docker:write", icon="Terminal", label="容器命令")
 async def docker_container_exec(container_name: str, command: str) -> str:
     """在运行中的 Docker 容器内执行命令。"""
     from modules.docker.services import container_exec
@@ -137,7 +136,7 @@ async def docker_container_exec(container_name: str, command: str) -> str:
         return f"执行失败: {e}"
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="docker:write", icon="Trash2", label="资源清理")
 async def docker_prune(resource_type: str = "all") -> str:
     """清理未使用的 Docker 资源。此操作不可逆。"""
     from modules.docker.services import prune_resources

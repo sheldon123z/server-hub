@@ -1,9 +1,9 @@
 """运维脚本桥接工具"""
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.DANGER, group="scripts:execute", icon="FileCode", label="执行运维脚本")
 async def execute_ops_script(script_key: str, args: list[str] | None = None) -> str:
     """执行注册的运维管理脚本。
 

@@ -1,9 +1,9 @@
 """页面上下文数据查询工具"""
 
-from langchain_core.tools import tool
+from modules.agents.tools.registry import RiskLevel, register_tool
 
 
-@tool
+@register_tool(risk=RiskLevel.SAFE, group="core:context", icon="Layout", label="页面数据")
 async def get_page_data(page_name: str) -> str:
     """获取指定页面的实时数据摘要。当用户从页面内气泡对话框提问时，用此工具获取该页面的最新数据。
 
