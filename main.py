@@ -105,6 +105,18 @@ async def lifespan(app: FastAPI):
     # ── 关键路径（必须在服务 ready 前完成） ──
     await get_db()
     await ensure_admin()
+
+    # RBAC: 初始化内置角色 + 迁移旧 role 字段
+    try:
+        from modules.rbac.seed import seed_builtin_roles
+        from modules.rbac.services import migrate_legacy_roles
+
+        _rbac_db = await get_db()
+        await seed_builtin_roles(_rbac_db)
+        await migrate_legacy_roles(_rbac_db)
+    except Exception as _e:
+        logger.warning("[ServerHub] RBAC 初始化失败: %s", _e)
+
     modules = discover_modules()
     for m in modules:
         app.include_router(m["router"])
