@@ -34,7 +34,7 @@ interface ApprovalItem {
   created_at: string
 }
 
-type StudioTab = 'overview' | 'skills' | 'install' | 'subagents' | 'memory' | 'runs'
+type StudioTab = 'overview' | 'skills' | 'install' | 'subagents' | 'memory' | 'runs' | 'async-tasks'
 
 const TABS: Array<{ id: StudioTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -43,6 +43,7 @@ const TABS: Array<{ id: StudioTab; label: string }> = [
   { id: 'subagents', label: 'SubAgents' },
   { id: 'memory', label: 'Memory & Prompts' },
   { id: 'runs', label: 'Runs & Approvals' },
+  { id: 'async-tasks', label: 'Async Tasks' },
 ]
 
 function TabButton({
@@ -91,6 +92,7 @@ export default function AgentStudioPage() {
       {tab === 'subagents' && <SubagentsTab />}
       {tab === 'memory' && <MemoryAndPromptsTab />}
       {tab === 'runs' && <RunsAndApprovalsTab />}
+      {tab === 'async-tasks' && <AsyncTasksTab />}
     </div>
   )
 }
@@ -825,6 +827,146 @@ function RunsAndApprovalsTab() {
           ))}
           {approvals.length === 0 && <EmptyState text="当前没有待处理审批。" />}
         </div>
+      </section>
+    </div>
+  )
+}
+
+interface AsyncTask {
+  id: string
+  task_type: string
+  instruction: string
+  status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+  created_at: string
+  completed_at: string | null
+  result?: string
+}
+
+const ASYNC_TASK_STATUS_STYLES: Record<string, string> = {
+  pending: 'bg-yellow/10 text-yellow',
+  running: 'bg-accent/10 text-accent',
+  done: 'bg-green/10 text-green',
+  failed: 'bg-red/10 text-red',
+  cancelled: 'bg-text3/10 text-text3',
+}
+
+function AsyncTasksTab() {
+  const qc = useQueryClient()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const { data: tasks = [], isFetching } = useQuery({
+    queryKey: ['async-tasks'],
+    queryFn: () => client.get('/api/agents/async-tasks').then((r) => ensureArray<AsyncTask>(r.data)),
+    refetchInterval: 10_000,
+  })
+
+  const { data: detail } = useQuery({
+    queryKey: ['async-task-detail', selectedId],
+    queryFn: () => client.get(`/api/agents/async-tasks/${selectedId}`).then((r) => r.data as AsyncTask),
+    enabled: !!selectedId,
+    refetchInterval: selectedId ? 5_000 : false,
+  })
+
+  const cancelMut = useMutation({
+    mutationFn: (id: string) => client.delete(`/api/agents/async-tasks/${id}`),
+    onSuccess: () => {
+      toast.success('任务已取消')
+      qc.invalidateQueries({ queryKey: ['async-tasks'] })
+      qc.invalidateQueries({ queryKey: ['async-task-detail', selectedId] })
+    },
+    onError: () => toast.error('取消失败'),
+  })
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section className="rounded-xl border border-border bg-bg p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-medium text-text">后台异步任务</div>
+          {isFetching && <div className="animate-pulse text-[10px] text-text3">刷新中...</div>}
+        </div>
+        <div className="space-y-2">
+          {tasks.map((t) => (
+            <div
+              key={t.id}
+              onClick={() => setSelectedId(t.id === selectedId ? null : t.id)}
+              className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                selectedId === t.id ? 'border-accent/50 bg-bg2' : 'border-border hover:bg-bg2'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                    ASYNC_TASK_STATUS_STYLES[t.status] ?? 'bg-text3/10 text-text3'
+                  }`}
+                >
+                  {t.status}
+                </span>
+                <span className="font-mono text-[10px] text-text3">{t.task_type}</span>
+              </div>
+              <div className="mt-1 truncate text-xs text-text2" title={t.instruction}>
+                {t.instruction}
+              </div>
+              <div className="mt-1 text-[10px] text-text3">{t.created_at}</div>
+            </div>
+          ))}
+          {tasks.length === 0 && <EmptyState text="暂无异步任务。" />}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-bg p-4">
+        <div className="mb-3 text-sm font-medium text-text">任务详情</div>
+        {detail ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span
+                className={`rounded px-2 py-0.5 text-xs font-medium ${
+                  ASYNC_TASK_STATUS_STYLES[detail.status] ?? ''
+                }`}
+              >
+                {detail.status}
+              </span>
+              {(detail.status === 'pending' || detail.status === 'running') && (
+                <button
+                  type="button"
+                  onClick={() => cancelMut.mutate(detail.id)}
+                  disabled={cancelMut.isPending}
+                  className="rounded bg-red/10 px-2 py-1 text-xs text-red transition-colors hover:bg-red/20 disabled:opacity-50"
+                >
+                  取消任务
+                </button>
+              )}
+            </div>
+            <div className="space-y-1 text-xs text-text3">
+              <div>
+                <span className="text-text2">类型:</span> {detail.task_type}
+              </div>
+              <div>
+                <span className="text-text2">创建:</span> {detail.created_at}
+              </div>
+              {detail.completed_at && (
+                <div>
+                  <span className="text-text2">完成:</span> {detail.completed_at}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-text3">指令</div>
+              <pre className="whitespace-pre-wrap break-all rounded bg-bg2 p-2 font-mono text-xs text-text2">
+                {detail.instruction}
+              </pre>
+            </div>
+            {detail.result && (
+              <div>
+                <div className="mb-1 text-xs text-text3">结果</div>
+                <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-all rounded bg-bg2 p-2 font-mono text-xs text-text2">
+                  {detail.result}
+                </pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <EmptyState text="点击左侧任务查看详情。" />
+        )}
       </section>
     </div>
   )
