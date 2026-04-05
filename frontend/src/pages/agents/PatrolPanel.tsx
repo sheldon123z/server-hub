@@ -898,6 +898,45 @@ function ReportsView() {
   )
 }
 
+function CreateCaseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ title: '', category: '', symptoms: '', root_cause: '', solution: '', tags: '' })
+  const mutation = useMutation({
+    mutationFn: (data: typeof form) => client.post('/api/agents/fault-cases', data),
+    onSuccess: () => { toast.success('案例已创建'); onSaved(); onClose() },
+    onError: () => toast.error('创建失败'),
+  })
+  const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }))
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-xl w-full max-w-lg p-6 space-y-3">
+        <h2 className="text-sm font-semibold text-text">新建故障案例</h2>
+        {(['title', 'category', 'symptoms', 'root_cause', 'solution', 'tags'] as const).map(field => (
+          <div key={field}>
+            <label className="block text-xs text-text3 mb-1 capitalize">{field.replace('_', ' ')}</label>
+            <input
+              className="w-full bg-bg border border-border rounded px-2 py-1.5 text-xs text-text"
+              value={form[field]}
+              onChange={e => set(field, e.target.value)}
+              placeholder={field === 'title' ? '必填' : '可选'}
+            />
+          </div>
+        ))}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs text-text3 border border-border rounded-lg hover:text-text">取消</button>
+          <button
+            onClick={() => mutation.mutate(form)}
+            disabled={mutation.isPending || !form.title}
+            className="px-3 py-1.5 text-xs bg-accent text-white rounded-lg disabled:opacity-50"
+          >
+            {mutation.isPending ? '创建中...' : '创建'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Cases View ────────────────────────────────────── */
 
 interface FaultCase {
@@ -914,95 +953,132 @@ interface FaultCase {
 }
 
 function CasesView() {
+  const qc = useQueryClient()
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
 
   const { data: cases = [] } = useQuery({
     queryKey: ['fault-cases', query],
     queryFn: () => client.get('/api/agents/fault-cases', { params: { q: query } }).then((r) => ensureArray<FaultCase>(r.data)),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => client.delete(`/api/agents/fault-cases/${id}`),
+    onSuccess: (_d, id) => {
+      toast.success('案例已删除')
+      qc.invalidateQueries({ queryKey: ['fault-cases'] })
+      if (selectedId === id) setSelectedId(null)
+    },
+    onError: () => toast.error('删除失败'),
+  })
+
   const selected = cases.find((c) => c.id === selectedId) ?? null
 
   return (
-    <div className="flex h-full">
-      <div className="w-[200px] border-r border-border flex flex-col shrink-0">
-        <div className="p-2 border-b border-border shrink-0">
-          <input
-            className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text placeholder:text-text3 focus:border-accent focus:outline-none"
-            placeholder="搜索案例..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {cases.map((c) => (
+    <>
+      {showCreate && (
+        <CreateCaseModal
+          onClose={() => setShowCreate(false)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['fault-cases'] })}
+        />
+      )}
+      <div className="flex h-full">
+        <div className="w-[200px] border-r border-border flex flex-col shrink-0">
+          <div className="p-2 border-b border-border shrink-0 space-y-1">
+            <input
+              className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text placeholder:text-text3 focus:border-accent focus:outline-none"
+              placeholder="搜索案例..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
             <button
-              key={c.id}
-              className={cn(
-                'w-full text-left px-3 py-2.5 border-b border-border text-xs transition-colors',
-                selectedId === c.id ? 'bg-card' : 'hover:bg-bg2',
-              )}
-              onClick={() => setSelectedId(c.id)}
+              onClick={() => setShowCreate(true)}
+              className="w-full py-1 text-xs bg-accent/10 hover:bg-accent/20 text-accent rounded transition-colors"
             >
-              <div className="text-text font-medium truncate">{c.title}</div>
-              <div className="text-text3 mt-0.5 flex items-center gap-2">
-                <span className="px-1 rounded bg-accent-dim text-accent text-[9px]">{c.category || '通用'}</span>
-                <span className="text-[10px]">{c.source === 'auto' ? '自动' : '手动'}</span>
-              </div>
+              + 新建案例
             </button>
-          ))}
-          {cases.length === 0 && (
-            <div className="text-text3 text-xs p-3 text-center">暂无案例</div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {cases.map((c) => (
+              <div
+                key={c.id}
+                className={cn(
+                  'group border-b border-border text-xs',
+                  selectedId === c.id ? 'bg-card' : 'hover:bg-bg2',
+                )}
+              >
+                <button className="w-full text-left px-3 py-2.5 transition-colors" onClick={() => setSelectedId(c.id)}>
+                  <div className="text-text font-medium truncate">{c.title}</div>
+                  <div className="text-text3 mt-0.5 flex items-center gap-2">
+                    <span className="px-1 rounded bg-accent-dim text-accent text-[9px]">{c.category || '通用'}</span>
+                    <span className="text-[10px]">{c.source === 'auto' ? '自动' : '手动'}</span>
+                  </div>
+                </button>
+                {c.source !== 'auto' && (
+                  <div className="px-3 pb-1.5 hidden group-hover:block">
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`删除「${c.title}」？`)) deleteMut.mutate(c.id)
+                      }}
+                      className="text-[10px] text-red hover:underline"
+                    >
+                      删除
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {cases.length === 0 && (
+              <div className="text-text3 text-xs p-3 text-center">暂无案例</div>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {selected ? (
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-text">{selected.title}</h3>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-1.5 py-0.5 rounded bg-accent-dim text-accent text-[10px]">
+                  {selected.category || '通用'}
+                </span>
+                <span className={cn(
+                  'px-1.5 py-0.5 rounded text-[10px]',
+                  selected.source === 'auto' ? 'bg-yellow/15 text-yellow' : 'bg-green/15 text-green',
+                )}>
+                  {selected.source === 'auto' ? '自动生成' : '手动录入'}
+                </span>
+                {(selected.tags || '').split(',').filter(Boolean).map((tag) => (
+                  <span key={tag} className="px-1.5 py-0.5 rounded bg-accent-dim text-accent text-[9px]">
+                    {tag.trim()}
+                  </span>
+                ))}
+              </div>
+              {selected.symptoms && (
+                <FaultSection title="症状描述">
+                  <p className="text-xs text-text2">{selected.symptoms}</p>
+                </FaultSection>
+              )}
+              {selected.root_cause && (
+                <FaultSection title="根本原因">
+                  <p className="text-xs text-text2">{selected.root_cause}</p>
+                </FaultSection>
+              )}
+              {selected.solution && (
+                <FaultSection title="解决方案">
+                  <p className="text-xs text-text2">{selected.solution}</p>
+                </FaultSection>
+              )}
+              <div className="text-[10px] text-text3 mt-2">
+                创建于: {formatDate(selected.created_at)}
+              </div>
+            </div>
+          ) : (
+            <div className="text-text3 text-xs text-center pt-10">搜索或选择一个案例查看详情</div>
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {selected ? (
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-text">{selected.title}</h3>
-            {/* Badges: category, source, tags */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-1.5 py-0.5 rounded bg-accent-dim text-accent text-[10px]">
-                {selected.category || '通用'}
-              </span>
-              <span className={cn(
-                'px-1.5 py-0.5 rounded text-[10px]',
-                selected.source === 'auto' ? 'bg-yellow/15 text-yellow' : 'bg-green/15 text-green',
-              )}>
-                {selected.source === 'auto' ? '自动生成' : '手动录入'}
-              </span>
-              {(selected.tags || '').split(',').filter(Boolean).map((tag) => (
-                <span key={tag} className="px-1.5 py-0.5 rounded bg-accent-dim text-accent text-[9px]">
-                  {tag.trim()}
-                </span>
-              ))}
-            </div>
-            {/* Detailed fields */}
-            {selected.symptoms && (
-              <FaultSection title="症状描述">
-                <p className="text-xs text-text2">{selected.symptoms}</p>
-              </FaultSection>
-            )}
-            {selected.root_cause && (
-              <FaultSection title="根本原因">
-                <p className="text-xs text-text2">{selected.root_cause}</p>
-              </FaultSection>
-            )}
-            {selected.solution && (
-              <FaultSection title="解决方案">
-                <p className="text-xs text-text2">{selected.solution}</p>
-              </FaultSection>
-            )}
-            <div className="text-[10px] text-text3 mt-2">
-              创建于: {formatDate(selected.created_at)}
-            </div>
-          </div>
-        ) : (
-          <div className="text-text3 text-xs text-center pt-10">搜索或选择一个案例查看详情</div>
-        )}
-      </div>
-    </div>
+    </>
   )
 }
 
