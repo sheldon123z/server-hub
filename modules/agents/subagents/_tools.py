@@ -100,8 +100,12 @@ def _get_tools_by_names(names: list[str]) -> list:
     return result
 
 
+from ._shared_context import read_shared_findings, share_finding
+
 TOOL_REGISTRY = {
     "web_search": web_search,
     "think": think,
     "fetch_webpage_content": fetch_webpage_content,
+    "share_finding": share_finding,
+    "read_shared_findings": read_shared_findings,
 }

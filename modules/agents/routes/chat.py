@@ -322,7 +322,9 @@ async def _run_agent(
 
     try:
         from modules.agents.deep_agent import build_agent
+        from modules.agents.subagents import set_conversation_id
 
+        set_conversation_id(conversation_id)
         agent = await build_agent(safety_mode=safety_mode, user_role=user_role)
         config = {"configurable": {"thread_id": conversation_id}}
         input_messages = [{"role": "user", "content": message}]

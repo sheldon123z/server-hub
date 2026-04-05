@@ -1,5 +1,6 @@
 """SubAgent 定义 — 深度研究员"""
 
+from ._shared_context import read_shared_findings, share_finding
 from ._tools import fetch_webpage_content, think, web_search
 
 PROMPT = """\
@@ -55,7 +56,7 @@ DEFINITION = {
         "Delegate for technical docs, error solutions, CVE advisories, and Linux/Docker troubleshooting."
     ),
     "system_prompt": PROMPT,
-    "tools_fn": lambda: [web_search, fetch_webpage_content, think],
+    "tools_fn": lambda: [web_search, fetch_webpage_content, think, share_finding, read_shared_findings],
     "model_purpose": "fast",
     "middleware_profile": "light",
 }

@@ -1,5 +1,6 @@
 """SubAgent 定义 — 安全审计员"""
 
+from ._shared_context import read_shared_findings, share_finding
 from ._tools import _get_tools_by_names
 
 PROMPT = """\
@@ -35,7 +36,11 @@ DEFINITION = {
         "against security baselines. Delegate for security assessments and compliance checks."
     ),
     "system_prompt": PROMPT,
-    "tools_fn": lambda: _get_tools_by_names(["get_system_overview", "check_compliance"]),
+    "tools_fn": lambda: [
+        *_get_tools_by_names(["get_system_overview", "check_compliance"]),
+        share_finding,
+        read_shared_findings,
+    ],
     "model_purpose": "expert",
     "middleware_profile": "ops",
 }
