@@ -167,6 +167,20 @@ export function useSSEChat() {
         if (data.run_id) {
           store.setCurrentRunId(data.run_id as string)
         }
+        // 技能加载卡片：/skill:xxx 手动触发时，后端在 run.started 中携带 skill_id
+        if (data.skill_id && data.skill_name) {
+          store.pushMsg({
+            role: 'skill_loaded',
+            content: '',
+            skillInfo: {
+              skillId: data.skill_id as string,
+              name: data.skill_name as string,
+              description: (data.skill_description as string) ?? '',
+              allowedTools: (data.skill_tools as string[]) ?? [],
+              trigger: 'command',
+            },
+          })
+        }
         break
 
       case 'message.final':
@@ -198,6 +212,24 @@ export function useSSEChat() {
       case 'tool_call': {
         const toolName = (data.tool as string) ?? (data.name as string)
         const toolArgs = (data.input as Record<string, unknown>) ?? (data.args as Record<string, unknown>)
+        // 检测 agent 自动加载技能: read_file("*/skills/*/SKILL.md")
+        if (toolName === 'read_file' && typeof toolArgs?.file_path === 'string') {
+          const fp = toolArgs.file_path as string
+          const skillMatch = fp.match(/\/skills\/(?:.*\/)?([^/]+)\/SKILL\.md$/)
+          if (skillMatch) {
+            store.pushMsg({
+              role: 'skill_loaded',
+              content: '',
+              skillInfo: {
+                skillId: skillMatch[1],
+                name: skillMatch[1],
+                description: '',
+                trigger: 'auto',
+              },
+            })
+            break // 不再显示为普通 tool_call
+          }
+        }
         store.pushMsg({
           role: 'tool_call',
           tool: toolName,

@@ -1,3 +1,14 @@
+---
+name: fleet-investigator
+description: "面向多服务器对比、远程排障和舰队差异分析的技能。\n  触发场景：fleet、多台、服务器对比、远程、节点、集群"
+allowed-tools: server_list server_test_connectivity
+metadata:
+  version: 0.1.0
+  allowed-roles: admin user
+  capabilities: fleet-analysis remote-diagnosis
+  page-contexts: fleet servers
+  owner: shared
+---
 # Fleet Investigator
 
 适用于多服务器健康对比、某台远程节点异常、舰队容量和差异定位。

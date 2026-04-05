@@ -21,6 +21,7 @@ import { SubAgentIndicator } from './SubAgentIndicator'
 import { TodoPanel } from './TodoPanel'
 import { SlashCommandMenu, type SlashCommandMenuHandle, generateHelpText } from './SlashCommandMenu'
 import { ArtifactCard } from './ArtifactCard'
+import { SkillLoadedCard } from './SkillLoadedCard'
 
 function pageContextFromPath(pathname: string): string {
   const seg = pathname.replace(/^\//, '').split('/')[0]
@@ -143,6 +144,15 @@ export function ChatPanel() {
 
   function renderProcessedMessage(pm: ProcessedMessage) {
     const { message: msg } = pm
+
+    // Skill loaded card
+    if (msg.role === 'skill_loaded' && msg.skillInfo) {
+      return (
+        <div key={msg._id} className="px-3">
+          <SkillLoadedCard skillInfo={msg.skillInfo} />
+        </div>
+      )
+    }
 
     // User or assistant message
     if (msg.role === 'user' || msg.role === 'assistant') {

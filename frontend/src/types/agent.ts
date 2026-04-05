@@ -1,4 +1,4 @@
-export type MessageRole = 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'approval' | 'ui_component'
+export type MessageRole = 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'approval' | 'ui_component' | 'skill_loaded'
 
 export interface ChatMessage {
   _id: string
@@ -10,6 +10,14 @@ export interface ChatMessage {
   description?: string
   actions?: Array<{ name: string; args: Record<string, unknown> }>
   _serverId?: string
+  /** 技能加载信息 */
+  skillInfo?: {
+    skillId: string
+    name: string
+    description: string
+    allowedTools?: string[]
+    trigger: 'command' | 'auto'
+  }
 }
 
 export interface AgentRunSummary {

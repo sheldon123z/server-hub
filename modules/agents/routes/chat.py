@@ -523,13 +523,26 @@ async def _sse_consumer(run_id: str, conversation_id: str, run_created_at: str, 
     bridge = get_stream_bridge()
 
     # 先 yield run.started 事件（立即返回给客户端）
-    started_payload = {
+    started_payload: dict = {
         "run_id": run_id,
         "conversation_id": conversation_id,
         "status": "running",
         "created_at": run_created_at,
         "skill_id": skill_id,
     }
+    # 技能加载信息：前端用于渲染技能卡片
+    if skill_id:
+        try:
+            from modules.agents.skill_service import get_skill
+
+            skill_info = await get_skill(skill_id)
+            if skill_info:
+                manifest = skill_info.get("manifest", {})
+                started_payload["skill_name"] = skill_info.get("name", skill_id)
+                started_payload["skill_description"] = skill_info.get("description", manifest.get("description", ""))
+                started_payload["skill_tools"] = manifest.get("allowed-tools", "").split()
+        except Exception:  # noqa: S110 — 非致命，降级为只传 skill_id
+            pass
     yield {"event": "run.started", "data": json.dumps(started_payload, ensure_ascii=False)}
 
     async for entry in bridge.subscribe(run_id):

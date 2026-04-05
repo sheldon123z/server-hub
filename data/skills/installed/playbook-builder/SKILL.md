@@ -1,3 +1,14 @@
+---
+name: playbook-builder
+description: 将高频运维对话沉淀为可复用剧本或 skill 草稿的技能。
+allowed-tools: playbook_create playbook_list playbook_search
+metadata:
+  version: 0.1.0
+  allowed-roles: admin
+  capabilities: playbook-authoring automation
+  page-contexts: agents playbooks
+  owner: shared
+---
 # Playbook Builder
 
 适用于重复性的运维操作、人工巡检流程和需要标准化的排障路径。

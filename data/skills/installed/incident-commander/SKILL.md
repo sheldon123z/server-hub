@@ -1,3 +1,14 @@
+---
+name: incident-commander
+description: 面向异常、告警和故障处理的指挥技能，优先组织诊断、风险评估与处置顺序。
+allowed-tools: get_system_overview analyze_resource_trend search_fault_cases
+metadata:
+  version: 0.1.0
+  allowed-roles: admin user
+  capabilities: diagnosis triage incident-command
+  page-contexts: dashboard monitoring notifications
+  owner: shared
+---
 # Incident Commander
 
 适用于系统异常、监控告警、服务波动和需要快速判断优先级的场景。
