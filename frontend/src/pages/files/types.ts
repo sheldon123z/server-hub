@@ -39,3 +39,31 @@ export interface SearchResponse {
   results: SearchResult[]
   total: number
 }
+
+export interface GrepResult {
+  file: string
+  line_no: number
+  content: string
+}
+
+export interface GrepResponse {
+  path: string
+  pattern: string
+  results: GrepResult[]
+  total: number
+}
+
+export interface FileStat {
+  path: string
+  name: string
+  size: number
+  permissions: string
+  octal_permissions: string
+  owner: string
+  group: string
+  mtime: number
+  ctime: number
+  is_dir: boolean
+  is_symlink: boolean
+  symlink_target: string | null
+}

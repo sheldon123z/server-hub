@@ -1,8 +1,9 @@
 /**
  * FilePreview — 文件预览面板：代码高亮 / Markdown / 图片 / 日志自动滚底
+ * 文件详情面板展示权限、所有者、修改时间等元信息（via /api/files/stat）
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -21,7 +22,7 @@ import remarkGfm from 'remark-gfm'
 import client from '@/api/client'
 import { formatBytes } from '@/lib/utils'
 import { getLanguage, isMarkdown, isImage } from '@/lib/file-utils'
-import type { FileEntry, ReadResponse } from './types'
+import type { FileEntry, ReadResponse, FileStat } from './types'
 
 SyntaxHighlighter.registerLanguage('bash', bash)
 SyntaxHighlighter.registerLanguage('shell', bash)
@@ -50,6 +51,7 @@ interface FilePreviewProps {
 
 export function FilePreview({ entry, onEdit, onClose }: FilePreviewProps) {
   const logRef = useRef<HTMLPreElement>(null)
+  const [showStat, setShowStat] = useState(false)
   const ext = entry.name.split('.').pop()?.toLowerCase() ?? ''
   const isLog = LOG_EXTS.has(ext)
   const image = isImage(entry.name)
@@ -63,6 +65,16 @@ export function FilePreview({ entry, onEdit, onClose }: FilePreviewProps) {
         .get<ReadResponse>('/api/files/read', { params: { path: entry.path } })
         .then((r) => r.data),
     enabled: !image && !tooLarge,
+  })
+
+  const { data: statData, isLoading: statLoading } = useQuery({
+    queryKey: ['files', 'stat', entry.path],
+    queryFn: () =>
+      client
+        .get<FileStat>('/api/files/stat', { params: { path: entry.path } })
+        .then((r) => r.data),
+    enabled: showStat,
+    staleTime: 30_000,
   })
 
   // Auto-scroll to bottom for log files
@@ -102,6 +114,16 @@ export function FilePreview({ entry, onEdit, onClose }: FilePreviewProps) {
             下载
           </a>
           <button
+            className={`flex items-center gap-1 px-2 py-1 text-[12px] rounded transition-colors ${
+              showStat ? 'bg-accent-dim text-accent' : 'bg-card text-text2 hover:text-text'
+            }`}
+            onClick={() => setShowStat((v) => !v)}
+            title="文件详情"
+          >
+            <i className="ti ti-info-circle" />
+            详情
+          </button>
+          <button
             className="p-1.5 text-text3 hover:text-text rounded transition-colors"
             onClick={onClose}
           >
@@ -109,6 +131,29 @@ export function FilePreview({ entry, onEdit, onClose }: FilePreviewProps) {
           </button>
         </div>
       </div>
+
+      {/* Stat panel */}
+      {showStat && (
+        <div className="shrink-0 border-b border-border bg-bg2 px-3 py-2">
+          {statLoading ? (
+            <div className="flex items-center gap-2 text-[11px] text-text3">
+              <i className="ti ti-loader-2 animate-spin" />
+              加载详情中...
+            </div>
+          ) : statData ? (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+              <StatRow label="权限" value={`${statData.permissions} (${statData.octal_permissions})`} mono />
+              <StatRow label="所有者" value={`${statData.owner} : ${statData.group}`} mono />
+              <StatRow label="大小" value={formatBytes(statData.size)} />
+              <StatRow label="修改时间" value={new Date(statData.mtime * 1000).toLocaleString()} />
+              <StatRow label="创建时间" value={new Date(statData.ctime * 1000).toLocaleString()} />
+              {statData.is_symlink && statData.symlink_target && (
+                <StatRow label="符号链接" value={`→ ${statData.symlink_target}`} mono />
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto min-h-0 bg-bg">
@@ -171,6 +216,15 @@ export function FilePreview({ entry, onEdit, onClose }: FilePreviewProps) {
           </SyntaxHighlighter>
         )}
       </div>
+    </div>
+  )
+}
+
+function StatRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-text3 shrink-0 w-16">{label}</span>
+      <span className={`text-text2 truncate ${mono ? 'font-mono' : ''}`}>{value}</span>
     </div>
   )
 }
