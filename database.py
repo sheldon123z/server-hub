@@ -902,6 +902,67 @@ async def _create_task_tables(db: aiosqlite.Connection):
     """)
 
 
+async def _create_pipeline_tables(db: aiosqlite.Connection):
+    """Pipeline 编排引擎 — 定义、运行实例、Step 日志"""
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS pipelines (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            display_name TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            yaml_content TEXT NOT NULL,
+            steps_json TEXT,
+            params_json TEXT,
+            trigger_json TEXT,
+            version INTEGER DEFAULT 1,
+            max_concurrent_runs INTEGER DEFAULT 1,
+            timeout INTEGER,
+            enabled INTEGER DEFAULT 1,
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_pipelines_name ON pipelines(name);
+
+        CREATE TABLE IF NOT EXISTS pipeline_runs (
+            id TEXT PRIMARY KEY,
+            pipeline_id TEXT NOT NULL,
+            pipeline_version INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'pending',
+            params_json TEXT,
+            current_step_id TEXT,
+            steps_state_json TEXT,
+            trigger_type TEXT,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            started_by TEXT,
+            error TEXT,
+            langgraph_thread_id TEXT,
+            summary TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline_status
+            ON pipeline_runs(pipeline_id, status);
+
+        CREATE TABLE IF NOT EXISTS pipeline_step_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            step_id TEXT NOT NULL,
+            step_type TEXT,
+            status TEXT DEFAULT 'pending',
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            input_json TEXT,
+            output_json TEXT,
+            error TEXT,
+            duration_ms INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_pipeline_step_logs_run_step
+            ON pipeline_step_logs(run_id, step_id);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_step_logs_run_time
+            ON pipeline_step_logs(run_id, started_at);
+    """)
+
+
 async def init_tables(db: aiosqlite.Connection):
     """初始化所有数据库表 — 按领域分组调用子函数"""
     await _create_auth_tables(db)
@@ -915,6 +976,7 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_agent_audit_tables(db)
     await _create_changelog_tables(db)
     await _create_task_tables(db)
+    await _create_pipeline_tables(db)
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:
