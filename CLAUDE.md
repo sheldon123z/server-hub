@@ -6,7 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ServerHub 是一个基于 FastAPI 的 Linux 服务器全功能 Web 管理系统，集成了 AI 运维智能体。面向实验室/团队场景，提供系统监控、Docker/服务管理、用户资源控制、AI 自动巡检等能力。
 
-**技术栈**: FastAPI + React 18 + TypeScript + Tailwind CSS + SQLite(aiosqlite) + Deep Agents(LangGraph) + xterm.js
+**技术栈**: FastAPI + SQLite(aiosqlite) + Deep Agents(LangGraph) | 前端: React 19 + TypeScript + Tailwind CSS + Vite (独立仓库)
+
+## 仓库架构
+
+ServerHub 采用前后端分离的双仓库架构：
+
+| 仓库 | 本地路径 | GitHub | 说明 |
+|------|---------|--------|------|
+| **server-hub** (本仓库) | `~/scripts/server-hub/` | `sheldon123z/server-hub` (private) | 后端 API + AI 引擎 |
+| **serverhub-ui** | `~/scripts/serverhub-ui/` | `ChenShi-Tech/serverhub-ui` (private) | React 前端 |
+
+前端构建产物部署到后端 `static/` 目录，后端通过 SPA catch-all 路由服务。
+`SERVERHUB_FRONTEND_DIR` 环境变量可自定义前端目录路径（默认 `static/`）。
 
 ## 运行与开发
 
@@ -163,7 +175,7 @@ Hub-Agent 架构：中心 Hub (本项目) + 每台被管理服务器部署 `serv
 - `serverhub-agent/` — 独立包 (FastAPI :9901, 12 个结构化端点, Bearer Token 认证)
 - `modules/monitoring/scheduler.py` — 本地采集(60s) + 远程采集(60s, 并行 executemany)
 - `modules/monitoring/metrics_store.py` — 指标抽象层 (fleet 查询/批量/聚合)
-- `frontend/src/pages/FleetDashboardPage.tsx` — 舰队总览 (概览网格/对比图表/热力图)
+- 舰队总览页面位于前端仓库 `serverhub-ui/src/pages/FleetDashboardPage.tsx`
 
 **server_id 贯穿全栈**: TopBar 选择器 → Zustand serverStore → TanStack Query queryKey → API params → 后端 dispatch → AgentClient/本地执行
 
@@ -211,15 +223,6 @@ make format         # 格式化所有文件
 1. **Claude Code hook**: 每次 Edit/Write .py 文件后自动执行 `ruff format` + `ruff check --fix`
 2. **Pre-commit hook**: `git commit` 前自动执行 ruff check + format（需先 `make setup`）
 3. **CI 门禁**: GitHub Actions 中 ruff check + format --check 必须通过
-
-### RoboRev (AI 代码评审)
-
-- **配置**: `.roborev.toml` (agent=codex, backup=claude-code)
-- **触发**: 每次 `git commit` 自动通过 `.git/hooks/post-commit` 触发
-- **评审失败**: hook 自动调用 `.roborev-issue.sh` 创建 GitHub Issue + 启动 Claude Code 修复
-- **手动评审**: `/roborev-review HEAD` 或 `/roborev-review --type security`
-- **手动修复**: `/roborev-fix <job_id>`
-- **注意**: `roborev config set` 会重写 toml 文件，修改后需检查 `[[hooks]]` 是否被清空
 
 ### Smoke Test (集成验证)
 
@@ -271,5 +274,5 @@ make smoke-test     # 测试所有关键 API 端点 (需要服务运行中)
 - **认证与审计**: 认证和鉴权必须通过依赖注入声明，优先使用 `get_current_user`、`require_role("admin")`；不要在 handler 内手动解析 token；写操作由审计中间件自动记录，不要重复造日志逻辑
 - **数据库规范**: 统一通过 `get_db()` 访问主库；新增表写入 `database.py:init_tables()`；SQL 必须参数化；写操作先 `commit` 再执行通知等副作用
 - **模块结构**: `routes.py` 只处理 HTTP 层，业务逻辑放入 `services.py`；新增模块需导出 `MODULE_INFO` 和 `router`
-- **前端规范**: React 18 + TypeScript + Tailwind CSS；使用 TanStack Query 管理服务端状态，Zustand 管理客户端状态；API 调用通过 `@/api/client` Axios 实例；避免 `any`，使用可选链防御性访问
+- **前端规范**: 前端代码位于独立仓库 `serverhub-ui`，规范参见其 CLAUDE.md
 - **提交与文档**: Git 提交消息遵循 `feat|fix|docs|refactor|perf|test|chore|style: 中文描述`；新增 API、Agent 工具、模块或架构变化时，必须同步更新 `docs/` 中对应文档
