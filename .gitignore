@@ -64,3 +64,6 @@ data/ssh_known_hosts
 node_modules/
 frontend/dist/
 frontend/node_modules/
+
+# 前端构建产物（从 serverhub-ui 部署）
+static/

@@ -47,36 +47,25 @@ MODULE_INFO = {
 
 `main.py` 的 `lifespan` 中调用 `discover_modules()` 自动注册所有 router。新增模块只需创建 `modules/新模块/` 目录并导出 `MODULE_INFO` + `router`。
 
-### React 前端 (frontend/)
+### React 前端（独立仓库）
 
-全站已从 Jinja2 + HTMX + Alpine.js 迁移至 React 18 + TypeScript + Tailwind CSS。
+前端已拆分为独立仓库 `../serverhub-ui/`（React 19 + TypeScript + Tailwind CSS + Vite）。
 
 **开发**:
 ```bash
-cd frontend && npm run dev   # Vite dev server :5173, proxy → :9900
-npm run build                # 生产构建 → frontend/dist/
+cd ../serverhub-ui && npm run dev     # Vite dev server :5173, proxy → :9900
 ```
 
-**架构**:
-- 路由: React Router v7, 19 条路由 + 代码分割 (React.lazy)
-- 状态: TanStack Query (API 缓存) + Zustand (客户端状态)
-- 认证: Cookie auth (HttpOnly JWT), 401 自动 refresh + 重定向
-- 实时: WebSocket (/ws/metrics) + SSE (POST /api/agents/chat)
-- 图表: echarts-for-react + 暗色主题
-- Markdown: marked.js + highlight.js + mermaid.js + DOMPurify
-- 终端: @xterm/xterm WebSocket
+**部署到后端**:
+```bash
+cd ../serverhub-ui && make deploy-local   # 构建并复制到 server-hub/static/
+# 或
+make build-frontend                       # 从后端 Makefile 调用
+```
 
-**关键文件**:
-- `src/App.tsx` — 路由配置 + 认证守卫
-- `src/api/client.ts` — Axios 实例 (cookie auth, 401 refresh, 请求队列)
-- `src/hooks/useSSEChat.ts` — SSE 流解析 (7 种事件类型)
-- `src/hooks/useWebSocket.ts` — 指标 WebSocket (60 点缓冲区)
-- `src/pages/agents/` — Agent 页面 14 个子组件
-- `src/lib/markdown.ts` — Markdown 渲染配置 (mermaid + artifact)
+后端通过 `static/` 目录服务前端构建产物（SPA catch-all 路由）。可通过 `SERVERHUB_FRONTEND_DIR` 环境变量自定义路径。
 
-**后端为 React 添加的端点**:
-- `GET /api/sidebar` — 侧边栏菜单项 (按角色过滤)
-- SPA catch-all 路由 (生产模式, 服务 frontend/dist/)
+前端详细文档参见 `../serverhub-ui/CLAUDE.md`。
 
 ### AI 智能体架构 (modules/agents/)
 

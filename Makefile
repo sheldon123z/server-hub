@@ -26,13 +26,19 @@ check: lint format-check
 dev:
 	uvicorn main:app --host 0.0.0.0 --port 9900 --reload --workers 1
 
-# ─── 前端 ───
+# ─── 前端（独立仓库 ../serverhub-ui） ───
 
-build:
-	cd frontend && npm ci && npx tsc --noEmit && npm run build
+FRONTEND_DIR ?= ../serverhub-ui
+
+build-frontend:
+	cd $(FRONTEND_DIR) && npm ci && npm run build
+	rm -rf static && cp -r $(FRONTEND_DIR)/dist static
+	@echo "✓ 前端已部署到 static/"
+
+build: build-frontend
 
 frontend-dev:
-	cd frontend && npm run dev
+	cd $(FRONTEND_DIR) && npm run dev
 
 # ─── 集成验证 ───
 
@@ -57,5 +63,5 @@ backup:
 	bash scripts/backup-db.sh
 
 clean:
-	rm -rf frontend/dist __pycache__ .pytest_cache htmlcov .ruff_cache
+	rm -rf static __pycache__ .pytest_cache htmlcov .ruff_cache
 	find . -name '*.pyc' -delete

@@ -1,7 +1,0 @@
-{
-  "tool_name": "mcp__plugin_oh-my-claudecode_t__lsp_diagnostics",
-  "tool_input_preview": "{\"file\":\"/home/zhengxiaodong/scripts/server-hub/frontend/src/pages/agents/AgentsPage.tsx\",\"severity\":\"error\"}",
-  "error": "Language server 'typescript-language-server' not found.\nInstall with: npm install -g typescript-language-server typescript",
-  "timestamp": "2026-04-04T07:04:12.995Z",
-  "retry_count": 3
-}

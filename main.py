@@ -376,7 +376,9 @@ async def health_check():
 
 # ─── React SPA 前端服务 ───
 
-FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
+FRONTEND_DIR = Path(
+    os.environ.get("SERVERHUB_FRONTEND_DIR", str(Path(__file__).parent / "static"))
+)
 
 # 开发模式 CORS（Vite dev server 在不同端口时使用）
 if os.getenv("SERVERHUB_DEV"):
@@ -418,7 +420,8 @@ if FRONTEND_DIR.exists():
     # SPA catch-all 在 lifespan 中的 _register_spa_fallback() 注册
 else:
     logger.warning(
-        "[ServerHub] frontend/dist/ 不存在。请运行 cd frontend && npm run build 构建前端。当前只能通过 API 端点访问。"
+        "[ServerHub] 前端目录 %s 不存在。请运行 cd ../serverhub-ui && make deploy-local 构建并部署前端。当前只能通过 API 端点访问。",
+        FRONTEND_DIR,
     )
 
 
