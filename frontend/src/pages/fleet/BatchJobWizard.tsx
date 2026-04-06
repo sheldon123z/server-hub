@@ -1,33 +1,65 @@
 /**
  * BatchJobWizard — 批量操作创建向导（3 步）
  * Step 1: 选择服务器
- * Step 2: 选择操作（预置模板 / 自定义命令）
+ * Step 2: 选择操作（模板从后端动态加载，失败时 fallback 到硬编码预设）
  * Step 3: 执行策略 + 确认
  */
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import client from '@/api/client'
+import { fetchBatchTemplates, type BatchTemplate } from '@/api/batch'
 import toast from 'react-hot-toast'
 import { cn, getErrorMessage } from '@/lib/utils'
 import ServerSelector from './ServerSelector'
 
 // ---------------------------------------------------------------------------
-// 预置模板
+// 规范化的展示型 Preset（统一后端模板 + 硬编码 fallback）
 // ---------------------------------------------------------------------------
 interface Preset {
   id: string
   name: string
   description: string
-  type: 'command' | 'service_action' | 'docker_action' | 'script'
+  type: 'command' | 'service_action' | 'docker_action' | 'script' | 'playbook'
   defaultPayload: Record<string, string>
   defaultStrategy: Strategy
   defaultBatchSize: number
   icon: string
   isCustom?: boolean
   requiresServiceName?: boolean
+  isBuiltin?: boolean
 }
 
-const PRESETS: Preset[] = [
+/** 从后端 BatchTemplate 转换为展示型 Preset */
+function templateToPreset(t: BatchTemplate): Preset {
+  const icon = iconForType(t.type)
+  const isServiceAction = t.type === 'service_action'
+  return {
+    id: t.id,
+    name: t.name,
+    description: t.description ?? '',
+    type: t.type,
+    defaultPayload: t.payload as Record<string, string>,
+    defaultStrategy: t.strategy,
+    defaultBatchSize: t.rolling_batch_size,
+    icon,
+    requiresServiceName: isServiceAction,
+    isBuiltin: t.is_builtin,
+  }
+}
+
+function iconForType(type: string): string {
+  switch (type) {
+    case 'command': return 'ti-terminal-2'
+    case 'service_action': return 'ti-refresh'
+    case 'docker_action': return 'ti-brand-docker'
+    case 'script': return 'ti-shield-check'
+    case 'playbook': return 'ti-list-check'
+    default: return 'ti-server-2'
+  }
+}
+
+/** 硬编码 fallback（后端不可用时使用） */
+const FALLBACK_PRESETS: Preset[] = [
   {
     id: 'sys_info',
     name: '批量系统信息',
@@ -37,6 +69,7 @@ const PRESETS: Preset[] = [
     defaultStrategy: 'parallel',
     defaultBatchSize: 1,
     icon: 'ti-server-2',
+    isBuiltin: true,
   },
   {
     id: 'docker_prune',
@@ -47,6 +80,7 @@ const PRESETS: Preset[] = [
     defaultStrategy: 'parallel',
     defaultBatchSize: 1,
     icon: 'ti-brand-docker',
+    isBuiltin: true,
   },
   {
     id: 'security_check',
@@ -57,6 +91,7 @@ const PRESETS: Preset[] = [
     defaultStrategy: 'parallel',
     defaultBatchSize: 1,
     icon: 'ti-shield-check',
+    isBuiltin: true,
   },
   {
     id: 'service_restart',
@@ -68,6 +103,7 @@ const PRESETS: Preset[] = [
     defaultBatchSize: 1,
     icon: 'ti-refresh',
     requiresServiceName: true,
+    isBuiltin: true,
   },
   {
     id: 'custom',
@@ -124,7 +160,38 @@ export default function BatchJobWizard({
   const [stopOnFailure, setStopOnFailure] = useState(false)
   const [jobName, setJobName] = useState('')
 
-  const preset = PRESETS.find((p) => p.id === presetId)
+  // 从后端动态加载模板，失败时 fallback 到硬编码预设
+  const {
+    data: remoteTemplates,
+    isLoading: templatesLoading,
+    isError: templatesFailed,
+  } = useQuery({
+    queryKey: ['batch-templates'],
+    queryFn: fetchBatchTemplates,
+    staleTime: 5 * 60 * 1000, // 5 分钟缓存
+    retry: 1,
+  })
+
+  // 始终在列表末尾追加"自定义命令"选项
+  const CUSTOM_PRESET: Preset = {
+    id: 'custom',
+    name: '自定义命令',
+    description: '执行任意 Shell 命令',
+    type: 'command',
+    defaultPayload: { command: '' },
+    defaultStrategy: 'parallel',
+    defaultBatchSize: 1,
+    icon: 'ti-terminal-2',
+    isCustom: true,
+  }
+
+  const presets: Preset[] = templatesFailed || (!templatesLoading && !remoteTemplates)
+    ? FALLBACK_PRESETS
+    : remoteTemplates
+      ? [...remoteTemplates.map(templateToPreset), CUSTOM_PRESET]
+      : []
+
+  const preset = presets.find((p) => p.id === presetId)
 
   const createMut = useMutation({
     mutationFn: (data: CreateJobPayload) =>
@@ -238,36 +305,74 @@ export default function BatchJobWizard({
           {/* Step 2: 选择操作 */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      setPresetId(p.id)
-                      setStrategy(p.defaultStrategy)
-                      setRollingBatchSize(p.defaultBatchSize)
-                    }}
-                    className={cn(
-                      'flex items-start gap-3 p-4 rounded-lg border text-left transition-all',
-                      presetId === p.id
-                        ? 'border-accent bg-accent-dim'
-                        : 'border-border bg-bg2 hover:border-border-light',
-                    )}
-                  >
-                    <i
-                      className={cn(
-                        p.icon,
-                        'ti text-xl mt-0.5 shrink-0',
-                        presetId === p.id ? 'text-accent' : 'text-text3',
-                      )}
+              {/* 加载骨架屏 */}
+              {templatesLoading && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-[72px] rounded-lg border border-border bg-bg2 animate-pulse"
                     />
-                    <div>
-                      <div className="text-sm font-medium text-text">{p.name}</div>
-                      <div className="text-xs text-text3 mt-0.5">{p.description}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 加载失败提示 */}
+              {templatesFailed && (
+                <div className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-md px-3 py-2">
+                  <i className="ti ti-alert-triangle text-sm" />
+                  <span>无法从服务器加载模板，已使用内置预设</span>
+                </div>
+              )}
+
+              {/* 模板列表 */}
+              {!templatesLoading && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {presets.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        setPresetId(p.id)
+                        setStrategy(p.defaultStrategy)
+                        setRollingBatchSize(p.defaultBatchSize)
+                      }}
+                      className={cn(
+                        'flex items-start gap-3 p-4 rounded-lg border text-left transition-all',
+                        presetId === p.id
+                          ? 'border-accent bg-accent-dim'
+                          : 'border-border bg-bg2 hover:border-border-light',
+                      )}
+                    >
+                      <i
+                        className={cn(
+                          p.icon,
+                          'ti text-xl mt-0.5 shrink-0',
+                          presetId === p.id ? 'text-accent' : 'text-text3',
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-text truncate">{p.name}</span>
+                          {!p.isCustom && (
+                            <span
+                              className={cn(
+                                'shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium',
+                                p.isBuiltin
+                                  ? 'bg-blue-500/15 text-blue-400'
+                                  : 'bg-purple-500/15 text-purple-400',
+                              )}
+                            >
+                              {p.isBuiltin ? '内置' : '自定义'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-text3 mt-0.5 line-clamp-2">{p.description}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
 
               {/* 自定义命令输入 */}
               {preset?.isCustom && (
