@@ -1,12 +1,466 @@
-"""Pipeline 编排模块 — API 路由占位（CRUD + 执行端点在后续 PR 实现）"""
+"""Pipeline 编排引擎 API 路由"""
 
-from fastapi import APIRouter
+import asyncio
+import json
+import logging
 
-router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sse_starlette.sse import EventSourceResponse
+
+from auth.dependencies import get_current_user, require_role
+from modules.pipelines.services import (
+    create_pipeline,
+    delete_pipeline,
+    generate_mermaid,
+    get_pipeline,
+    get_pipeline_run,
+    get_pipeline_stats,
+    get_run_step_logs,
+    list_pipeline_runs,
+    list_pipelines,
+    update_pipeline,
+    validate_pipeline_yaml,
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/pipelines", tags=["Pipeline 编排"])
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 定义管理
+# ---------------------------------------------------------------------------
 
 
 @router.get("")
 @router.get("/")
-async def list_pipelines():
-    """列表端点占位 — 完整实现在后续 PR"""
-    return []
+async def api_list_pipelines(
+    enabled: bool | None = Query(default=None),
+    user=Depends(get_current_user),
+):
+    """获取 Pipeline 列表"""
+    items = await list_pipelines(enabled=enabled)
+    return items
+
+
+@router.post("", status_code=201)
+@router.post("/", status_code=201)
+async def api_create_pipeline(
+    request: Request,
+    user=Depends(require_role("admin")),
+):
+    """创建 Pipeline（提交 YAML）"""
+    body = await request.json()
+    yaml_content = body.get("yaml_content")
+    if not yaml_content:
+        raise HTTPException(400, "缺少 yaml_content 字段")
+    try:
+        result = await create_pipeline(yaml_content, created_by=user["username"])
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True, **result}
+
+
+@router.get("/stats")
+async def api_pipeline_stats(
+    pipeline_id: str | None = Query(default=None),
+    days: int = Query(default=30, ge=1, le=365),
+    user=Depends(get_current_user),
+):
+    """获取 Pipeline 统计数据"""
+    return await get_pipeline_stats(pipeline_id=pipeline_id, days=days)
+
+
+# --- runs 路由必须在 /{pipeline_id} 之前注册，避免被路径参数吞掉 ---
+
+
+@router.get("/runs")
+@router.get("/runs/")
+async def api_list_runs(
+    pipeline_id: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    user=Depends(get_current_user),
+):
+    """获取 Pipeline 运行列表"""
+    return await list_pipeline_runs(pipeline_id=pipeline_id, status=status, limit=limit)
+
+
+@router.get("/runs/{run_id}")
+async def api_get_run(
+    run_id: str,
+    user=Depends(get_current_user),
+):
+    """获取单次运行详情"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+    return run
+
+
+@router.post("/runs/{run_id}/cancel")
+async def api_cancel_run(
+    run_id: str,
+    user=Depends(require_role("admin")),
+):
+    """取消正在执行的 Pipeline"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+    if run["status"] not in ("pending", "running", "paused"):
+        raise HTTPException(400, f"当前状态 '{run['status']}' 不可取消")
+
+    try:
+        from modules.pipelines.executor import cancel_run
+
+        await cancel_run(run_id)
+    except ImportError:
+        # executor 尚未实现，直接更新状态
+        from datetime import datetime
+
+        from database import get_db
+
+        db = await get_db()
+        await db.execute(
+            "UPDATE pipeline_runs SET status='cancelled', completed_at=? WHERE id=?",
+            (datetime.now().isoformat(), run_id),
+        )
+        await db.commit()
+
+    return {"ok": True, "run_id": run_id}
+
+
+@router.post("/runs/{run_id}/approve")
+async def api_approve_run(
+    run_id: str,
+    user=Depends(require_role("admin")),
+):
+    """审批通过（当 Pipeline 暂停在 approval 节点时）"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+    if run["status"] != "paused":
+        raise HTTPException(400, f"当前状态 '{run['status']}' 不在等待审批")
+
+    try:
+        from modules.pipelines.executor import approve_run
+
+        await approve_run(run_id, approved_by=user["username"])
+    except ImportError:
+        from database import get_db
+
+        db = await get_db()
+        await db.execute(
+            "UPDATE pipeline_runs SET status='running' WHERE id=?",
+            (run_id,),
+        )
+        await db.commit()
+
+    return {"ok": True, "run_id": run_id}
+
+
+@router.post("/runs/{run_id}/reject")
+async def api_reject_run(
+    run_id: str,
+    user=Depends(require_role("admin")),
+):
+    """审批拒绝"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+    if run["status"] != "paused":
+        raise HTTPException(400, f"当前状态 '{run['status']}' 不在等待审批")
+
+    try:
+        from modules.pipelines.executor import reject_run
+
+        await reject_run(run_id, rejected_by=user["username"])
+    except ImportError:
+        from datetime import datetime
+
+        from database import get_db
+
+        db = await get_db()
+        await db.execute(
+            "UPDATE pipeline_runs SET status='failed', error='审批被拒绝', completed_at=? WHERE id=?",
+            (datetime.now().isoformat(), run_id),
+        )
+        await db.commit()
+
+    return {"ok": True, "run_id": run_id}
+
+
+@router.post("/runs/{run_id}/retry-from/{step_id}")
+async def api_retry_from_step(
+    run_id: str,
+    step_id: str,
+    user=Depends(require_role("admin")),
+):
+    """从失败的 step 处重试"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+    if run["status"] not in ("failed", "cancelled"):
+        raise HTTPException(400, f"当前状态 '{run['status']}' 不可重试")
+
+    try:
+        from modules.pipelines.executor import retry_from_step
+
+        new_run = await retry_from_step(run_id, step_id, triggered_by=user["username"])
+        return {"ok": True, **new_run}
+    except ImportError:
+        raise HTTPException(501, "执行引擎尚未就绪")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/runs/{run_id}/logs")
+async def api_get_run_logs(
+    run_id: str,
+    user=Depends(get_current_user),
+):
+    """获取运行的 step 执行日志"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+    logs = await get_run_step_logs(run_id)
+    return logs
+
+
+@router.get("/runs/{run_id}/stream")
+async def api_stream_run(
+    run_id: str,
+    user=Depends(get_current_user),
+):
+    """SSE 实时推送 Pipeline 运行进度"""
+    run = await get_pipeline_run(run_id)
+    if not run:
+        raise HTTPException(404, "运行记录不存在")
+
+    async def _event_generator():
+        """从执行引擎的事件队列读取事件并推送。"""
+        # 尝试获取执行引擎的事件队列
+        event_queue: asyncio.Queue | None = None
+        try:
+            from modules.pipelines.executor import get_run_event_queue
+
+            event_queue = get_run_event_queue(run_id)
+        except (ImportError, AttributeError):
+            pass
+
+        if event_queue:
+            # 有执行引擎 — 从队列读取实时事件
+            while True:
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=30)
+                    yield {
+                        "event": event.get("type", "message"),
+                        "data": json.dumps(event, ensure_ascii=False),
+                    }
+                    if event.get("type") in ("pipeline_complete", "error"):
+                        break
+                except TimeoutError:
+                    # 发送心跳保持连接
+                    yield {"event": "ping", "data": ""}
+        else:
+            # 执行引擎不可用 — 轮询数据库状态
+            last_status = None
+            last_step_count = 0
+            for _ in range(600):  # 最多轮询 10 分钟
+                current_run = await get_pipeline_run(run_id)
+                if not current_run:
+                    yield {
+                        "event": "error",
+                        "data": json.dumps({"error": "运行记录不存在"}, ensure_ascii=False),
+                    }
+                    break
+
+                current_status = current_run["status"]
+                step_logs = await get_run_step_logs(run_id)
+
+                # 推送新增的 step 日志
+                if len(step_logs) > last_step_count:
+                    for log in step_logs[last_step_count:]:
+                        event_type = "step_complete" if log["status"] in ("completed", "failed") else "step_start"
+                        yield {
+                            "event": event_type,
+                            "data": json.dumps(log, ensure_ascii=False),
+                        }
+                    last_step_count = len(step_logs)
+
+                # 状态变更
+                if current_status != last_status:
+                    last_status = current_status
+                    if current_status in ("completed", "failed", "cancelled"):
+                        yield {
+                            "event": "pipeline_complete",
+                            "data": json.dumps(
+                                {
+                                    "run_id": run_id,
+                                    "status": current_status,
+                                    "summary": current_run.get("summary"),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+                        break
+                    if current_status == "paused":
+                        yield {
+                            "event": "approval_required",
+                            "data": json.dumps(
+                                {
+                                    "run_id": run_id,
+                                    "step_id": current_run.get("current_step_id"),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+
+                await asyncio.sleep(1)
+
+    return EventSourceResponse(_event_generator())
+
+
+# ---------------------------------------------------------------------------
+# Pipeline 定义路由（含路径参数，必须在 /runs 之后注册）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{pipeline_id}")
+async def api_get_pipeline(
+    pipeline_id: str,
+    user=Depends(get_current_user),
+):
+    """获取 Pipeline 详情"""
+    pipeline = await get_pipeline(pipeline_id)
+    if not pipeline:
+        raise HTTPException(404, "Pipeline 不存在")
+    return pipeline
+
+
+@router.put("/{pipeline_id}")
+async def api_update_pipeline(
+    pipeline_id: str,
+    request: Request,
+    user=Depends(require_role("admin")),
+):
+    """更新 Pipeline YAML"""
+    body = await request.json()
+    yaml_content = body.get("yaml_content")
+    if not yaml_content:
+        raise HTTPException(400, "缺少 yaml_content 字段")
+    try:
+        result = await update_pipeline(pipeline_id, yaml_content)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"ok": True, **result}
+
+
+@router.delete("/{pipeline_id}")
+async def api_delete_pipeline(
+    pipeline_id: str,
+    user=Depends(require_role("admin")),
+):
+    """删除 Pipeline"""
+    ok = await delete_pipeline(pipeline_id)
+    if not ok:
+        raise HTTPException(404, "Pipeline 不存在")
+    return {"ok": True}
+
+
+@router.post("/{pipeline_id}/validate")
+async def api_validate_pipeline(
+    pipeline_id: str,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """验证 Pipeline YAML（不保存）"""
+    body = await request.json()
+    yaml_content = body.get("yaml_content")
+    if not yaml_content:
+        # 如果没传 yaml_content，使用已保存的
+        pipeline = await get_pipeline(pipeline_id)
+        if not pipeline:
+            raise HTTPException(404, "Pipeline 不存在")
+        yaml_content = pipeline["yaml_content"]
+    return await validate_pipeline_yaml(yaml_content)
+
+
+@router.get("/{pipeline_id}/mermaid")
+async def api_get_mermaid(
+    pipeline_id: str,
+    user=Depends(get_current_user),
+):
+    """返回 Mermaid 流程图代码"""
+    pipeline = await get_pipeline(pipeline_id)
+    if not pipeline:
+        raise HTTPException(404, "Pipeline 不存在")
+    mermaid_code = generate_mermaid(pipeline)
+    return {"mermaid": mermaid_code}
+
+
+@router.post("/{pipeline_id}/run")
+async def api_trigger_run(
+    pipeline_id: str,
+    request: Request,
+    user=Depends(require_role("admin")),
+):
+    """触发 Pipeline 执行"""
+    pipeline = await get_pipeline(pipeline_id)
+    if not pipeline:
+        raise HTTPException(404, "Pipeline 不存在")
+    if not pipeline["enabled"]:
+        raise HTTPException(400, "Pipeline 未启用")
+
+    body = await request.json() if await request.body() else {}
+    params = body.get("params", {})
+
+    # 并发检查
+    running_runs = await list_pipeline_runs(pipeline_id=pipeline_id, status="running")
+    max_concurrent = pipeline.get("max_concurrent_runs", 1)
+    if len(running_runs) >= max_concurrent:
+        raise HTTPException(
+            409,
+            f"已达最大并发数 ({max_concurrent})，请等待当前运行完成",
+        )
+
+    try:
+        from modules.pipelines.executor import start_run
+
+        run = await start_run(
+            pipeline_id=pipeline_id,
+            params=params,
+            triggered_by=user["username"],
+            trigger_type="manual",
+        )
+        return {"ok": True, **run}
+    except ImportError:
+        # executor 尚未实现 — 创建 pending 状态的记录
+        import uuid
+        from datetime import datetime
+
+        from database import get_db
+
+        run_id = uuid.uuid4().hex[:16]
+        now = datetime.now().isoformat()
+        db = await get_db()
+        await db.execute(
+            "INSERT INTO pipeline_runs "
+            "(id, pipeline_id, pipeline_version, status, params_json, "
+            "trigger_type, started_at, started_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_id,
+                pipeline_id,
+                pipeline["version"],
+                "pending",
+                json.dumps(params, ensure_ascii=False),
+                "manual",
+                now,
+                user["username"],
+            ),
+        )
+        await db.commit()
+        run = await get_pipeline_run(run_id)
+        return {"ok": True, **run}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
