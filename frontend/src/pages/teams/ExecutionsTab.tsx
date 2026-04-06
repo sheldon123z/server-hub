@@ -34,6 +34,7 @@ export function ExecutionsTab({ teamId }: { teamId: string }) {
               <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">指令</th>
               <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">状态</th>
               <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">耗时</th>
+              <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">Tokens</th>
               <th className="text-text3 text-left text-xs uppercase py-2 sticky top-0 z-10 bg-card">操作</th>
             </tr>
           </thead>
@@ -46,6 +47,7 @@ export function ExecutionsTab({ teamId }: { teamId: string }) {
                   <span className={cn('px-2 py-0.5 rounded text-xs font-medium', STATUS_BADGES[e.status] ?? 'bg-text3/20 text-text3')}>{e.status}</span>
                 </td>
                 <td className="py-2 text-text2 text-xs">{e.duration_seconds != null ? `${e.duration_seconds.toFixed(1)}s` : '-'}</td>
+                <td className="py-2 text-text2 text-xs">{e.total_tokens != null ? e.total_tokens.toLocaleString() : '-'}</td>
                 <td className="py-2">
                   <button onClick={() => setSelectedExecId(selectedExecId === e.id ? null : e.id)} className="text-accent text-xs hover:underline">详情</button>
                 </td>
