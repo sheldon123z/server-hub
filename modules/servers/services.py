@@ -54,12 +54,44 @@ def _row_to_dict(row) -> dict | None:
 # ─── Agent Token ───
 
 
+_FERNET_KEY_PATH = "data/serverhub-fernet.key"
+
+
 def _get_fernet():
-    """获取 Fernet 加密实例（复用 playbook credentials 的密钥）"""
+    """获取 Fernet 加密实例。
+
+    优先读取独立密钥文件 data/serverhub-fernet.key（安全隔离，不依赖 JWT 密钥）。
+    首次运行时自动生成密钥文件。若密钥文件不存在或读取失败，回退到旧的
+    SHA256(JWT secret_key) 派生方式，以兼容已加密的 token。
+    """
     import base64
+    from pathlib import Path
 
     from cryptography.fernet import Fernet
 
+    key_file = Path(_FERNET_KEY_PATH)
+
+    # 优先使用独立密钥文件
+    if key_file.exists():
+        try:
+            key = key_file.read_text().strip().encode()
+            return Fernet(key)
+        except Exception:
+            logger.warning("Fernet 密钥文件读取失败，回退到 JWT 派生密钥")
+
+    # 首次运行：生成独立密钥文件
+    if not key_file.exists():
+        try:
+            key_file.parent.mkdir(parents=True, exist_ok=True)
+            new_key = Fernet.generate_key()
+            key_file.write_bytes(new_key)
+            key_file.chmod(0o600)
+            logger.info("已生成独立 Fernet 密钥文件: %s", _FERNET_KEY_PATH)
+            return Fernet(new_key)
+        except Exception:
+            logger.warning("无法创建 Fernet 密钥文件，回退到 JWT 派生密钥")
+
+    # 回退：SHA256(JWT secret_key) — 兼容旧数据
     from config import settings
 
     key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())

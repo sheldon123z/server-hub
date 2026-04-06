@@ -139,12 +139,40 @@ class AgentClient:
         """获取轻量级指标快照（用于仪表盘 sparkline）"""
         return await self._request("GET", "/metrics/fast", timeout=8.0)
 
+    _MAX_COMMAND_LENGTH = 500
+
     async def execute_command(self, command: str, timeout: int = 30) -> dict:  # noqa: ASYNC109 — timeout 传给远程 agent 端
+        """在远程服务器上执行命令 — **仅供调试，生产环境应使用结构化端点**。
+
+        此方法向远程 agent 的 /execute 端点发送任意 shell 命令。
+        远程 /execute 端点默认关闭。生产环境请使用 service_action()、
+        docker_action() 等结构化方法，它们通过 create_subprocess_exec
+        执行，不存在 shell 注入风险。
+
+        安全限制:
+        - 命令长度上限 500 字符
+        - 危险命令黑名单检查（与 SSH/Agent Shell 黑名单一致）
         """
-        在远程服务器上执行命令。
-        timeout 参数传给 agent 端的命令执行超时。
-        HTTP 请求本身的超时设为 timeout + 5 秒（留出网络余量）。
-        """
+        import warnings
+
+        warnings.warn(
+            "execute_command() 已弃用，生产环境请使用结构化端点 (service_action/docker_action 等)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.warning("已弃用的 execute_command() 被调用 (server=%s, cmd=%s)", self.server_name, command[:80])
+
+        # 命令长度限制
+        if len(command) > self._MAX_COMMAND_LENGTH:
+            return _error_result(f"命令长度 ({len(command)}) 超过上限 ({self._MAX_COMMAND_LENGTH} 字符)")
+
+        # 危险命令黑名单检查
+        from modules.agents.safety import check_shell_command
+
+        safe, reason = check_shell_command(command)
+        if not safe:
+            return _error_result(f"远程命令被安全策略拦截: {reason}")
+
         return await self._request(
             "POST",
             "/execute",
