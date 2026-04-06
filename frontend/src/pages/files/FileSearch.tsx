@@ -1,12 +1,16 @@
 /**
- * FileSearch — 文件名搜索 + 结果列表，点击结果跳转目录并选中文件
+ * FileSearch — 搜索面板：路径搜索（文件名）| 内容搜索（grep 正则）
+ * 顶部 Tab 切换两种模式
  */
 
 import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import client from '@/api/client'
 import { cn } from '@/lib/utils'
+import { FileGrepSearch } from './FileGrepSearch'
 import type { FileEntry, SearchResponse } from './types'
+
+type SearchMode = 'path' | 'grep'
 
 interface FileSearchProps {
   currentPath: string
@@ -29,7 +33,7 @@ function normalizeSearchResponse(data: unknown): SearchResponse {
   return { path: '', query: '', results: [], total: 0 }
 }
 
-export function FileSearch({ currentPath, onNavigate, onSelect, onClose }: FileSearchProps) {
+function PathSearch({ currentPath, onNavigate, onSelect, onClose }: FileSearchProps) {
   const [query, setQuery] = useState('')
   const [committed, setCommitted] = useState('')
 
@@ -51,7 +55,7 @@ export function FileSearch({ currentPath, onNavigate, onSelect, onClose }: FileS
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Search bar */}
+      {/* Search input */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b border-border bg-bg2">
         <i className="ti ti-search text-text3 shrink-0" />
         <input
@@ -104,7 +108,8 @@ export function FileSearch({ currentPath, onNavigate, onSelect, onClose }: FileS
         ) : (
           <>
             <div className="px-3 py-2 text-[11px] text-text3 border-b border-border">
-              找到 {response.total} 个结果，关键词: <span className="text-text">&ldquo;{committed}&rdquo;</span>
+              找到 {response.total} 个结果，关键词:{' '}
+              <span className="text-text">&ldquo;{committed}&rdquo;</span>
             </div>
             {response.results.map((result) => {
               const dir =
@@ -148,6 +153,67 @@ export function FileSearch({ currentPath, onNavigate, onSelect, onClose }: FileS
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+export function FileSearch({ currentPath, onNavigate, onSelect, onClose }: FileSearchProps) {
+  const [mode, setMode] = useState<SearchMode>('path')
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Mode tabs */}
+      <div className="shrink-0 flex items-center border-b border-border bg-bg2 px-3 pt-2 gap-1">
+        <button
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 text-[12px] rounded-t transition-colors border-b-2 -mb-px',
+            mode === 'path'
+              ? 'text-accent border-accent bg-card/50'
+              : 'text-text3 border-transparent hover:text-text',
+          )}
+          onClick={() => setMode('path')}
+        >
+          <i className="ti ti-file-search" />
+          路径搜索
+        </button>
+        <button
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 text-[12px] rounded-t transition-colors border-b-2 -mb-px',
+            mode === 'grep'
+              ? 'text-accent border-accent bg-card/50'
+              : 'text-text3 border-transparent hover:text-text',
+          )}
+          onClick={() => setMode('grep')}
+        >
+          <i className="ti ti-regex" />
+          内容搜索
+        </button>
+        <div className="flex-1" />
+        <button
+          className="pb-2 text-text3 hover:text-text transition-colors"
+          onClick={onClose}
+          title="关闭搜索"
+        >
+          <i className="ti ti-x text-sm" />
+        </button>
+      </div>
+
+      {/* Panel content — render both, toggle visibility to preserve state */}
+      {mode === 'path' ? (
+        <PathSearch
+          currentPath={currentPath}
+          onNavigate={onNavigate}
+          onSelect={onSelect}
+          onClose={onClose}
+        />
+      ) : (
+        <FileGrepSearch
+          currentPath={currentPath}
+          onNavigate={onNavigate}
+          onSelect={onSelect}
+          onClose={onClose}
+        />
+      )}
     </div>
   )
 }
