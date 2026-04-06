@@ -135,6 +135,7 @@ export default function ServersPage() {
   const [testResult, setTestResult] = useState<ConnectivityResult | null>(null)
   const [newToken, setNewToken] = useState<string | null>(null)
   const [deployLog, setDeployLog] = useState('')
+  const [showPushUpdateConfirm, setShowPushUpdateConfirm] = useState(false)
 
   /* ── 数据查询 ── */
 
@@ -183,6 +184,23 @@ export default function ServersPage() {
       toast.success('测试完成')
     },
     onError: (err: unknown) => toast.error(getErrorMessage(err, '测试失败')),
+  })
+
+  const pushUpdateMut = useMutation({
+    mutationFn: (id: string) => client.post(`/api/servers/${id}/push-update`),
+    onSuccess: (res) => {
+      const data = res.data as { ok: boolean; message?: string; results?: { file: string; ok: boolean }[] }
+      if (data.ok) {
+        toast.success(data.message ?? '推送更新成功')
+      } else {
+        toast.error(data.message ?? '推送更新失败')
+      }
+      setShowPushUpdateConfirm(false)
+    },
+    onError: (err: unknown) => {
+      toast.error(getErrorMessage(err, '推送更新失败'))
+      setShowPushUpdateConfirm(false)
+    },
   })
 
   /* ── 过滤 ── */
@@ -297,6 +315,8 @@ export default function ServersPage() {
                 if (confirm('确认删除此服务器？')) deleteMut.mutate(selected.id)
               }}
               onTokenRotated={(token) => setNewToken(token)}
+              onPushUpdate={() => setShowPushUpdateConfirm(true)}
+              isPushingUpdate={pushUpdateMut.isPending}
             />
           )}
         </div>
@@ -370,6 +390,14 @@ export default function ServersPage() {
           </div>
         </div>
       )}
+      {showPushUpdateConfirm && selected && (
+        <PushUpdateConfirmModal
+          serverName={selected.name}
+          isPending={pushUpdateMut.isPending}
+          onConfirm={() => pushUpdateMut.mutate(selected.id)}
+          onClose={() => setShowPushUpdateConfirm(false)}
+        />
+      )}
     </div>
   )
 }
@@ -401,6 +429,8 @@ function ServerDetail({
   onEdit,
   onDelete,
   onTokenRotated,
+  onPushUpdate,
+  isPushingUpdate,
 }: {
   server: Server
   groups: ServerGroup[]
@@ -410,6 +440,8 @@ function ServerDetail({
   onEdit: () => void
   onDelete: () => void
   onTokenRotated: (token: string) => void
+  onPushUpdate: () => void
+  isPushingUpdate: boolean
 }) {
   const queryClient = useQueryClient()
   const [rotating, setRotating] = useState(false)
@@ -489,6 +521,16 @@ function ServerDetail({
           >
             {rotating ? '轮换中...' : '轮换 Token'}
           </button>
+          {!isLocalServer(server) && (
+            <button
+              onClick={onPushUpdate}
+              disabled={isPushingUpdate}
+              className="bg-blue/10 text-blue-400 px-3 py-1.5 rounded-md text-sm hover:bg-blue/20 disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              <i className="ti ti-cloud-upload" />
+              {isPushingUpdate ? '推送中...' : '推送更新'}
+            </button>
+          )}
           <button
             onClick={onEdit}
             className="bg-bg2 text-text2 px-3 py-1.5 rounded-md text-sm hover:text-text hover:bg-bg2/80"
@@ -815,6 +857,59 @@ function TokenDisplayModal({ token, onClose }: { token: string; onClose: () => v
             className="px-4 py-2 text-sm bg-accent text-[#0f172a] rounded-md font-medium"
           >
             我已保存，关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ─── 推送更新确认 Modal ─── */
+
+function PushUpdateConfirmModal({
+  serverName,
+  isPending,
+  onConfirm,
+  onClose,
+}: {
+  serverName: string
+  isPending: boolean
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-bg border border-border rounded-xl p-6 w-full max-w-md shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <i className="ti ti-cloud-upload text-blue-400 text-lg" />
+          <h3 className="text-base font-semibold text-text">推送 Agent 更新</h3>
+        </div>
+        <p className="text-sm text-text2 mb-2">
+          即将向 <span className="font-medium text-text">{serverName}</span> 推送最新版 serverhub-agent 源码并触发重启。
+        </p>
+        <ul className="text-xs text-text3 list-disc list-inside space-y-1 mb-5">
+          <li>所有 <code className="bg-bg2 px-1 rounded">serverhub-agent/*.py</code> 文件将上传到远程服务器</li>
+          <li>远程 Agent 将在文件提交后自动重启</li>
+          <li>重启期间约 5–10 秒内 Agent 连接将短暂中断</li>
+        </ul>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="px-4 py-2 text-sm text-text2 hover:text-text border border-border rounded-md disabled:opacity-50"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className="px-4 py-2 text-sm bg-blue/20 text-blue-400 hover:bg-blue/30 rounded-md font-medium disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            <i className="ti ti-cloud-upload" />
+            {isPending ? '推送中...' : '确认推送'}
           </button>
         </div>
       </div>
