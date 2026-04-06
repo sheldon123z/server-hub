@@ -1,6 +1,7 @@
 /**
  * 角色管理页 /settings/roles
- * 角色列表 + 创建/编辑 modal + 删除 + 权限矩阵编辑器
+ * Tab 1: 角色列表 + 创建/编辑 modal + 删除 + 权限矩阵编辑器
+ * Tab 2: 用户权限 — 为面板用户分配/移除 RBAC 角色
  * API 前缀: /api/rbac
  */
 
@@ -10,6 +11,7 @@ import client from '@/api/client'
 import toast from 'react-hot-toast'
 import { cn, ensureArray, ensureRecord, toString, toNumber } from '@/lib/utils'
 import PermissionMatrix, { type PermEntry } from './PermissionMatrix'
+import UserRolesTab from './UserRolesTab'
 
 /* ---------- types ---------- */
 
@@ -192,10 +194,20 @@ function RoleDetail({ role, onClose }: RoleDetailProps) {
   )
 }
 
+/* ---------- tab bar ---------- */
+
+type TabKey = 'roles' | 'user-roles'
+
+const TABS: { key: TabKey; label: string; icon: string }[] = [
+  { key: 'roles', label: '角色管理', icon: 'ti-shield-lock' },
+  { key: 'user-roles', label: '用户权限', icon: 'ti-user-check' },
+]
+
 /* ---------- main page ---------- */
 
 export default function RolesPage() {
   const qc = useQueryClient()
+  const [activeTab, setActiveTab] = useState<TabKey>('roles')
   const [showModal, setShowModal] = useState(false)
   const [editingRole, setEditingRole] = useState<Role | null>(null)
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null)
@@ -271,6 +283,31 @@ export default function RolesPage() {
 
   return (
     <div className="space-y-4">
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 border-b border-border">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+              activeTab === tab.key
+                ? 'border-accent text-accent'
+                : 'border-transparent text-text2 hover:text-text hover:border-border',
+            )}
+          >
+            <i className={cn('ti text-base', tab.icon)} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: 用户权限 */}
+      {activeTab === 'user-roles' && <UserRolesTab />}
+
+      {/* Tab: 角色管理 */}
+      {activeTab === 'roles' && (
+        <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-text">角色管理</h2>
@@ -384,6 +421,8 @@ export default function RolesPage() {
           onSave={handleSave}
           isPending={isPending}
         />
+      )}
+        </>
       )}
     </div>
   )
