@@ -9,25 +9,15 @@ from modules.agents.tools.registry import RiskLevel, register_tool
 
 logger = logging.getLogger(__name__)
 
+
 # SSH 命令黑名单
-SSH_COMMAND_BLACKLIST = [
-    r"\brm\s+-rf\s+/",
-    r"\bmkfs\b",
-    r"\bdd\s+if=",
-    r"\bformat\b",
-    r"\berase\b",
-    r">\s*/dev/sd",
-    r"\breboot\b",
-    r"\bshutdown\b",
-    r"\binit\s+0\b",
-    r"\bpoweroff\b",
-]
-
-
 def _check_ssh_command_safety(cmd: str) -> str | None:
-    for pattern in SSH_COMMAND_BLACKLIST:
-        if re.search(pattern, cmd, re.IGNORECASE):
-            return f"命令被安全策略阻止: '{cmd}' 匹配黑名单规则 '{pattern}'"
+    """检查 SSH 命令安全性，复用 safety.py 的完整 Shell 黑名单 + 编码绕过防护。"""
+    from modules.agents.safety import check_shell_command
+
+    safe, reason = check_shell_command(cmd)
+    if not safe:
+        return f"SSH {reason}"
     return None
 
 
