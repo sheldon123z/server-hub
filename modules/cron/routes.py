@@ -58,6 +58,7 @@ class ValidateRequest(BaseModel):
 # ─── 查询端点 ───
 
 
+@router.get("")
 @router.get("/")
 async def list_user_crontab(
     server_id: str = Query(default="local", description="目标服务器"),

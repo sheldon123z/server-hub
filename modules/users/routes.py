@@ -57,6 +57,7 @@ class SetPasswordRequest(BaseModel):
 # ─── 资源监控 ───
 
 
+@router.get("")
 @router.get("/")
 async def list_users(
     server_id: str = Query(default="local", description="目标服务器"),

@@ -21,6 +21,7 @@ from modules.services.services import (
 router = APIRouter(prefix="/api/services", tags=["服务管理"])
 
 
+@router.get("")
 @router.get("/")
 async def get_services(
     server_id: str = Query(default="local", description="目标服务器"),
