@@ -78,6 +78,8 @@ def validate_cron_expression(expression: str) -> dict:
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _DISABLED_PREFIX = "#DISABLED# "
+# 兼容历史 crontab 中手动添加的 #PAUSED# 前缀
+_DISABLED_PREFIXES = ("#DISABLED# ", "#PAUSED# ")
 
 
 def _validate_username(username: str):
@@ -156,9 +158,10 @@ def _parse_crontab_lines(output: str) -> list[dict]:
     for line in output.strip().splitlines():
         stripped = line.strip()
 
-        # 检查 #DISABLED# 前缀的禁用行
-        if stripped.startswith(_DISABLED_PREFIX):
-            disabled_line = stripped[len(_DISABLED_PREFIX) :]
+        # 检查 #DISABLED# 或 #PAUSED# 前缀的禁用行
+        matched_prefix = next((p for p in _DISABLED_PREFIXES if stripped.startswith(p)), None)
+        if matched_prefix:
+            disabled_line = stripped[len(matched_prefix) :]
             parts = disabled_line.split(None, 5)
             if len(parts) >= 6:
                 schedule = " ".join(parts[:5])
@@ -296,14 +299,14 @@ async def delete_cron_job(cron_user: str, schedule: str, command: str) -> bool:
     lines = raw.splitlines()
 
     target = f"{schedule} {command}"
-    disabled_target = f"{_DISABLED_PREFIX}{target}"
+    disabled_targets = {f"{p}{target}" for p in _DISABLED_PREFIXES}
     found = False
     new_lines = []
     _skip_prev_comment = False
 
     for _i, line in enumerate(lines):
         stripped = line.strip()
-        if stripped in (target, disabled_target):
+        if stripped == target or stripped in disabled_targets:
             found = True
             # 如果前一行是注释，也删除
             if new_lines and new_lines[-1].strip().startswith("#"):
@@ -327,17 +330,19 @@ async def toggle_cron_job(cron_user: str, schedule: str, command: str, enabled: 
     lines = raw.splitlines()
 
     active_line = f"{schedule} {command}"
-    disabled_line = f"{_DISABLED_PREFIX}{active_line}"
+    # 匹配任意禁用前缀，写入时统一用 #DISABLED#
+    disabled_variants = {f"{p}{active_line}" for p in _DISABLED_PREFIXES}
+    canonical_disabled = f"{_DISABLED_PREFIX}{active_line}"
     found = False
     new_lines = []
 
     for line in lines:
         stripped = line.strip()
-        if enabled and stripped == disabled_line:
+        if enabled and stripped in disabled_variants:
             new_lines.append(active_line)
             found = True
         elif not enabled and stripped == active_line:
-            new_lines.append(disabled_line)
+            new_lines.append(canonical_disabled)
             found = True
         else:
             new_lines.append(line)
