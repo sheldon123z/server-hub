@@ -664,17 +664,43 @@ async def api_pipeline_decide(
 
 @router.post("/ai/generate")
 async def api_ai_generate(request: Request, user=Depends(require_role("admin"))):
-    """P3-C: AI 生成工作流 — 尚未实现"""
-    raise HTTPException(501, "AI 工作流生成将在 P3-C 中实现")
+    """P3-C: AI 生成 Pipeline YAML"""
+    from modules.pipelines.ai_service import generate_pipeline
+
+    body = await request.json()
+    description = body.get("description", "").strip()
+    if not description:
+        raise HTTPException(400, "缺少 description")
+    hints = body.get("hints")
+
+    result = await generate_pipeline(description, hints)
+    return {"ok": True, **result}
 
 
 @router.post("/ai/modify")
 async def api_ai_modify(request: Request, user=Depends(require_role("admin"))):
-    """P3-C: AI 修改工作流 — 尚未实现"""
-    raise HTTPException(501, "AI 工作流修改将在 P3-C 中实现")
+    """P3-C: AI 修改 Pipeline YAML"""
+    from modules.pipelines.ai_service import modify_pipeline
+
+    body = await request.json()
+    yaml_content = body.get("yaml_content", "").strip()
+    instruction = body.get("instruction", "").strip()
+    if not yaml_content or not instruction:
+        raise HTTPException(400, "缺少 yaml_content 或 instruction")
+
+    result = await modify_pipeline(yaml_content, instruction)
+    return {"ok": True, **result}
 
 
 @router.post("/ai/review")
 async def api_ai_review(request: Request, user=Depends(require_role("admin"))):
-    """P3-C: AI 审查工作流 — 尚未实现"""
-    raise HTTPException(501, "AI 工作流审查将在 P3-C 中实现")
+    """P3-C: AI 审查 Pipeline YAML"""
+    from modules.pipelines.ai_service import review_pipeline
+
+    body = await request.json()
+    yaml_content = body.get("yaml_content", "").strip()
+    if not yaml_content:
+        raise HTTPException(400, "缺少 yaml_content")
+
+    result = await review_pipeline(yaml_content)
+    return {"ok": True, "review": result}
