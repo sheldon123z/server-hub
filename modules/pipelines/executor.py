@@ -465,6 +465,87 @@ async def _execute_pipeline(
                 await db.commit()
                 duration_ms = int((time.monotonic() - step_start) * 1000)
 
+            # 处理决策中断
+            if result.get("requires_decision"):
+                dr_id = result["decision_request_id"]
+                await _log_step_execution(
+                    run_id,
+                    step_id,
+                    step_type,
+                    "waiting_decision",
+                    output_data=result,
+                    duration_ms=duration_ms,
+                )
+                await db.execute(
+                    "UPDATE pipeline_runs SET status = 'paused' WHERE id = ?",
+                    (run_id,),
+                )
+                await db.commit()
+
+                await publish_chat_event(
+                    run_id,
+                    "decision_request",
+                    {
+                        "decision_request_id": dr_id,
+                        "prompt": result.get("decision_prompt", ""),
+                        "options": result.get("options", []),
+                        "context": result.get("context"),
+                        "timeout": result.get("timeout", 3600),
+                        "on_timeout": result.get("on_timeout"),
+                        "source": "step",
+                    },
+                    step_id=step_id,
+                    content=result.get("decision_prompt", ""),
+                )
+
+                chosen = await _wait_for_decision(
+                    run_id,
+                    step_id,
+                    result.get("timeout", 3600),
+                )
+                if chosen is None:
+                    chosen = result.get("on_timeout")
+                if chosen is None:
+                    raise RuntimeError(f"决策超时且无默认选项: {step_id}")
+
+                await db.execute(
+                    "UPDATE pipeline_runs SET status = 'running' WHERE id = ?",
+                    (run_id,),
+                )
+                await db.commit()
+
+                # 路由到选中选项的目标步骤
+                target_step = next(
+                    (opt.get("next_step") for opt in result.get("options", []) if opt.get("id") == chosen),
+                    None,
+                )
+                if target_step:
+                    target_idx = next(
+                        (j for j, s in enumerate(steps) if s.get("id") == target_step),
+                        None,
+                    )
+                    if target_idx is not None:
+                        await publish_chat_event(
+                            run_id,
+                            "decision_resolved",
+                            {"decided_by": "operator"},
+                            step_id=step_id,
+                            content=chosen,
+                        )
+                        duration_ms = int((time.monotonic() - step_start) * 1000)
+                        await _log_step_execution(
+                            run_id,
+                            step_id,
+                            step_type,
+                            "decided",
+                            output_data={"chosen_option_id": chosen},
+                            duration_ms=duration_ms,
+                        )
+                        i = target_idx
+                        continue
+
+                duration_ms = int((time.monotonic() - step_start) * 1000)
+
             # 规范化步骤结果：非零 exit_code 和 HTTP 错误码视为失败
             if not result.get("error"):
                 exit_code = result.get("exit_code")
@@ -588,6 +669,28 @@ async def _wait_for_approval(run_id: str, step_id: str, approval_timeout: int) -
         await asyncio.sleep(2)
     # 超时
     return False
+
+
+async def _wait_for_decision(run_id: str, step_id: str, wait_seconds: int = 3600) -> str | None:
+    """轮询等待人类决策（与 _wait_for_approval 类似）"""
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        db = await get_db()
+        row = await db.execute_fetchone(
+            "SELECT status, output_json FROM pipeline_step_logs "
+            "WHERE run_id = ? AND step_id = ? ORDER BY started_at DESC LIMIT 1",
+            (run_id, step_id),
+        )
+        if row and row["status"] == "decided":
+            try:
+                output = json.loads(row["output_json"])
+                return output.get("chosen_option_id")
+            except (json.JSONDecodeError, TypeError):
+                return None
+        if row and row["status"] == "rejected":
+            return None
+        await asyncio.sleep(2)
+    return None  # 超时
 
 
 async def _log_step_execution(

@@ -83,6 +83,35 @@ async def get_pipeline_run_summary(run_id: str) -> str:
     return json.dumps(run_info, ensure_ascii=False, default=str)
 
 
+@tool
+def request_human_intervention(
+    prompt: str,
+    options: list[dict],
+    timeout_seconds: int = 3600,
+) -> str:
+    """请求人类介入决策。Pipeline 将暂停直到人类做出选择。
+
+    Args:
+        prompt: 决策描述（展示给运维人员）
+        options: 选项列表，每项包含 {id, label, description}
+        timeout_seconds: 超时秒数（默认 3600）
+
+    Returns:
+        人类选择的选项 ID
+    """
+    from langgraph.types import interrupt
+
+    result = interrupt(
+        {
+            "type": "decision",
+            "prompt": prompt,
+            "options": options,
+            "timeout": timeout_seconds,
+        }
+    )
+    return result
+
+
 def get_pipeline_tools() -> list:
     """返回 pipeline 专属工具列表"""
-    return [get_pipeline_step_output, get_pipeline_run_summary]
+    return [get_pipeline_step_output, get_pipeline_run_summary, request_human_intervention]

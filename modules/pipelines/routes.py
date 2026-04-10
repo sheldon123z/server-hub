@@ -603,9 +603,63 @@ async def api_get_chat_events(
 
 
 @router.post("/runs/{run_id}/decide")
-async def api_pipeline_decide(run_id: str, user=Depends(require_role("admin"))):
-    """P3-B: 人类决策响应 — 尚未实现"""
-    raise HTTPException(501, "决策功能将在 P3-B 中实现")
+async def api_pipeline_decide(
+    run_id: str,
+    request: Request,
+    user=Depends(require_role("admin")),
+):
+    """P3-B: 人类决策响应 — 原子 CAS 解析"""
+    body = await request.json()
+    step_id = body.get("step_id")
+    decision_request_id = body.get("decision_request_id")
+    option_id = body.get("option_id")
+
+    if not all([step_id, decision_request_id, option_id]):
+        raise HTTPException(400, "缺少 step_id / decision_request_id / option_id")
+
+    db = await get_db()
+    # Compare-and-swap: 只有 waiting_decision 状态才能解析
+    cursor = await db.execute(
+        """UPDATE pipeline_step_logs
+           SET status = 'decided',
+               output_json = ?,
+               completed_at = datetime('now')
+           WHERE run_id = ? AND step_id = ? AND status = 'waiting_decision'""",
+        (
+            json.dumps(
+                {
+                    "chosen_option_id": option_id,
+                    "decided_by": user.get("username", "admin"),
+                    "decision_request_id": decision_request_id,
+                },
+                ensure_ascii=False,
+            ),
+            run_id,
+            step_id,
+        ),
+    )
+    await db.commit()
+
+    if cursor.rowcount == 0:
+        # 检查是否已决策（幂等）
+        existing = await db.execute_fetchone(
+            "SELECT output_json FROM pipeline_step_logs WHERE run_id = ? AND step_id = ? AND status = 'decided'",
+            (run_id, step_id),
+        )
+        if existing:
+            return {"ok": True, "already_decided": True, **json.loads(existing["output_json"])}
+        raise HTTPException(409, "决策请求已过期或不存在")
+
+    # 发布 decision_resolved 事件
+    await publish_chat_event(
+        run_id,
+        "decision_resolved",
+        {"decided_by": user.get("username", "admin"), "decision_request_id": decision_request_id},
+        step_id=step_id,
+        content=option_id,
+    )
+
+    return {"ok": True, "option_id": option_id}
 
 
 @router.post("/ai/generate")

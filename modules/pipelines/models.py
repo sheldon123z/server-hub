@@ -17,6 +17,7 @@ STEP_TYPES = Literal[
     "http",
     "agent",
     "approval",
+    "decision",
     "condition",
     "parallel",
     "delay",
@@ -65,8 +66,15 @@ class StepDefinition(BaseModel):
     model: str | None = Field(None, description="Agent 模型标识")
     output_format: str | None = Field(None, description="Agent 输出格式: json / text")
 
-    # approval
-    assignee: str | None = Field(None, description="审批人")
+    # approval / decision
+    assignee: str | None = Field(None, description="审批人 / 决策指定人")
+
+    # decision
+    options: list[dict[str, Any]] | None = Field(
+        None, description="决策选项列表 [{id, label, description?, next_step?}]"
+    )
+    on_timeout: str | None = Field(None, description="超时时自动选择的 option id")
+    context_from: str | None = Field(None, description="引用前序步骤 id 的输出作为决策上下文")
 
     # condition
     expression: str | None = Field(None, description="条件表达式")

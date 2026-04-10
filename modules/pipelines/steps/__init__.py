@@ -25,6 +25,7 @@ _STEP_MODULES = [
     "modules.pipelines.steps.http",
     "modules.pipelines.steps.agent",
     "modules.pipelines.steps.approval",
+    "modules.pipelines.steps.decision",
     "modules.pipelines.steps.condition",
     "modules.pipelines.steps.parallel",
     "modules.pipelines.steps.notify",

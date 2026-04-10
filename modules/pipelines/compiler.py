@@ -502,6 +502,8 @@ def generate_mermaid(definition: PipelineDefinition) -> str:
         label = step.name or step.id
         if step.type == "condition":
             return f'{step.id}{{"{label}"}}'
+        if step.type == "decision":
+            return f'{step.id}{{"{label}"}}'
         if step.type == "approval":
             return f'{step.id}(["{label}"])'
         if step.type == "parallel":
@@ -534,8 +536,19 @@ def generate_mermaid(definition: PipelineDefinition) -> str:
             if prev_step.type == "condition":
                 # condition 已在下面处理，跳过
                 continue
+            if prev_step.type == "decision":
+                # decision 的各选项边已在下面处理，跳过
+                continue
 
-        if step.type == "condition":
+        if step.type == "decision":
+            # 菱形节点 + 每个 option 生成一条带标签的边
+            lines.append(f"    {prev_id} --> {step.id}")
+            for opt in step.options or []:
+                target = opt.get("next_step")
+                label = opt.get("label", opt.get("id", ""))
+                if target:
+                    lines.append(f'    {step.id} -->|"{label}"| {target}')
+        elif step.type == "condition":
             # 菱形节点 + 两条分支
             lines.append(f"    {prev_id} --> {step.id}")
             if step.on_true:
@@ -552,8 +565,8 @@ def generate_mermaid(definition: PipelineDefinition) -> str:
     # 最后一个 step → END
     last = steps[-1]
     last_id = last.id
-    if last.type == "condition":
-        # condition 的终点由 on_true/on_false 决定，不额外连 END
+    if last.type in ("condition", "decision"):
+        # condition/decision 的终点由分支边决定，不额外连 END
         pass
     elif last.type == "parallel" and last.branches:
         lines.append("    END_NODE((End))")
