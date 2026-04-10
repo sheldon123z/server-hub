@@ -3,11 +3,13 @@
 import asyncio
 import json
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
 from auth.dependencies import get_current_user, require_role
+from database import get_db
 from modules.pipelines.services import (
     create_pipeline,
     delete_pipeline,
@@ -464,3 +466,225 @@ async def api_trigger_run(
         return {"ok": True, **run}
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+# ---------------------------------------------------------------------------
+# P3-A: Pipeline AI 执行面板
+# ---------------------------------------------------------------------------
+
+
+async def _build_run_context(run_id: str) -> dict:
+    """构建 Pipeline 运行上下文快照（注入到 PipelineAgent 提示词）"""
+    db = await get_db()
+
+    run = await db.execute_fetchone(
+        "SELECT id, pipeline_id, status, current_step_id, error, params_json FROM pipeline_runs WHERE id = ?",
+        (run_id,),
+    )
+    if not run:
+        return {}
+
+    pipeline = await db.execute_fetchone(
+        "SELECT name, display_name, description FROM pipelines WHERE id = ?",
+        (run["pipeline_id"],),
+    )
+
+    rows = await db.execute_fetchall(
+        "SELECT step_id, step_type, status, duration_ms, error "
+        "FROM pipeline_step_logs WHERE run_id = ? ORDER BY started_at",
+        (run_id,),
+    )
+    step_lines = []
+    for r in rows:
+        status_icon = {"completed": "✓", "failed": "✗", "running": "▶"}.get(r["status"], "○")
+        dur = f" ({r['duration_ms']}ms)" if r["duration_ms"] else ""
+        err = f" — {r['error'][:100]}" if r["error"] else ""
+        step_lines.append(f"  {status_icon} [{r['step_type']}] {r['step_id']}{dur}{err}")
+
+    step_context = "\n".join(step_lines) if step_lines else "暂无步骤执行记录"
+
+    return {
+        "pipeline_name": pipeline["display_name"] if pipeline else run["pipeline_id"],
+        "task_description": pipeline["description"] if pipeline else "",
+        "step_context": f"当前状态: {run['status']}\n已执行步骤:\n{step_context}",
+    }
+
+
+@router.post("/runs/{run_id}/chat")
+async def api_pipeline_chat(
+    run_id: str,
+    request: Request,
+    user=Depends(require_role("admin")),
+):
+    """用户在 Pipeline 执行面板中提问 — 启动后台 Agent 任务，事件进 /stream"""
+    body = await request.json()
+    message = body.get("message", "").strip()
+    if not message:
+        raise HTTPException(400, "消息不能为空")
+
+    db = await get_db()
+    run = await db.execute_fetchone(
+        "SELECT id, chat_thread_id FROM pipeline_runs WHERE id = ?",
+        (run_id,),
+    )
+    if not run:
+        raise HTTPException(404, "运行实例不存在")
+
+    chat_thread_id = run["chat_thread_id"] or f"pipeline-chat-{run_id}"
+    if not run["chat_thread_id"]:
+        await db.execute(
+            "UPDATE pipeline_runs SET chat_thread_id = ? WHERE id = ?",
+            (chat_thread_id, run_id),
+        )
+        await db.commit()
+
+    task = asyncio.ensure_future(_run_pipeline_chat(run_id, chat_thread_id, message))
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    return {"ok": True, "message": "已接收，AI 正在思考"}
+
+
+async def _run_pipeline_chat(run_id: str, thread_id: str, message: str):
+    """后台运行 PipelineAgent，产出事件 publish 到 Pipeline SSE 通道"""
+    from modules.pipelines.executor import publish_chat_event
+    from modules.pipelines.pipeline_agent import (
+        cleanup_pipeline_agent,
+        create_pipeline_agent,
+    )
+
+    msg_id = str(uuid.uuid4())
+
+    try:
+        await publish_chat_event(
+            run_id,
+            "chat_message",
+            {"final": True},
+            message_id=msg_id,
+            role="user",
+            content=message,
+        )
+
+        context = await _build_run_context(run_id)
+        agent, invoke_config = await create_pipeline_agent(
+            run_id,
+            context,
+            thread_id,
+            purpose="patrol",
+        )
+
+        ai_msg_id = str(uuid.uuid4())
+        accumulated_content = ""
+
+        async for event in agent.astream(
+            {"messages": [("user", message)]},
+            config=invoke_config,
+        ):
+            messages = event.get("messages", [])
+            for msg in messages:
+                role = getattr(msg, "type", None)
+
+                if role == "ai":
+                    content = getattr(msg, "content", "")
+                    if isinstance(content, list):
+                        content = "".join(item.get("text", "") for item in content if isinstance(item, dict))
+
+                    tool_calls = getattr(msg, "tool_calls", [])
+                    for tc in tool_calls:
+                        tc_id = str(uuid.uuid4())
+                        await publish_chat_event(
+                            run_id,
+                            "chat_tool_call",
+                            {"tool": tc.get("name", ""), "args": tc.get("args", {})},
+                            message_id=ai_msg_id,
+                            tool_call_id=tc_id,
+                        )
+
+                    if content and content != accumulated_content:
+                        accumulated_content = content
+                        await publish_chat_event(
+                            run_id,
+                            "chat_message",
+                            {"final": False},
+                            message_id=ai_msg_id,
+                            role="assistant",
+                            content=content,
+                        )
+
+                elif role == "tool":
+                    tool_name = getattr(msg, "name", "")
+                    tool_content = getattr(msg, "content", "")
+                    await publish_chat_event(
+                        run_id,
+                        "chat_tool_result",
+                        {"tool": tool_name},
+                        tool_call_id=getattr(msg, "tool_call_id", None),
+                        content=tool_content,
+                    )
+
+        if accumulated_content:
+            await publish_chat_event(
+                run_id,
+                "chat_message",
+                {"final": True},
+                message_id=ai_msg_id,
+                role="assistant",
+                content=accumulated_content,
+            )
+
+    except Exception as e:
+        logger.exception("Pipeline chat 执行失败: %s", e)
+        await publish_chat_event(
+            run_id,
+            "chat_message",
+            {"final": True},
+            message_id=str(uuid.uuid4()),
+            role="assistant",
+            content=f"抱歉，处理失败: {e}",
+        )
+    finally:
+        await cleanup_pipeline_agent(run_id)
+
+
+@router.get("/runs/{run_id}/chat-events")
+async def api_get_chat_events(
+    run_id: str,
+    after_seq: int = 0,
+    limit: int = 100,
+    user=Depends(get_current_user),
+):
+    """获取 Pipeline 运行的 AI 对话事件历史（分页 + 断线续传）"""
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT * FROM pipeline_chat_events WHERE run_id = ? AND seq > ? ORDER BY seq LIMIT ?",
+        (run_id, after_seq, limit),
+    )
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# P3-B/C 占位端点（返回 501）
+# ---------------------------------------------------------------------------
+
+
+@router.post("/runs/{run_id}/decide")
+async def api_pipeline_decide(run_id: str, user=Depends(require_role("admin"))):
+    """P3-B: 人类决策响应 — 尚未实现"""
+    raise HTTPException(501, "决策功能将在 P3-B 中实现")
+
+
+@router.post("/ai/generate")
+async def api_ai_generate(request: Request, user=Depends(require_role("admin"))):
+    """P3-C: AI 生成工作流 — 尚未实现"""
+    raise HTTPException(501, "AI 工作流生成将在 P3-C 中实现")
+
+
+@router.post("/ai/modify")
+async def api_ai_modify(request: Request, user=Depends(require_role("admin"))):
+    """P3-C: AI 修改工作流 — 尚未实现"""
+    raise HTTPException(501, "AI 工作流修改将在 P3-C 中实现")
+
+
+@router.post("/ai/review")
+async def api_ai_review(request: Request, user=Depends(require_role("admin"))):
+    """P3-C: AI 审查工作流 — 尚未实现"""
+    raise HTTPException(501, "AI 工作流审查将在 P3-C 中实现")

@@ -960,6 +960,24 @@ async def _create_pipeline_tables(db: aiosqlite.Connection):
             ON pipeline_step_logs(run_id, step_id);
         CREATE INDEX IF NOT EXISTS idx_pipeline_step_logs_run_time
             ON pipeline_step_logs(run_id, started_at);
+
+        CREATE TABLE IF NOT EXISTS pipeline_chat_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            event_id TEXT NOT NULL UNIQUE,
+            seq INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            step_id TEXT,
+            message_id TEXT,
+            tool_call_id TEXT,
+            role TEXT,
+            content TEXT,
+            metadata_json TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pce_run_seq ON pipeline_chat_events(run_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_pce_run_type ON pipeline_chat_events(run_id, event_type);
     """)
 
 
@@ -977,6 +995,9 @@ async def init_tables(db: aiosqlite.Connection):
     await _create_changelog_tables(db)
     await _create_task_tables(db)
     await _create_pipeline_tables(db)
+
+    # P3-A: Pipeline AI 执行面板扩展
+    await _ensure_column(db, "pipeline_runs", "chat_thread_id", "TEXT DEFAULT NULL")
 
     # FTS5 虚拟表（跨领域，单独创建）
     try:

@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 
 from database import get_db
+from modules.pipelines.security import escape_for_shell, redact_sensitive
 from modules.pipelines.steps import get_step_executor, load_all_steps
 
 logger = logging.getLogger(__name__)
@@ -186,15 +187,97 @@ def unsubscribe_sse(run_id: str, queue: asyncio.Queue):
             _sse_subscribers[run_id].remove(queue)
 
 
+# routes.py 调用的公开别名
+get_run_event_queue = subscribe_sse
+
+# Per-run 事件序列号计数器
+_run_seq_counters: dict[str, int] = {}
+
+
+def _next_seq(run_id: str) -> int:
+    """获取 run 的下一个递增序列号"""
+    seq = _run_seq_counters.get(run_id, 0) + 1
+    _run_seq_counters[run_id] = seq
+    return seq
+
+
 async def _publish_sse(run_id: str, event_type: str, data: dict):
-    """向所有订阅者发布 SSE 事件"""
+    """向所有订阅者发布 SSE 事件（含 event_id + seq 用于去重/回放）"""
     subscribers = _sse_subscribers.get(run_id, [])
-    event = {"type": event_type, "data": data, "timestamp": time.time()}
+    event = {
+        "type": event_type,
+        "event_id": str(uuid.uuid4()),
+        "seq": _next_seq(run_id),
+        "timestamp": time.time(),
+        **data,
+    }
     for queue in subscribers:
         try:
             queue.put_nowait(event)
         except asyncio.QueueFull:
             logger.warning("SSE 队列已满，丢弃事件: %s", event_type)
+
+
+async def publish_chat_event(
+    run_id: str,
+    event_type: str,
+    data: dict,
+    *,
+    step_id: str | None = None,
+    message_id: str | None = None,
+    tool_call_id: str | None = None,
+    role: str | None = None,
+    content: str | None = None,
+):
+    """发布聊天事件：同时写入 pipeline_chat_events 表 + 广播 SSE"""
+    event_id = str(uuid.uuid4())
+    seq = _next_seq(run_id)
+
+    # 持久化到数据库
+    try:
+        db = await get_db()
+        await db.execute(
+            """INSERT INTO pipeline_chat_events
+               (run_id, event_id, seq, event_type, step_id, message_id, tool_call_id, role, content, metadata_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                event_id,
+                seq,
+                event_type,
+                step_id,
+                message_id,
+                tool_call_id,
+                role,
+                content,
+                json.dumps(
+                    {k: v for k, v in data.items() if k not in ("role", "content")}, ensure_ascii=False, default=str
+                ),
+            ),
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("持久化 chat event 失败: %s", event_type)
+
+    # 广播 SSE（不再走 _publish_sse 以避免 seq 重复）
+    subscribers = _sse_subscribers.get(run_id, [])
+    event = {
+        "type": event_type,
+        "event_id": event_id,
+        "seq": seq,
+        "timestamp": time.time(),
+        "step_id": step_id,
+        "message_id": message_id,
+        "tool_call_id": tool_call_id,
+        "role": role,
+        "content": content,
+        **{k: v for k, v in data.items() if k not in ("role", "content")},
+    }
+    for queue in subscribers:
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            logger.warning("SSE 队列已满，丢弃 chat event: %s", event_type)
 
 
 async def _execute_pipeline(
@@ -236,13 +319,114 @@ async def _execute_pipeline(
             step_start = time.monotonic()
             await _log_step_execution(run_id, step_id, step_type, "running", input_data=step)
 
-            try:
-                executor = get_step_executor(step_type)
-                # 将模板变量注入到 config 中（params 和前序步骤输出）
-                resolved_config = _resolve_template_vars(step, state)
-                result = await executor.execute(resolved_config, state)
-            except Exception as e:
-                result = {"output": "", "error": str(e)}
+            # ── Parallel Step: 真正并行执行 branches ──
+            if step_type == "parallel":
+                branches = step.get("branches") or step.get("params", {}).get("branches", [])
+                if not branches:
+                    result = {"output": "无分支定义", "branch_count": 0}
+                    duration_ms = int((time.monotonic() - step_start) * 1000)
+                    step_outputs[step_id] = result
+                    state["step_outputs"] = step_outputs
+                    await _log_step_execution(
+                        run_id, step_id, step_type, "completed", output_data=result, duration_ms=duration_ms
+                    )
+                    await _publish_sse(
+                        run_id, "step_complete", {"step_id": step_id, "status": "completed", "duration_ms": duration_ms}
+                    )
+                    i += 1
+                    continue
+
+                async def _run_branch(branch: dict, branch_idx: int, _parent_id: str = step_id) -> tuple[str, dict]:
+                    bid = branch.get("id", f"branch-{branch_idx}")
+                    btype = branch.get("type", "shell")
+                    bname = branch.get("name", bid)
+                    await _publish_sse(
+                        run_id,
+                        "step_start",
+                        {"step_id": bid, "step_name": bname, "step_type": btype, "parent": _parent_id},
+                    )
+                    b_start = time.monotonic()
+                    await _log_step_execution(run_id, bid, btype, "running", input_data=branch)
+                    try:
+                        branch_executor = get_step_executor(btype)
+                        resolved = _resolve_template_vars(branch, state)
+                        res = await branch_executor.execute(resolved, state)
+                    except Exception as exc:
+                        res = {"output": "", "error": str(exc)}
+                    b_dur = int((time.monotonic() - b_start) * 1000)
+                    b_status = "failed" if res.get("error") else "completed"
+                    await _log_step_execution(run_id, bid, btype, b_status, output_data=res, duration_ms=b_dur)
+                    evt = "step_complete" if b_status == "completed" else "step_failed"
+                    await _publish_sse(run_id, evt, {"step_id": bid, "status": b_status, "duration_ms": b_dur})
+                    return bid, res
+
+                branch_tasks = [_run_branch(b, idx) for idx, b in enumerate(branches)]
+                branch_results = await asyncio.gather(*branch_tasks, return_exceptions=True)
+
+                merged: dict = {}
+                all_success = True
+                for br in branch_results:
+                    if isinstance(br, BaseException):
+                        all_success = False
+                        merged[f"error-{id(br)}"] = {"error": str(br)}
+                    else:
+                        bid, res = br
+                        merged[bid] = res
+                        if res.get("error"):
+                            all_success = False
+
+                result = {"output": merged, "all_success": all_success, "branch_count": len(branches)}
+                duration_ms = int((time.monotonic() - step_start) * 1000)
+                step_outputs[step_id] = result
+                state["step_outputs"] = step_outputs
+                p_status = "completed" if all_success else "failed"
+                await _log_step_execution(
+                    run_id, step_id, step_type, p_status, output_data=result, duration_ms=duration_ms
+                )
+
+                if not all_success and step.get("on_failure", "abort") == "abort":
+                    raise RuntimeError(f"Parallel step {step_id} 中有分支失败")
+
+                await _publish_sse(
+                    run_id, "step_complete", {"step_id": step_id, "status": p_status, "duration_ms": duration_ms}
+                )
+                i += 1
+                continue
+
+            # ── 普通步骤执行（带重试）──
+            retry_count = int(step.get("retry_count", 0))
+            retry_delay = int(step.get("retry_delay", 5))
+
+            for attempt in range(retry_count + 1):
+                try:
+                    executor = get_step_executor(step_type)
+                    resolved_config = _resolve_template_vars(step, state)
+                    result = await executor.execute(resolved_config, state)
+                except Exception as e:
+                    result = {"output": "", "error": str(e)}
+
+                if not result.get("error"):
+                    break  # 成功
+
+                if attempt < retry_count:
+                    logger.info(
+                        "Step %s 第 %d/%d 次重试，等待 %ds",
+                        step_id,
+                        attempt + 1,
+                        retry_count,
+                        retry_delay,
+                    )
+                    await _publish_sse(
+                        run_id,
+                        "step_retry",
+                        {
+                            "step_id": step_id,
+                            "attempt": attempt + 1,
+                            "max_retries": retry_count,
+                            "delay": retry_delay,
+                        },
+                    )
+                    await asyncio.sleep(retry_delay)
 
             duration_ms = int((time.monotonic() - step_start) * 1000)
 
@@ -342,6 +526,7 @@ async def _execute_pipeline(
             {"run_id": run_id, "status": "completed", "total_duration": total_duration},
         )
         logger.info("Pipeline 运行完成: %s (耗时 %dms)", run_id, total_duration)
+        _run_seq_counters.pop(run_id, None)
 
     except asyncio.CancelledError:
         logger.info("Pipeline 运行被取消: %s", run_id)
@@ -350,6 +535,7 @@ async def _execute_pipeline(
             (run_id,),
         )
         await db.commit()
+        _run_seq_counters.pop(run_id, None)
 
     except Exception as e:
         error_msg = str(e)
@@ -360,6 +546,7 @@ async def _execute_pipeline(
         )
         await db.commit()
         await _publish_sse(run_id, "pipeline_complete", {"run_id": run_id, "status": "failed", "error": error_msg})
+        _run_seq_counters.pop(run_id, None)
 
 
 async def _wait_for_approval(run_id: str, step_id: str, approval_timeout: int) -> bool:
@@ -406,7 +593,7 @@ async def _log_step_execution(
                     step_id,
                     step_type,
                     status,
-                    json.dumps(input_data, ensure_ascii=False, default=str) if input_data else None,
+                    json.dumps(redact_sensitive(input_data), ensure_ascii=False, default=str) if input_data else None,
                 ),
             )
         else:
@@ -416,7 +603,13 @@ async def _log_step_execution(
                    WHERE run_id = ? AND step_id = ? AND status = 'running'""",
                 (
                     status,
-                    json.dumps(output_data, ensure_ascii=False, default=str) if output_data else None,
+                    json.dumps(
+                        redact_sensitive(output_data) if isinstance(output_data, dict) else output_data,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    if output_data
+                    else None,
                     duration_ms,
                     error or (output_data.get("error") if output_data else None),
                     run_id,
@@ -436,12 +629,16 @@ def _resolve_template_vars(step_config: dict, state: dict) -> dict:
     step_outputs = state.get("step_outputs", {})
     run_id = state.get("run_id", "")
 
+    _shell_context = False
+
     def _replace(match):
         expr = match.group(1).strip()
         parts = expr.split(".")
 
         if not parts:
             return match.group(0)
+
+        result: str | None = None
 
         if parts[0] == "params" and len(parts) >= 2:
             val = params
@@ -450,9 +647,9 @@ def _resolve_template_vars(step_config: dict, state: dict) -> dict:
                     val = val.get(p, "")
                 else:
                     return match.group(0)
-            return str(val) if val is not None else ""
+            result = str(val) if val is not None else ""
 
-        if parts[0] == "steps" and len(parts) >= 3:
+        elif parts[0] == "steps" and len(parts) >= 3:
             sid = parts[1]
             step_out = step_outputs.get(sid, {})
             val = step_out
@@ -461,25 +658,33 @@ def _resolve_template_vars(step_config: dict, state: dict) -> dict:
                     val = val.get(p, "")
                 else:
                     return match.group(0)
-            return str(val) if val is not None else ""
+            result = str(val) if val is not None else ""
 
-        if parts[0] == "run":
+        elif parts[0] == "run":
             if len(parts) >= 2 and parts[1] == "id":
-                return run_id
-            if len(parts) >= 2 and parts[1] == "started_at":
-                return state.get("started_at", "")
+                result = run_id
+            elif len(parts) >= 2 and parts[1] == "started_at":
+                result = state.get("started_at", "")
 
-        return match.group(0)
+        if result is None:
+            return match.group(0)
+
+        return escape_for_shell(result) if _shell_context else result
 
     pattern = re.compile(r"\{\{(.*?)\}\}")
 
-    def _resolve_value(v):
+    def _resolve_value(v, *, in_shell_context: bool = False):
+        nonlocal _shell_context
         if isinstance(v, str):
-            return pattern.sub(_replace, v)
+            old_ctx = _shell_context
+            _shell_context = in_shell_context
+            resolved = pattern.sub(_replace, v)
+            _shell_context = old_ctx
+            return resolved
         if isinstance(v, dict):
-            return {k: _resolve_value(val) for k, val in v.items()}
+            return {k: _resolve_value(val, in_shell_context=(k == "command")) for k, val in v.items()}
         if isinstance(v, list):
-            return [_resolve_value(item) for item in v]
+            return [_resolve_value(item, in_shell_context=in_shell_context) for item in v]
         return v
 
     return _resolve_value(step_config)
