@@ -10,6 +10,15 @@ from sse_starlette.sse import EventSourceResponse
 
 from auth.dependencies import get_current_user, require_role
 from database import get_db
+from modules.pipelines.executor import (
+    approve_run,
+    cancel_run,
+    get_run_event_queue,
+    publish_chat_event,
+    reject_run,
+    retry_from_step,
+    start_run,
+)
 from modules.pipelines.services import (
     create_pipeline,
     delete_pipeline,
@@ -111,23 +120,7 @@ async def api_cancel_run(
     if run["status"] not in ("pending", "running", "paused"):
         raise HTTPException(400, f"当前状态 '{run['status']}' 不可取消")
 
-    try:
-        from modules.pipelines.executor import cancel_run
-
-        await cancel_run(run_id)
-    except ImportError:
-        # executor 尚未实现，直接更新状态
-        from datetime import datetime
-
-        from database import get_db
-
-        db = await get_db()
-        await db.execute(
-            "UPDATE pipeline_runs SET status='cancelled', completed_at=? WHERE id=?",
-            (datetime.now().isoformat(), run_id),
-        )
-        await db.commit()
-
+    await cancel_run(run_id)
     return {"ok": True, "run_id": run_id}
 
 
@@ -143,20 +136,7 @@ async def api_approve_run(
     if run["status"] != "paused":
         raise HTTPException(400, f"当前状态 '{run['status']}' 不在等待审批")
 
-    try:
-        from modules.pipelines.executor import approve_run
-
-        await approve_run(run_id, approved_by=user["username"])
-    except ImportError:
-        from database import get_db
-
-        db = await get_db()
-        await db.execute(
-            "UPDATE pipeline_runs SET status='running' WHERE id=?",
-            (run_id,),
-        )
-        await db.commit()
-
+    await approve_run(run_id, approved_by=user["username"])
     return {"ok": True, "run_id": run_id}
 
 
@@ -172,22 +152,7 @@ async def api_reject_run(
     if run["status"] != "paused":
         raise HTTPException(400, f"当前状态 '{run['status']}' 不在等待审批")
 
-    try:
-        from modules.pipelines.executor import reject_run
-
-        await reject_run(run_id, rejected_by=user["username"])
-    except ImportError:
-        from datetime import datetime
-
-        from database import get_db
-
-        db = await get_db()
-        await db.execute(
-            "UPDATE pipeline_runs SET status='failed', error='审批被拒绝', completed_at=? WHERE id=?",
-            (datetime.now().isoformat(), run_id),
-        )
-        await db.commit()
-
+    await reject_run(run_id, rejected_by=user["username"])
     return {"ok": True, "run_id": run_id}
 
 
@@ -205,12 +170,8 @@ async def api_retry_from_step(
         raise HTTPException(400, f"当前状态 '{run['status']}' 不可重试")
 
     try:
-        from modules.pipelines.executor import retry_from_step
-
         new_run = await retry_from_step(run_id, step_id, triggered_by=user["username"])
         return {"ok": True, **new_run}
-    except ImportError:
-        raise HTTPException(501, "执行引擎尚未就绪")
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -240,14 +201,8 @@ async def api_stream_run(
 
     async def _event_generator():
         """从执行引擎的事件队列读取事件并推送。"""
-        # 尝试获取执行引擎的事件队列
-        event_queue: asyncio.Queue | None = None
-        try:
-            from modules.pipelines.executor import get_run_event_queue
-
-            event_queue = get_run_event_queue(run_id)
-        except (ImportError, AttributeError):
-            pass
+        # 获取执行引擎的事件队列
+        event_queue: asyncio.Queue | None = get_run_event_queue(run_id)
 
         if event_queue:
             # 有执行引擎 — 从队列读取实时事件
@@ -426,43 +381,12 @@ async def api_trigger_run(
         )
 
     try:
-        from modules.pipelines.executor import start_run
-
         run = await start_run(
             pipeline_id=pipeline_id,
             params=params,
             triggered_by=user["username"],
             trigger_type="manual",
         )
-        return {"ok": True, **run}
-    except ImportError:
-        # executor 尚未实现 — 创建 pending 状态的记录
-        import uuid
-        from datetime import datetime
-
-        from database import get_db
-
-        run_id = uuid.uuid4().hex[:16]
-        now = datetime.now().isoformat()
-        db = await get_db()
-        await db.execute(
-            "INSERT INTO pipeline_runs "
-            "(id, pipeline_id, pipeline_version, status, params_json, "
-            "trigger_type, started_at, started_by) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                run_id,
-                pipeline_id,
-                pipeline["version"],
-                "pending",
-                json.dumps(params, ensure_ascii=False),
-                "manual",
-                now,
-                user["username"],
-            ),
-        )
-        await db.commit()
-        run = await get_pipeline_run(run_id)
         return {"ok": True, **run}
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -556,7 +480,6 @@ async def api_pipeline_chat(
 
 async def _run_pipeline_chat(run_id: str, thread_id: str, message: str):
     """后台运行 PipelineAgent，产出事件 publish 到 Pipeline SSE 通道"""
-    from modules.pipelines.executor import publish_chat_event
     from modules.pipelines.pipeline_agent import (
         cleanup_pipeline_agent,
         create_pipeline_agent,

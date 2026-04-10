@@ -465,6 +465,15 @@ async def _execute_pipeline(
                 await db.commit()
                 duration_ms = int((time.monotonic() - step_start) * 1000)
 
+            # 规范化步骤结果：非零 exit_code 和 HTTP 错误码视为失败
+            if not result.get("error"):
+                exit_code = result.get("exit_code")
+                if exit_code is not None and exit_code != 0:
+                    result["error"] = f"命令退出码非零: {exit_code}"
+                status_code = result.get("status_code")
+                if status_code is not None and status_code >= 400:
+                    result["error"] = f"HTTP 请求失败: {status_code}"
+
             # 检查执行结果
             has_error = bool(result.get("error"))
             step_status = "failed" if has_error else "completed"
@@ -630,6 +639,75 @@ async def _log_step_execution(
         await db.commit()
     except Exception:
         logger.debug("写入 step 日志失败", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# routes.py 兼容别名 / 包装函数
+# ---------------------------------------------------------------------------
+
+
+async def start_run(
+    pipeline_id: str,
+    params: dict | None = None,
+    triggered_by: str = "system",
+    trigger_type: str = "manual",
+) -> dict:
+    """routes.py 兼容包装 — 启动 Pipeline 并返回 run 字典"""
+    from modules.pipelines.services import get_pipeline_run
+
+    run_id = await start_pipeline_run(
+        pipeline_id=pipeline_id,
+        params=params,
+        trigger_type=trigger_type,
+        started_by=triggered_by,
+    )
+    run = await get_pipeline_run(run_id)
+    return run if run else {"id": run_id, "status": "running"}
+
+
+cancel_run = cancel_pipeline_run
+
+
+async def approve_run(run_id: str, approved_by: str = "admin") -> bool:
+    """routes.py 兼容包装 — 审批当前等待中的步骤"""
+    db = await get_db()
+    row = await db.execute_fetchone(
+        "SELECT current_step_id FROM pipeline_runs WHERE id = ? AND status = 'paused'",
+        (run_id,),
+    )
+    if not row or not row["current_step_id"]:
+        return False
+    await approve_pipeline_step(run_id, row["current_step_id"], approved=True)
+    return True
+
+
+async def reject_run(run_id: str, rejected_by: str = "admin") -> bool:
+    """routes.py 兼容包装 — 拒绝当前等待中的步骤"""
+    db = await get_db()
+    row = await db.execute_fetchone(
+        "SELECT current_step_id FROM pipeline_runs WHERE id = ? AND status = 'paused'",
+        (run_id,),
+    )
+    if not row or not row["current_step_id"]:
+        return False
+    await approve_pipeline_step(run_id, row["current_step_id"], approved=False)
+    return True
+
+
+# 原 retry_from_step 不接受 triggered_by；包装一层以兼容 routes.py 的调用签名
+_retry_from_step_orig = retry_from_step
+
+
+async def _retry_from_step_compat(run_id: str, step_id: str, triggered_by: str = "system") -> dict:
+    """routes.py 兼容包装 — 从失败步骤重试并返回新 run 字典"""
+    from modules.pipelines.services import get_pipeline_run
+
+    new_run_id = await _retry_from_step_orig(run_id, step_id)
+    run = await get_pipeline_run(new_run_id)
+    return run if run else {"id": new_run_id, "status": "running"}
+
+
+retry_from_step = _retry_from_step_compat  # type: ignore[assignment]
 
 
 def _resolve_template_vars(step_config: dict, state: dict) -> dict:

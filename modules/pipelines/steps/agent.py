@@ -64,12 +64,19 @@ class AgentStepExecutor:
                 purpose="patrol",
             )
 
-            # 如果指定了工具白名单，过滤非安全工具
+            # TODO(P3-A follow-up): Agent step 应改用 create_pipeline_agent 以强制 SAFE_TOOLS
+            # 当前 build_agent() 使用完整工具集，allowed_tools 仅做日志记录
             if allowed_tools:
                 unsafe = set(allowed_tools) - SAFE_TOOLS
                 if unsafe:
-                    logger.warning("Agent step 请求了不安全的工具: %s，已过滤", unsafe)
+                    logger.warning("Agent step 请求了不安全的工具: %s，已从声明列表过滤", unsafe)
                     allowed_tools = [t for t in allowed_tools if t in SAFE_TOOLS]
+                logger.info(
+                    "Agent step 声明使用工具: %s（运行时白名单待强制执行）",
+                    allowed_tools,
+                )
+            else:
+                logger.info("Agent step 未指定 allowed_tools，build_agent 将使用完整工具集")
 
             run_id = state.get("run_id", "pipeline")
             step_id = config.get("id", "agent")
