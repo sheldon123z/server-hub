@@ -6,9 +6,9 @@ MODULE_INFO = {
     "name": "pipelines",
     "display_name": "Pipeline 编排",
     "icon": "git-merge",
-    "category": "AI 运维",
+    "category": "智能",
     "required_role": "admin",
-    "order": 35,
+    "order": 8,
 }
 
 __all__ = ["MODULE_INFO", "router"]

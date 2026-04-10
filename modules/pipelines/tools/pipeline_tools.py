@@ -14,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 @tool
-async def get_pipeline_step_output(step_id: str) -> str:
-    """获取指定步骤的执行输出内容。
+async def get_pipeline_step_output(run_id: str, step_id: str) -> str:
+    """获取指定运行中指定步骤的执行输出内容。
 
     Args:
+        run_id: 运行实例 ID
         step_id: 步骤 ID（如 "check-connectivity", "install-docker"）
 
     Returns:
@@ -26,11 +27,11 @@ async def get_pipeline_step_output(step_id: str) -> str:
     db = await get_db()
     row = await db.execute_fetchone(
         "SELECT step_id, step_type, status, output_json, error, duration_ms "
-        "FROM pipeline_step_logs WHERE step_id = ? ORDER BY started_at DESC LIMIT 1",
-        (step_id,),
+        "FROM pipeline_step_logs WHERE run_id = ? AND step_id = ? ORDER BY started_at DESC LIMIT 1",
+        (run_id, step_id),
     )
     if not row:
-        return json.dumps({"error": f"未找到步骤 {step_id} 的执行记录"}, ensure_ascii=False)
+        return json.dumps({"error": f"未找到运行 {run_id} 中步骤 {step_id} 的执行记录"}, ensure_ascii=False)
 
     result = dict(row)
     if result.get("output_json"):

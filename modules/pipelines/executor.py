@@ -194,9 +194,20 @@ get_run_event_queue = subscribe_sse
 _run_seq_counters: dict[str, int] = {}
 
 
-def _next_seq(run_id: str) -> int:
-    """获取 run 的下一个递增序列号"""
-    seq = _run_seq_counters.get(run_id, 0) + 1
+async def _next_seq(run_id: str) -> int:
+    """获取 run 的下一个递增序列号（优先内存缓存，首次从 DB 读取）"""
+    if run_id not in _run_seq_counters:
+        # 从 DB 读取当前最大 seq
+        try:
+            db = await get_db()
+            row = await db.execute_fetchone(
+                "SELECT MAX(seq) as max_seq FROM pipeline_chat_events WHERE run_id = ?",
+                (run_id,),
+            )
+            _run_seq_counters[run_id] = (row["max_seq"] or 0) if row else 0
+        except Exception:
+            _run_seq_counters[run_id] = 0
+    seq = _run_seq_counters[run_id] + 1
     _run_seq_counters[run_id] = seq
     return seq
 
@@ -207,7 +218,7 @@ async def _publish_sse(run_id: str, event_type: str, data: dict):
     event = {
         "type": event_type,
         "event_id": str(uuid.uuid4()),
-        "seq": _next_seq(run_id),
+        "seq": await _next_seq(run_id),
         "timestamp": time.time(),
         **data,
     }
@@ -231,7 +242,7 @@ async def publish_chat_event(
 ):
     """发布聊天事件：同时写入 pipeline_chat_events 表 + 广播 SSE"""
     event_id = str(uuid.uuid4())
-    seq = _next_seq(run_id)
+    seq = await _next_seq(run_id)
 
     # 持久化到数据库
     try:

@@ -24,7 +24,6 @@ from langchain.agents.middleware.context_editing import ClearToolUsesEdit
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from modules.agents.llm import get_chat_model
-from modules.agents.sandbox import SafeLocalShellBackend
 from modules.agents.tools.registry import get_registered_tools
 from modules.pipelines.steps.agent import SAFE_TOOLS
 from modules.pipelines.tools.pipeline_tools import get_pipeline_tools
@@ -56,8 +55,6 @@ Pipeline: {pipeline_name}
 - 回答要简洁专业，优先给结论
 - 分析结果用结构化格式呈现（表格、列表）
 """
-
-_active_checkpointers: dict[str, AsyncSqliteSaver] = {}
 
 
 def _load_safe_tools() -> list:
@@ -100,7 +97,6 @@ async def create_pipeline_agent(
     )
 
     tools = _load_safe_tools() + get_pipeline_tools()
-    backend = SafeLocalShellBackend(root_dir="~")
 
     middleware = [
         ModelRetryMiddleware(max_retries=3),
@@ -115,7 +111,6 @@ async def create_pipeline_agent(
     cp_path = data_dir / "pipeline-checkpoints.db"
     conn = await aiosqlite.connect(str(cp_path))
     checkpointer = AsyncSqliteSaver(conn)
-    _active_checkpointers[run_id] = checkpointer
 
     agent = create_deep_agent(
         model=model,
@@ -123,7 +118,7 @@ async def create_pipeline_agent(
         system_prompt=system_prompt,
         interrupt_on=None,
         checkpointer=checkpointer,
-        backend=backend,
+        backend=None,
         subagents=[],
         middleware=middleware,
         memory=None,
@@ -142,13 +137,11 @@ async def create_pipeline_agent(
         thread_id,
         len(tools),
     )
-    return agent, invoke_config
+    return agent, invoke_config, checkpointer
 
 
-async def cleanup_pipeline_agent(run_id: str):
-    """清理 Pipeline Agent 资源（run 结束时调用）"""
-    cp = _active_checkpointers.pop(run_id, None)
-    if cp and hasattr(cp, "conn") and cp.conn:
+async def cleanup_pipeline_agent(checkpointer: AsyncSqliteSaver | None):
+    """清理 Pipeline Agent checkpointer 连接"""
+    if checkpointer and hasattr(checkpointer, "conn") and checkpointer.conn:
         with contextlib.suppress(Exception):
-            await cp.conn.close()
-    logger.debug("PipelineAgent 资源已清理: run=%s", run_id)
+            await checkpointer.conn.close()

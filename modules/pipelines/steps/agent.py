@@ -17,13 +17,26 @@ logger = logging.getLogger(__name__)
 
 # Agent step 允许使用的安全工具（只读类）
 SAFE_TOOLS = {
-    "get_system_info", "get_system_snapshot", "get_docker_status",
-    "list_active_alerts", "get_service_status", "get_network_info",
-    "get_gpu_info", "get_user_info", "list_users",
-    "read_file", "ls", "glob", "grep",
-    "get_container_logs", "get_service_logs",
-    "list_cron_jobs", "web_search", "think",
-    "retrieve_knowledge", "search_fault_cases",
+    "get_system_info",
+    "get_system_snapshot",
+    "get_docker_status",
+    "list_active_alerts",
+    "get_service_status",
+    "get_network_info",
+    "get_gpu_info",
+    "get_user_info",
+    "list_users",
+    "read_file",
+    "ls",
+    "glob",
+    "grep",
+    "get_container_logs",
+    "get_service_logs",
+    "list_cron_jobs",
+    "web_search",
+    "think",
+    "retrieve_knowledge",
+    "search_fault_cases",
 }
 
 
@@ -78,9 +91,7 @@ class AgentStepExecutor:
             for msg in reversed(messages):
                 content = getattr(msg, "content", None) or msg.get("content", "")
                 if isinstance(content, list):
-                    content = "".join(
-                        item.get("text", "") for item in content if isinstance(item, dict)
-                    )
+                    content = "".join(item.get("text", "") for item in content if isinstance(item, dict))
                 if content:
                     ai_output = content
                     break

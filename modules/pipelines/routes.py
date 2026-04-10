@@ -473,6 +473,16 @@ async def api_trigger_run(
 # ---------------------------------------------------------------------------
 
 
+# Per-run chat 锁，防止并发请求破坏对话历史
+_chat_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_chat_lock(run_id: str) -> asyncio.Lock:
+    if run_id not in _chat_locks:
+        _chat_locks[run_id] = asyncio.Lock()
+    return _chat_locks[run_id]
+
+
 async def _build_run_context(run_id: str) -> dict:
     """构建 Pipeline 运行上下文快照（注入到 PipelineAgent 提示词）"""
     db = await get_db()
@@ -552,97 +562,100 @@ async def _run_pipeline_chat(run_id: str, thread_id: str, message: str):
         create_pipeline_agent,
     )
 
-    msg_id = str(uuid.uuid4())
+    lock = _get_chat_lock(run_id)
+    async with lock:
+        checkpointer = None
+        msg_id = str(uuid.uuid4())
 
-    try:
-        await publish_chat_event(
-            run_id,
-            "chat_message",
-            {"final": True},
-            message_id=msg_id,
-            role="user",
-            content=message,
-        )
-
-        context = await _build_run_context(run_id)
-        agent, invoke_config = await create_pipeline_agent(
-            run_id,
-            context,
-            thread_id,
-            purpose="patrol",
-        )
-
-        ai_msg_id = str(uuid.uuid4())
-        accumulated_content = ""
-
-        async for event in agent.astream(
-            {"messages": [("user", message)]},
-            config=invoke_config,
-        ):
-            messages = event.get("messages", [])
-            for msg in messages:
-                role = getattr(msg, "type", None)
-
-                if role == "ai":
-                    content = getattr(msg, "content", "")
-                    if isinstance(content, list):
-                        content = "".join(item.get("text", "") for item in content if isinstance(item, dict))
-
-                    tool_calls = getattr(msg, "tool_calls", [])
-                    for tc in tool_calls:
-                        tc_id = str(uuid.uuid4())
-                        await publish_chat_event(
-                            run_id,
-                            "chat_tool_call",
-                            {"tool": tc.get("name", ""), "args": tc.get("args", {})},
-                            message_id=ai_msg_id,
-                            tool_call_id=tc_id,
-                        )
-
-                    if content and content != accumulated_content:
-                        accumulated_content = content
-                        await publish_chat_event(
-                            run_id,
-                            "chat_message",
-                            {"final": False},
-                            message_id=ai_msg_id,
-                            role="assistant",
-                            content=content,
-                        )
-
-                elif role == "tool":
-                    tool_name = getattr(msg, "name", "")
-                    tool_content = getattr(msg, "content", "")
-                    await publish_chat_event(
-                        run_id,
-                        "chat_tool_result",
-                        {"tool": tool_name},
-                        tool_call_id=getattr(msg, "tool_call_id", None),
-                        content=tool_content,
-                    )
-
-        if accumulated_content:
+        try:
             await publish_chat_event(
                 run_id,
                 "chat_message",
                 {"final": True},
-                message_id=ai_msg_id,
-                role="assistant",
-                content=accumulated_content,
+                message_id=msg_id,
+                role="user",
+                content=message,
             )
 
-    except Exception as e:
-        logger.exception("Pipeline chat 执行失败: %s", e)
-        await publish_chat_event(
-            run_id,
-            "chat_message",
-            {"final": True},
-            message_id=str(uuid.uuid4()),
-            role="assistant",
-            content=f"抱歉，处理失败: {e}",
-        )
-    finally:
-        await cleanup_pipeline_agent(run_id)
+            context = await _build_run_context(run_id)
+            agent, invoke_config, checkpointer = await create_pipeline_agent(
+                run_id,
+                context,
+                thread_id,
+                purpose="patrol",
+            )
+
+            ai_msg_id = str(uuid.uuid4())
+            accumulated_content = ""
+
+            async for event in agent.astream(
+                {"messages": [("user", message)]},
+                config=invoke_config,
+            ):
+                messages = event.get("messages", [])
+                for msg in messages:
+                    role = getattr(msg, "type", None)
+
+                    if role == "ai":
+                        content = getattr(msg, "content", "")
+                        if isinstance(content, list):
+                            content = "".join(item.get("text", "") for item in content if isinstance(item, dict))
+
+                        tool_calls = getattr(msg, "tool_calls", [])
+                        for tc in tool_calls:
+                            tc_id = str(uuid.uuid4())
+                            await publish_chat_event(
+                                run_id,
+                                "chat_tool_call",
+                                {"tool": tc.get("name", ""), "args": tc.get("args", {})},
+                                message_id=ai_msg_id,
+                                tool_call_id=tc_id,
+                            )
+
+                        if content and content != accumulated_content:
+                            accumulated_content = content
+                            await publish_chat_event(
+                                run_id,
+                                "chat_message",
+                                {"final": False},
+                                message_id=ai_msg_id,
+                                role="assistant",
+                                content=content,
+                            )
+
+                    elif role == "tool":
+                        tool_name = getattr(msg, "name", "")
+                        tool_content = getattr(msg, "content", "")
+                        await publish_chat_event(
+                            run_id,
+                            "chat_tool_result",
+                            {"tool": tool_name},
+                            tool_call_id=getattr(msg, "tool_call_id", None),
+                            content=tool_content,
+                        )
+
+            if accumulated_content:
+                await publish_chat_event(
+                    run_id,
+                    "chat_message",
+                    {"final": True},
+                    message_id=ai_msg_id,
+                    role="assistant",
+                    content=accumulated_content,
+                )
+
+        except Exception as e:
+            logger.exception("Pipeline chat 执行失败: %s", e)
+            await publish_chat_event(
+                run_id,
+                "chat_message",
+                {"final": True},
+                message_id=str(uuid.uuid4()),
+                role="assistant",
+                content=f"抱歉，处理失败: {e}",
+            )
+        finally:
+            await cleanup_pipeline_agent(checkpointer)
 
 
 @router.get("/runs/{run_id}/chat-events")
@@ -650,7 +663,7 @@ async def api_get_chat_events(
     run_id: str,
     after_seq: int = 0,
     limit: int = 100,
-    user=Depends(get_current_user),
+    user=Depends(require_role("admin")),
 ):
     """获取 Pipeline 运行的 AI 对话事件历史（分页 + 断线续传）"""
     db = await get_db()
