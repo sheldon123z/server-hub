@@ -113,5 +113,10 @@ def request_human_intervention(
 
 
 def get_pipeline_tools() -> list:
-    """返回 pipeline 专属工具列表"""
-    return [get_pipeline_step_output, get_pipeline_run_summary, request_human_intervention]
+    """返回 pipeline 专属工具列表
+
+    注意: request_human_intervention 暂不包含在 chat 工具集中，
+    因为 pipeline chat 路径尚未实现 LangGraph interrupt/resume 生命周期。
+    该工具仅在 agent step 执行路径中通过 decision 步骤间接使用。
+    """
+    return [get_pipeline_step_output, get_pipeline_run_summary]

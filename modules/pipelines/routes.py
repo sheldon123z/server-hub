@@ -618,6 +618,28 @@ async def api_pipeline_decide(
         raise HTTPException(400, "缺少 step_id / decision_request_id / option_id")
 
     db = await get_db()
+
+    # 验证 decision_request_id 和 option_id
+    pending = await db.execute_fetchone(
+        "SELECT input_json FROM pipeline_step_logs WHERE run_id = ? AND step_id = ? AND status = 'waiting_decision'",
+        (run_id, step_id),
+    )
+    if not pending:
+        raise HTTPException(409, "无待决策的请求")
+
+    try:
+        pending_data = json.loads(pending["input_json"]) if pending["input_json"] else {}
+    except (json.JSONDecodeError, TypeError):
+        pending_data = {}
+
+    stored_dr_id = pending_data.get("decision_request_id")
+    if stored_dr_id and stored_dr_id != decision_request_id:
+        raise HTTPException(409, f"decision_request_id 不匹配: 期望 {stored_dr_id}")
+
+    allowed_options = {opt.get("id") for opt in pending_data.get("options", []) if opt.get("id")}
+    if allowed_options and option_id not in allowed_options:
+        raise HTTPException(422, f"无效的 option_id: {option_id}，允许: {allowed_options}")
+
     # Compare-and-swap: 只有 waiting_decision 状态才能解析
     cursor = await db.execute(
         """UPDATE pipeline_step_logs

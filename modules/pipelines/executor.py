@@ -505,6 +505,15 @@ async def _execute_pipeline(
                 )
                 if chosen is None:
                     chosen = result.get("on_timeout")
+
+                    # 标记步骤为超时态，防止迟到的 /decide 仍可成功
+                    await db.execute(
+                        "UPDATE pipeline_step_logs SET status = 'timed_out', completed_at = datetime('now') "
+                        "WHERE run_id = ? AND step_id = ? AND status = 'waiting_decision'",
+                        (run_id, step_id),
+                    )
+                    await db.commit()
+
                 if chosen is None:
                     raise RuntimeError(f"决策超时且无默认选项: {step_id}")
 

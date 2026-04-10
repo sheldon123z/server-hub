@@ -143,20 +143,30 @@ _STEP_SECURITY = {
 
 
 def _validate_security(parsed: dict) -> dict:
-    """结构化安全策略验证"""
+    """结构化安全策略验证（递归检查 parallel branches）"""
     issues = []
     level = "safe"
-    steps = parsed.get("steps", [])
 
-    for i, step in enumerate(steps):
-        st = step.get("type", "")
-        policy = _STEP_SECURITY.get(st)
-        if not policy:
-            issues.append({"severity": "error", "step_id": step.get("id"), "message": f"未知步骤类型: {st}"})
-            continue
-        if policy["needs_approval"]:
-            has_gate = any(s.get("type") in ("approval", "decision") for s in steps[:i])
-            if not has_gate:
+    def _check_steps(steps: list[dict], approval_seen: bool = False):
+        nonlocal level
+        for step in steps:
+            st = step.get("type", "")
+            policy = _STEP_SECURITY.get(st)
+            if not policy:
+                issues.append({"severity": "error", "step_id": step.get("id"), "message": f"未知步骤类型: {st}"})
+                continue
+
+            # 递归检查 parallel branches
+            if st == "parallel":
+                for branch in step.get("branches", []):
+                    _check_steps([branch], approval_seen)
+                continue
+
+            # 更新 approval 可见状态
+            if st in ("approval", "decision"):
+                approval_seen = True
+
+            if policy["needs_approval"] and not approval_seen:
                 issues.append(
                     {
                         "severity": "warning",
@@ -166,6 +176,7 @@ def _validate_security(parsed: dict) -> dict:
                 )
                 level = "needs_approval"
 
+    _check_steps(parsed.get("steps", []))
     return {"security_level": level, "issues": issues}
 
 
